@@ -9,17 +9,17 @@ export type BodyState = {
   id: number;
   type: BodyType;
   // Coin properties (only for type="coin")
-  pos?: [number, number, number];    // [x, y, z] position
-  rot?: [number, number, number, number];  // [x, y, z, w] quaternion
+  pos?: [number, number, number]; // [x, y, z] position
+  rot?: [number, number, number, number]; // [x, y, z, w] quaternion
   // Pusher properties (only for type="pusher")
-  z?: number;  // z-axis position for kinematic pusher
+  z?: number; // z-axis position for kinematic pusher
 };
 
 // Complete world state (sent on connect)
 export type WorldState = {
   protocolVersion: number;
   tick: number;
-  serverTime: number;  // milliseconds since epoch
+  serverTime: number; // milliseconds since epoch
   bodies: BodyState[];
 };
 
@@ -35,7 +35,7 @@ export type StateUpdate = {
 // Client → Server: Insert coin at position x
 export type CoinInsertMessage = {
   op: "coin_insert";
-  x: number;  // Range: [-0.5, 0.5]
+  x: number; // Range: [-0.5, 0.5]
 };
 
 // Client → Server: Ping for clock sync
@@ -59,7 +59,7 @@ export type StateDeltaMessage = {
   serverTime: number;
   tick: number;
   updates: StateUpdate[];
-  pusherZ: number;  // Current pusher z position
+  pusherZ: number; // Current pusher z position
 };
 
 // Server → Client: Despawn entities
@@ -88,51 +88,50 @@ export type ServerMessage =
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
   x: number;
-  y?: number;  // Default: 1.5m
-  z?: number;  // Default: 0m
+  y?: number; // Default: 1.5m
+  z?: number; // Default: 0m
 };
 
 // Physics configuration constants
 export const PHYSICS_CONFIG = {
-  TICK_RATE: 30,  // Hz
-  TICK_INTERVAL: 1000 / 30,  // ~33.333ms
+  TICK_RATE: 30, // Hz
+  TICK_INTERVAL: 1000 / 30, // ~33.333ms
   SUBSTEPS: 2,
   SOLVER_VELOCITY_ITERATIONS: 8,
   SOLVER_POSITION_ITERATIONS: 3,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
-  QUANTIZE_DECIMALS: 3,  // Quantize network values to 3 decimal places
+  QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places
 } as const;
 
 // Pusher configuration
 export const PUSHER_CONFIG = {
-  AMPLITUDE: 0.3,  // meters
-  FREQUENCY: 0.5,   // Hz
+  AMPLITUDE: 0.3, // meters
+  FREQUENCY: 0.5, // Hz
   INITIAL_PHASE: 0,
 } as const;
 
 // Coin configuration
 export const COIN_CONFIG = {
-  RADIUS: 0.02,      // meters
-  THICKNESS: 0.009,  // meters
-  MASS: 0.01,        // kg
+  RADIUS: 0.02, // meters
+  THICKNESS: 0.009, // meters
+  MASS: 0.01, // kg
   FRICTION: 0.3,
   RESTITUTION: 0.2,
   SPAWN_HEIGHT: 1.5, // meters
-  DESPAWN_Y: -0.1,   // meters (below this = remove)
-  CCD_DISABLE_VELOCITY: 0.5,  // m/s
-  CCD_DISABLE_HEIGHT: 0.5,    // meters
+  DESPAWN_Y: -0.1, // meters (below this = remove)
+  CCD_DISABLE_VELOCITY: 0.5, // m/s
+  CCD_DISABLE_HEIGHT: 0.5, // meters
 } as const;
 
 // Network/Interpolation configuration
 export const NETWORK_CONFIG = {
-  INTERPOLATION_DELAY: 110,  // ms (100-120ms recommended)
-  PING_INTERVAL: 5000,       // ms
-  RTT_SAMPLES: 5,            // Number of RTT samples for median calculation
+  INTERPOLATION_DELAY: 110, // ms (100-120ms recommended)
+  PING_INTERVAL: 5000, // ms
+  RTT_SAMPLES: 5, // Number of RTT samples for median calculation
 } as const;
 
 // Rate limiting
 export const RATE_LIMIT_CONFIG = {
-  COIN_INSERT_COOLDOWN: 100,  // ms between coin inserts per connection
-  MAX_X_POSITION: 0.5,        // Valid x range: [-0.5, 0.5]
+  COIN_INSERT_COOLDOWN: 100, // ms between coin inserts per connection
+  MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
-
