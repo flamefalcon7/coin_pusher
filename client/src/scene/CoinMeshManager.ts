@@ -7,7 +7,7 @@ import {
   Quaternion,
   Mesh,
   Matrix,
-} from '@babylonjs/core';
+} from "@babylonjs/core";
 
 export class CoinMeshManager {
   private scene: Scene;
@@ -24,7 +24,7 @@ export class CoinMeshManager {
   private createPrototype(): void {
     // Create coin cylinder: radius 0.02m, thickness 0.009m
     this.prototypeMesh = MeshBuilder.CreateCylinder(
-      'coinPrototype',
+      "coinPrototype",
       {
         height: 0.009,
         diameter: 0.04, // radius * 2
@@ -34,22 +34,25 @@ export class CoinMeshManager {
     );
 
     // Create gold-like material
-    const material = new StandardMaterial('coinMat', this.scene);
+    const material = new StandardMaterial("coinMat", this.scene);
     material.diffuseColor = new Color3(1, 0.84, 0); // Gold
     material.specularColor = new Color3(0.8, 0.7, 0.3);
     material.specularPower = 64;
     this.prototypeMesh.material = material;
 
-    // Rotate 90 degrees to align with physics (cylinder defaults to Y-up)
-    this.prototypeMesh.rotation.x = Math.PI / 2;
+    // No rotation needed - both BabylonJS and Rapier use Y-up for cylinders
 
     // Enable thin instances
     this.prototypeMesh.thinInstanceEnablePicking = false;
 
-    console.log('🪙 Coin prototype created');
+    console.log("🪙 Coin prototype created");
   }
 
-  addCoin(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+  addCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
     if (this.coinInstances.has(id)) {
       console.warn(`Coin ${id} already exists`);
       return;
@@ -59,7 +62,7 @@ export class CoinMeshManager {
 
     // Create transformation matrix
     const matrix = this.createTransformMatrix(pos, rot);
-    
+
     if (matrixIndex < this.matrices.length) {
       this.matrices[matrixIndex] = matrix;
     } else {
@@ -72,7 +75,11 @@ export class CoinMeshManager {
     this.updateInstances();
   }
 
-  updateCoin(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+  updateCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
     const instance = this.coinInstances.get(id);
     if (!instance) {
       // Coin doesn't exist yet, add it
@@ -119,7 +126,7 @@ export class CoinMeshManager {
 
   private updateInstances(): void {
     if (this.matrices.length === 0) {
-      this.prototypeMesh.thinInstanceSetBuffer('matrix', null);
+      this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
       return;
     }
 
@@ -129,7 +136,7 @@ export class CoinMeshManager {
       matrix.copyToArray(matrixData, index * 16);
     });
 
-    this.prototypeMesh.thinInstanceSetBuffer('matrix', matrixData, 16);
+    this.prototypeMesh.thinInstanceSetBuffer("matrix", matrixData, 16);
   }
 
   getCoinCount(): number {
@@ -143,4 +150,3 @@ export class CoinMeshManager {
     this.updateInstances();
   }
 }
-
