@@ -5,7 +5,7 @@ import {
   Color3,
   Vector3,
   Mesh,
-} from '@babylonjs/core';
+} from "@babylonjs/core";
 
 export class PusherMesh {
   private mesh: Mesh;
@@ -13,7 +13,7 @@ export class PusherMesh {
   constructor(scene: Scene) {
     // Create pusher plate: 1.1m × 0.05m × 0.7m
     this.mesh = MeshBuilder.CreateBox(
-      'pusher',
+      "pusher",
       { width: 1.1, height: 0.05, depth: 0.7 },
       scene
     );
@@ -21,12 +21,12 @@ export class PusherMesh {
     this.mesh.position = new Vector3(0, 0.3, 0);
 
     // Create material
-    const material = new StandardMaterial('pusherMat', scene);
+    const material = new StandardMaterial("pusherMat", scene);
     material.diffuseColor = new Color3(0.3, 0.5, 0.8); // Blue-ish
     material.specularColor = new Color3(0.5, 0.5, 0.5);
     this.mesh.material = material;
 
-    console.log('🔨 Pusher mesh created');
+    console.log("🔨 Pusher mesh created");
   }
 
   updatePosition(z: number): void {
@@ -37,4 +37,3 @@ export class PusherMesh {
     return this.mesh;
   }
 }
-
