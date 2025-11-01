@@ -1,0 +1,15 @@
+{
+  "name": "coin-pusher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-user coin pusher game PoC with authoritative server physics",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "clean": "pnpm -r clean"
+  },
+  "keywords": ["coin-pusher", "babylonjs", "rapier", "websocket"],
+  "license": "MIT",
+  "packageManager": "pnpm@8.0.0"
+}
+
