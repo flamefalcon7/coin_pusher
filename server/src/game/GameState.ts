@@ -1,0 +1,91 @@
+import type { BodyState, WorldState } from '@coin-pusher/shared';
+import { PROTOCOL_VERSION } from '@coin-pusher/shared';
+
+export class GameState {
+  private nextBodyId: number = 1; // ID 0 reserved for pusher
+  private bodies: Map<number, BodyState> = new Map();
+  private tick: number = 0;
+  private pusherZ: number = 0;
+
+  constructor() {
+    // Initialize pusher at ID 0
+    this.bodies.set(0, {
+      id: 0,
+      type: 'pusher',
+      z: 0,
+    });
+  }
+
+  getNextBodyId(): number {
+    return this.nextBodyId++;
+  }
+
+  addCoin(id: number, x: number, y: number, z: number): void {
+    this.bodies.set(id, {
+      id,
+      type: 'coin',
+      pos: [x, y, z],
+      rot: [0, 0, 0, 1], // Identity quaternion
+    });
+  }
+
+  updateCoinState(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+    const body = this.bodies.get(id);
+    if (body && body.type === 'coin') {
+      body.pos = pos;
+      body.rot = rot;
+    }
+  }
+
+  removeCoin(id: number): void {
+    this.bodies.delete(id);
+  }
+
+  updatePusherZ(z: number): void {
+    this.pusherZ = z;
+    const pusher = this.bodies.get(0);
+    if (pusher) {
+      pusher.z = z;
+    }
+  }
+
+  getPusherZ(): number {
+    return this.pusherZ;
+  }
+
+  getTick(): number {
+    return this.tick;
+  }
+
+  incrementTick(): void {
+    this.tick++;
+  }
+
+  getWorldSnapshot(): WorldState {
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      tick: this.tick,
+      serverTime: Date.now(),
+      bodies: Array.from(this.bodies.values()),
+    };
+  }
+
+  getAllCoins(): Map<number, BodyState> {
+    const coins = new Map<number, BodyState>();
+    this.bodies.forEach((body, id) => {
+      if (body.type === 'coin') {
+        coins.set(id, body);
+      }
+    });
+    return coins;
+  }
+
+  hasBody(id: number): boolean {
+    return this.bodies.has(id);
+  }
+
+  getBody(id: number): BodyState | undefined {
+    return this.bodies.get(id);
+  }
+}
+
