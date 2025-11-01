@@ -1,5 +1,5 @@
-import RAPIER from '@dimforge/rapier3d';
-import { PHYSICS_PARAMS } from './config.js';
+import * as RAPIER from "@dimforge/rapier3d-compat";
+import { PHYSICS_PARAMS } from "./config.js";
 
 export class PhysicsWorld {
   private world: RAPIER.World;
@@ -13,21 +13,27 @@ export class PhysicsWorld {
   async init(): Promise<void> {
     if (this.initialized) return;
 
-    // Rapier is already initialized in this version, no need to call init()
+    // Initialize Rapier WASM
+    await RAPIER.init();
+
     // Create world with gravity
     this.world = new RAPIER.World(PHYSICS_PARAMS.GRAVITY);
 
-    console.log('⚙️  Rapier physics world initialized');
-    console.log(`   Gravity: (${PHYSICS_PARAMS.GRAVITY.x}, ${PHYSICS_PARAMS.GRAVITY.y}, ${PHYSICS_PARAMS.GRAVITY.z})`);
+    console.log("⚙️  Rapier physics world initialized");
+    console.log(
+      `   Gravity: (${PHYSICS_PARAMS.GRAVITY.x}, ${PHYSICS_PARAMS.GRAVITY.y}, ${PHYSICS_PARAMS.GRAVITY.z})`
+    );
     console.log(`   Substeps: ${PHYSICS_PARAMS.SUBSTEPS}`);
-    console.log(`   Solver iterations: vel=${PHYSICS_PARAMS.VELOCITY_ITERATIONS}, pos=${PHYSICS_PARAMS.POSITION_ITERATIONS}`);
+    console.log(
+      `   Solver iterations: vel=${PHYSICS_PARAMS.VELOCITY_ITERATIONS}, pos=${PHYSICS_PARAMS.POSITION_ITERATIONS}`
+    );
 
     this.initialized = true;
   }
 
   step(): void {
     if (!this.initialized) {
-      throw new Error('PhysicsWorld not initialized');
+      throw new Error("PhysicsWorld not initialized");
     }
 
     // Step the physics simulation
@@ -37,7 +43,7 @@ export class PhysicsWorld {
 
   getWorld(): RAPIER.World {
     if (!this.initialized) {
-      throw new Error('PhysicsWorld not initialized');
+      throw new Error("PhysicsWorld not initialized");
     }
     return this.world;
   }
@@ -46,4 +52,3 @@ export class PhysicsWorld {
     return this.initialized;
   }
 }
-

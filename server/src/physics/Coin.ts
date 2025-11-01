@@ -1,25 +1,33 @@
-import RAPIER from '@dimforge/rapier3d';
-import type { PhysicsWorld } from './PhysicsWorld.js';
-import { COIN_CONFIG } from '@coin-pusher/shared';
+import * as RAPIER from "@dimforge/rapier3d-compat";
+import type { PhysicsWorld } from "./PhysicsWorld.js";
+import { COIN_CONFIG } from "@coin-pusher/shared";
 
 export class Coin {
   private rigidBody: RAPIER.RigidBody;
   private id: number;
   private ccdEnabled: boolean = true;
 
-  constructor(physicsWorld: PhysicsWorld, id: number, x: number, y: number, z: number) {
+  constructor(
+    physicsWorld: PhysicsWorld,
+    id: number,
+    x: number,
+    y: number,
+    z: number
+  ) {
     const world = physicsWorld.getWorld();
     this.id = id;
 
     // Create dynamic rigid body at spawn position
-    const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(x, y, z);
+    const bodyDesc = RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall
 
     // Create cylinder collider (coin shape)
-    const colliderDesc = RAPIER.ColliderDesc.cylinder(COIN_CONFIG.THICKNESS / 2, COIN_CONFIG.RADIUS)
+    const colliderDesc = RAPIER.ColliderDesc.cylinder(
+      COIN_CONFIG.THICKNESS / 2,
+      COIN_CONFIG.RADIUS
+    )
       .setMass(COIN_CONFIG.MASS)
       .setFriction(COIN_CONFIG.FRICTION)
       .setRestitution(COIN_CONFIG.RESTITUTION);
@@ -35,7 +43,10 @@ export class Coin {
       const position = this.rigidBody.translation();
 
       // Disable CCD when coin is slow and low (resting on platform)
-      if (velocity < COIN_CONFIG.CCD_DISABLE_VELOCITY && position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT) {
+      if (
+        velocity < COIN_CONFIG.CCD_DISABLE_VELOCITY &&
+        position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT
+      ) {
         this.rigidBody.enableCcd(false);
         this.ccdEnabled = false;
       }
@@ -63,4 +74,3 @@ export class Coin {
     return pos.y < COIN_CONFIG.DESPAWN_Y;
   }
 }
-

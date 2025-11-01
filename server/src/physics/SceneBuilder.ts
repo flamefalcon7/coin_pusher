@@ -1,5 +1,5 @@
-import RAPIER from '@dimforge/rapier3d';
-import type { PhysicsWorld } from './PhysicsWorld.js';
+import * as RAPIER from "@dimforge/rapier3d-compat";
+import type { PhysicsWorld } from "./PhysicsWorld.js";
 
 export class SceneBuilder {
   private world: RAPIER.World;
@@ -9,7 +9,7 @@ export class SceneBuilder {
   }
 
   buildStaticScene(): void {
-    console.log('🏗️  Building static scene...');
+    console.log("🏗️  Building static scene...");
 
     // Main platform: 1.2m × 0.8m × 0.05m at (0, 0.25, 0)
     // Slight front tilt (2-3 degrees) to help coin outflow
@@ -21,7 +21,7 @@ export class SceneBuilder {
     // Side walls with inner tilt
     this.createSideWalls();
 
-    console.log('✅ Static scene built');
+    console.log("✅ Static scene built");
   }
 
   private createPlatform(): void {
@@ -38,13 +38,17 @@ export class SceneBuilder {
     const body = this.world.createRigidBody(bodyDesc);
 
     // Create collider
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(width / 2, thickness / 2, depth / 2)
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(
+      width / 2,
+      thickness / 2,
+      depth / 2
+    )
       .setFriction(0.35)
       .setRestitution(0.15);
 
     this.world.createCollider(colliderDesc, body);
 
-    console.log('  ✓ Main platform created');
+    console.log("  ✓ Main platform created");
   }
 
   private createBackWall(): void {
@@ -52,18 +56,21 @@ export class SceneBuilder {
     const height = 0.3;
     const thickness = 0.05;
 
-    const bodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(0, 0.4, -0.4);
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0.4, -0.4);
 
     const body = this.world.createRigidBody(bodyDesc);
 
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(width / 2, height / 2, thickness / 2)
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(
+      width / 2,
+      height / 2,
+      thickness / 2
+    )
       .setFriction(0.3)
       .setRestitution(0.1);
 
     this.world.createCollider(colliderDesc, body);
 
-    console.log('  ✓ Back wall created');
+    console.log("  ✓ Back wall created");
   }
 
   private createSideWalls(): void {
@@ -79,7 +86,11 @@ export class SceneBuilder {
 
     const leftBody = this.world.createRigidBody(leftBodyDesc);
 
-    const leftColliderDesc = RAPIER.ColliderDesc.cuboid(thickness / 2, height / 2, depth / 2)
+    const leftColliderDesc = RAPIER.ColliderDesc.cuboid(
+      thickness / 2,
+      height / 2,
+      depth / 2
+    )
       .setFriction(0.3)
       .setRestitution(0.1);
 
@@ -92,13 +103,16 @@ export class SceneBuilder {
 
     const rightBody = this.world.createRigidBody(rightBodyDesc);
 
-    const rightColliderDesc = RAPIER.ColliderDesc.cuboid(thickness / 2, height / 2, depth / 2)
+    const rightColliderDesc = RAPIER.ColliderDesc.cuboid(
+      thickness / 2,
+      height / 2,
+      depth / 2
+    )
       .setFriction(0.3)
       .setRestitution(0.1);
 
     this.world.createCollider(rightColliderDesc, rightBody);
 
-    console.log('  ✓ Side walls created');
+    console.log("  ✓ Side walls created");
   }
 }
-
