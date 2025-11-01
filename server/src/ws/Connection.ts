@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws";
 import type { ServerMessage } from "@coin-pusher/shared";
 import { RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import * as msgpack from "@msgpack/msgpack";
 
 export class Connection {
   private ws: WebSocket;
@@ -13,7 +14,9 @@ export class Connection {
   send(message: ServerMessage): void {
     if (this.ws.readyState === 1) {
       // WebSocket.OPEN
-      this.ws.send(JSON.stringify(message));
+      // Use MessagePack for binary encoding (40% smaller than JSON)
+      const binary = msgpack.encode(message);
+      this.ws.send(binary);
     }
   }
 
