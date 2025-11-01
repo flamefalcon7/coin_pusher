@@ -8,6 +8,7 @@ export class WebSocketServer {
   private wss: WSServer;
   private connections: Set<Connection> = new Set();
   private messageHandler: MessageHandler;
+  private newConnectionCallback?: (connection: Connection) => void;
 
   constructor(port: number) {
     this.wss = new WSServer({ port });
@@ -37,6 +38,11 @@ export class WebSocketServer {
 
     console.log(`✅ New connection (total: ${this.connections.size})`);
 
+    // Call new connection callback (for world snapshot)
+    if (this.newConnectionCallback) {
+      this.newConnectionCallback(connection);
+    }
+
     ws.on("message", (data: Buffer) => {
       this.messageHandler.handleMessage(connection, data.toString());
     });
@@ -65,6 +71,10 @@ export class WebSocketServer {
 
   setMessageHandlers(handlers: MessageHandlers): void {
     this.messageHandler = new MessageHandler(handlers);
+  }
+
+  onNewConnection(callback: (connection: Connection) => void): void {
+    this.newConnectionCallback = callback;
   }
 
   getConnections(): Set<Connection> {
