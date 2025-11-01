@@ -1,4 +1,4 @@
-import type { ServerMessage } from '@coin-pusher/shared';
+import type { ServerMessage, ClientMessage } from '@coin-pusher/shared';
 import { WebSocketClient } from './WebSocketClient';
 import { ClockSync } from './ClockSync';
 import { StateBuffer } from './StateBuffer';
@@ -123,10 +123,12 @@ export class GameClient {
   }
 
   insertCoin(x: number): void {
-    this.wsClient.send({
+    // Send MessagePack encoded message
+    const message: ClientMessage = {
       op: 'coin_insert',
       x,
-    });
+    };
+    this.wsClient.send(message);
   }
 
   getInterpolatedState(): InterpolatedState | null {

@@ -1,4 +1,5 @@
 import type { ServerMessage, ClientMessage } from '@coin-pusher/shared';
+import * as msgpack from '@msgpack/msgpack';
 
 export type MessageCallback = (message: ServerMessage) => void;
 
@@ -22,6 +23,9 @@ export class WebSocketClient {
 
     console.log(`📡 Connecting to ${this.url}...`);
     this.ws = new WebSocket(this.url);
+    
+    // Set binary type to arraybuffer for MessagePack
+    this.ws.binaryType = 'arraybuffer';
 
     this.ws.onopen = () => {
       console.log('✅ WebSocket connected');
@@ -32,12 +36,15 @@ export class WebSocketClient {
 
     this.ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data) as ServerMessage;
+        // Decode MessagePack binary data
+        const buffer = event.data as ArrayBuffer;
+        const message = msgpack.decode(new Uint8Array(buffer)) as ServerMessage;
+        
         if (this.messageCallback) {
           this.messageCallback(message);
         }
       } catch (error) {
-        console.error('Failed to parse message:', error);
+        console.error('Failed to decode message:', error);
       }
     };
 
@@ -69,7 +76,9 @@ export class WebSocketClient {
       return;
     }
 
-    this.ws.send(JSON.stringify(message));
+    // Use MessagePack for binary encoding (40% smaller than JSON)
+    const binary = msgpack.encode(message);
+    this.ws.send(binary);
   }
 
   onMessage(callback: MessageCallback): void {

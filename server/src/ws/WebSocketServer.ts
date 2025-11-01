@@ -2,7 +2,8 @@ import { WebSocketServer as WSServer } from "ws";
 import type { WebSocket } from "ws";
 import { Connection } from "./Connection.js";
 import { MessageHandler, type MessageHandlers } from "./MessageHandler.js";
-import type { ServerMessage } from "@coin-pusher/shared";
+import type { ServerMessage, ClientMessage } from "@coin-pusher/shared";
+import * as msgpack from "@msgpack/msgpack";
 
 export class WebSocketServer {
   private wss: WSServer;
@@ -44,7 +45,18 @@ export class WebSocketServer {
     }
 
     ws.on("message", (data: Buffer) => {
-      this.messageHandler.handleMessage(connection, data.toString());
+      // Decode MessagePack binary data from client
+      try {
+        const message = msgpack.decode(data) as ClientMessage;
+        this.messageHandler.handleMessage(connection, message);
+      } catch (error) {
+        // Fallback to JSON for backward compatibility (if client sends JSON)
+        try {
+          this.messageHandler.handleMessage(connection, data.toString());
+        } catch (fallbackError) {
+          console.error("Failed to parse message:", error);
+        }
+      }
     });
 
     ws.on("close", () => {

@@ -18,9 +18,12 @@ export class MessageHandler {
     this.handlers = handlers;
   }
 
-  handleMessage(connection: Connection, data: string): void {
+  handleMessage(connection: Connection, data: string | ClientMessage): void {
     try {
-      const message = JSON.parse(data) as ClientMessage;
+      // Handle both string (JSON) and object (MessagePack decoded)
+      const message = typeof data === 'string' 
+        ? (JSON.parse(data) as ClientMessage)
+        : data;
 
       switch (message.op) {
         case "coin_insert":

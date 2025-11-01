@@ -5,7 +5,9 @@
 ### PoC 阶段 - 已完成 ✅ (2025-11-01)
 
 #### Phase 1: 项目基础架构
+
 **完成时间**: Day 1
+
 - ✅ pnpm workspace 配置
 - ✅ TypeScript 项目结构
 - ✅ 共享类型库 (`@coin-pusher/shared`)
@@ -13,6 +15,7 @@
 - ✅ Git 仓库初始化
 
 **技术决策**:
+
 - 使用 pnpm workspace 管理 monorepo
 - TypeScript strict mode
 - ESM modules
@@ -20,9 +23,11 @@
 ---
 
 #### Phase 2: 服务器核心 (Server Foundation)
+
 **完成时间**: Day 2-3
 
 ##### 2.1 WebSocket 服务器
+
 - ✅ ws 库集成
 - ✅ 连接管理 (Connection class)
 - ✅ 消息处理器 (MessageHandler)
@@ -31,12 +36,14 @@
 - ✅ Ping/Pong 心跳机制
 
 ##### 2.2 游戏状态管理
+
 - ✅ GameState (中央状态管理)
 - ✅ CoinManager (硬币生命周期)
 - ✅ 整数 ID 分配系统
 - ✅ 世界快照生成 (world_snapshot)
 
 ##### 2.3 物理引擎集成
+
 - ✅ Rapier3D-compat 集成 (Node.js 兼容)
 - ✅ 右手坐标系配置
 - ✅ 重力设置: `{x:0, y:-9.81, z:0}`
@@ -47,6 +54,7 @@
 - ✅ Sleep 机制启用
 
 ##### 2.4 场景构建
+
 - ✅ 静态场景 (SceneBuilder)
   - 主平台 (1.2×0.8×0.05m, 2° 前倾)
   - 后墙 (1.2×0.3×0.05m)
@@ -60,6 +68,7 @@
   - Mass: 0.01kg, Friction: 0.3, Restitution: 0.2
 
 ##### 2.5 游戏循环
+
 - ✅ 固定 30Hz 更新
 - ✅ 状态广播 (state_delta)
 - ✅ 数值量化 (3 位小数)
@@ -67,6 +76,7 @@
 - ✅ Despawn 检测 (y < -0.1m)
 
 **关键文件**:
+
 ```
 server/src/
 ├── index.ts (入口 + 初始化)
@@ -89,14 +99,17 @@ server/src/
 ---
 
 #### Phase 3: 客户端基础 (Client Foundation)
+
 **完成时间**: Day 4
 
 ##### 3.1 构建工具配置
+
 - ✅ Vite 5 + React 18
 - ✅ TypeScript 配置
 - ✅ 环境变量支持 (VITE_WS_URL)
 
 ##### 3.2 UI 组件
+
 - ✅ React 应用结构
 - ✅ HUD 组件 (FPS, Ping, Coins)
 - ✅ ConnectionStatus 指示器
@@ -104,6 +117,7 @@ server/src/
 - ✅ 响应式 CSS 布局
 
 **关键文件**:
+
 ```
 client/src/
 ├── main.tsx (React 入口)
@@ -118,15 +132,18 @@ client/src/
 ---
 
 #### Phase 4: 3D 渲染 (Client Rendering)
+
 **完成时间**: Day 5
 
 ##### 4.1 BabylonJS 场景设置
+
 - ✅ Engine 初始化
 - ✅ 右手坐标系: `scene.useRightHandedSystem = true`
 - ✅ 场景管理器 (SceneManager)
 - ✅ 窗口调整处理
 
 ##### 4.2 相机与光照
+
 - ✅ ArcRotateCamera
   - Target: (0, 0.3, 0)
   - Alpha: -π/2, Beta: π/3, Radius: 3m
@@ -137,11 +154,13 @@ client/src/
   - 环境光 + 漫反射 + 高光
 
 ##### 4.3 静态网格
+
 - ✅ 平台 (灰色, 1.2×0.05×0.8m)
 - ✅ 墙壁 (左右后, 蓝灰色)
 - ✅ 掉落区域指示 (半透明)
 
 ##### 4.4 动态对象
+
 - ✅ 推板网格 (蓝色, 可更新 z 位置)
 - ✅ 硬币管理器 (Thin Instances)
   - 金色材质
@@ -149,11 +168,13 @@ client/src/
   - 矩阵变换系统
 
 ##### 4.5 坐标系对齐
+
 - ✅ Y-up 统一 (BabylonJS + Rapier)
 - ✅ 硬币方向修正 (移除错误旋转)
 - ✅ 四元数直接应用
 
 **关键文件**:
+
 ```
 client/src/scene/
 ├── SceneManager.ts (主管理器)
@@ -167,15 +188,18 @@ client/src/scene/
 ---
 
 #### Phase 5: 网络同步 (Client Networking)
+
 **完成时间**: Day 6
 
 ##### 5.1 WebSocket 客户端
+
 - ✅ 连接管理
 - ✅ 消息解析 (JSON)
 - ✅ 重连处理
 - ✅ 错误处理
 
 ##### 5.2 时钟同步
+
 - ✅ Ping/Pong 机制
 - ✅ RTT 测量
 - ✅ 中位数过滤 (最近 5 次)
@@ -183,22 +207,26 @@ client/src/scene/
 - ✅ 自动 ping (每 5 秒)
 
 ##### 5.3 状态缓冲
+
 - ✅ 时间戳状态存储
 - ✅ 3 秒历史缓冲
 - ✅ 插值状态查询
 
 ##### 5.4 插值器
+
 - ✅ 固定 100-120ms 延迟
 - ✅ 位置 Lerp (线性插值)
 - ✅ 旋转 Slerp (球面插值)
 - ✅ 四元数路径优化 (dot < 0 处理)
 
 ##### 5.5 游戏客户端集成
+
 - ✅ GameClient 统一接口
 - ✅ 回调系统 (连接状态, Ping)
 - ✅ 自动更新循环
 
 **关键文件**:
+
 ```
 client/src/net/
 ├── WebSocketClient.ts
@@ -211,9 +239,11 @@ client/src/net/
 ---
 
 #### Phase 6: 端到端集成 (Integration)
+
 **完成时间**: Day 6-7
 
 ##### 6.1 实时同步
+
 - ✅ 60fps 更新循环
 - ✅ 推板位置同步
 - ✅ 硬币生命周期同步
@@ -222,12 +252,14 @@ client/src/net/
   - Despawn: 从场景移除
 
 ##### 6.2 用户交互
+
 - ✅ Insert Coin 按钮连接服务器
 - ✅ 随机 x 位置生成
 - ✅ 连接状态控制按钮启用/禁用
 - ✅ 视觉反馈 (100ms cooldown)
 
 ##### 6.3 状态追踪
+
 - ✅ 已知硬币 ID 集合
 - ✅ 自动清理 despawned 硬币
 - ✅ UI 实时更新 (FPS, Ping, Coins)
@@ -235,9 +267,11 @@ client/src/net/
 ---
 
 #### Phase 7: 测试验证 (Testing)
+
 **完成时间**: Day 7
 
 ##### 7.1 单客户端测试
+
 - ✅ 连接成功
 - ✅ 世界快照接收
 - ✅ 推板运动同步
@@ -245,18 +279,21 @@ client/src/net/
 - ✅ Despawn 正常
 
 ##### 7.2 多客户端测试
+
 - ✅ 多窗口打开
 - ✅ 状态同步验证
 - ✅ 位置误差 < 0.02m
 - ✅ 平滑插值 (无瞬移)
 
 ##### 7.3 性能验证
+
 - ✅ FPS ≥ 20 (移动端目标)
 - ✅ 桌面 FPS: 30-60
 - ✅ RTT < 50ms (本地)
 - ✅ Clock offset < 20ms
 
 ##### 7.4 坐标系验证
+
 - ✅ 硬币沿 Y 轴下落 ✓
 - ✅ 推板沿 Z 轴运动 ✓
 - ✅ 无镜像或翻转问题 ✓
@@ -264,6 +301,7 @@ client/src/net/
 ---
 
 #### Phase 8: 文档完善 (Documentation)
+
 **完成时间**: Day 7
 
 - ✅ 根目录 README (架构概览)
@@ -278,6 +316,7 @@ client/src/net/
 ## 🎯 PoC 阶段达成目标
 
 ### 技术验证 ✅
+
 - [x] Rapier 在浏览器与 Node.js 双端运行
 - [x] BabylonJS + Rapier 坐标系对齐
 - [x] 多人实时互动同步
@@ -287,6 +326,7 @@ client/src/net/
 - [x] Despawn 事件处理
 
 ### 性能指标 ✅
+
 - [x] 右手坐标一致性: 无镜像问题
 - [x] 四元数旋转: 平滑无跳跃
 - [x] 时钟同步: offset < 20ms
@@ -299,6 +339,7 @@ client/src/net/
 - [x] 穿透率: 0% (CCD 启用)
 
 ### Git 提交历史
+
 ```
 8ebba90 docs: add comprehensive README documentation
 26e59e0 feat: integrate client and server with real-time synchronization
@@ -316,14 +357,17 @@ c2bb58f phase 2 3
 ## 🚀 下一阶段开发路线
 
 ### 选项 1: 游戏机制完善 🎮
+
 **优先级**: ⭐⭐⭐⭐⭐ (商业价值高)  
 **工期**: 3-4 天  
 **依赖**: PoC 完成
 
 #### 1.1 计分系统
+
 **工期**: 1.5 天
 
 **实现内容**:
+
 - [ ] 掉落区域检测
   - 多个得分区域 (不同分值)
   - 边界检测优化
@@ -342,6 +386,7 @@ c2bb58f phase 2 3
   - 历史记录
 
 **技术要点**:
+
 - Server 端权威计算
 - 防作弊验证
 - 分数历史持久化
@@ -349,9 +394,11 @@ c2bb58f phase 2 3
 ---
 
 #### 1.2 余额系统
+
 **工期**: 1 天
 
 **实现内容**:
+
 - [ ] 虚拟货币管理
   - 余额扣减
   - 余额增加
@@ -366,6 +413,7 @@ c2bb58f phase 2 3
   - 余额变化动画
 
 **数据结构**:
+
 ```typescript
 interface UserBalance {
   userId: string;
@@ -377,7 +425,7 @@ interface UserBalance {
 
 interface Transaction {
   id: string;
-  type: 'debit' | 'credit';
+  type: "debit" | "credit";
   amount: number;
   reason: string;
   timestamp: number;
@@ -387,9 +435,11 @@ interface Transaction {
 ---
 
 #### 1.3 游戏会话管理
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] 回合系统
   - 回合开始/结束
   - 超时处理
@@ -402,14 +452,17 @@ interface Transaction {
 ---
 
 ### 选项 2: 视觉效果提升 ✨
+
 **优先级**: ⭐⭐⭐⭐ (用户体验)  
 **工期**: 2-3 天  
 **依赖**: PoC 完成
 
 #### 2.1 材质升级
+
 **工期**: 1 天
 
 **实现内容**:
+
 - [ ] PBR 材质系统
   - 金属度 (Metallic)
   - 粗糙度 (Roughness)
@@ -424,6 +477,7 @@ interface Transaction {
   - 玻璃墙壁
 
 **BabylonJS 配置**:
+
 ```typescript
 const pbr = new PBRMaterial("coinPBR", scene);
 pbr.metallic = 1.0;
@@ -434,9 +488,11 @@ pbr.reflectivityColor = new Color3(1, 0.84, 0);
 ---
 
 #### 2.2 光影效果
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] 实时阴影
   - Shadow generator
   - Shadow map 优化
@@ -451,9 +507,11 @@ pbr.reflectivityColor = new Color3(1, 0.84, 0);
 ---
 
 #### 2.3 粒子与特效
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] 硬币掉落特效
   - 轨迹拖尾
   - 落地粒子
@@ -466,9 +524,11 @@ pbr.reflectivityColor = new Color3(1, 0.84, 0);
 ---
 
 #### 2.4 背景装饰
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] 背景环境
   - Skybox
   - 环境贴图
@@ -481,14 +541,17 @@ pbr.reflectivityColor = new Color3(1, 0.84, 0);
 ---
 
 ### 选项 3: 架构升级 🏗️
+
 **优先级**: ⭐⭐⭐⭐ (长期价值)  
 **工期**: 4-5 天  
 **依赖**: PoC 完成
 
 #### 3.1 Redis 集成
+
 **工期**: 1.5 天
 
 **实现内容**:
+
 - [ ] Redis 连接管理
   - 连接池
   - 重连机制
@@ -503,6 +566,7 @@ pbr.reflectivityColor = new Color3(1, 0.84, 0);
   - 统计数据
 
 **架构变更**:
+
 ```
 Game Loop → Publish Events → Redis Streams
                                     ↓
@@ -514,9 +578,11 @@ Game Loop → Publish Events → Redis Streams
 ---
 
 #### 3.2 多房间系统
+
 **工期**: 2 天
 
 **实现内容**:
+
 - [ ] 房间管理器
   - 创建/销毁房间
   - 房间列表
@@ -531,13 +597,14 @@ Game Loop → Publish Events → Redis Streams
   - 资源管理
 
 **数据结构**:
+
 ```typescript
 interface Room {
   id: string;
   name: string;
   maxPlayers: number;
   currentPlayers: number;
-  status: 'waiting' | 'playing' | 'finished';
+  status: "waiting" | "playing" | "finished";
   createdAt: number;
   physicsWorld: PhysicsWorld;
   gameLoop: GameLoop;
@@ -547,9 +614,11 @@ interface Room {
 ---
 
 #### 3.3 断线重连
+
 **工期**: 1 天
 
 **实现内容**:
+
 - [ ] 连接状态管理
   - 心跳检测
   - 超时判断
@@ -566,9 +635,11 @@ interface Room {
 ---
 
 #### 3.4 游戏重放
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] 事件记录
   - 命令序列化
   - 时间戳记录
@@ -580,14 +651,17 @@ interface Room {
 ---
 
 ### 选项 4: 用户系统 👤
+
 **优先级**: ⭐⭐⭐⭐⭐ (上线必需)  
 **工期**: 3-4 天  
 **依赖**: PoC 完成
 
 #### 4.1 认证系统
+
 **工期**: 1.5 天
 
 **实现内容**:
+
 - [ ] JWT Token 系统
   - Access token (短期)
   - Refresh token (长期)
@@ -602,6 +676,7 @@ interface Room {
   - 多设备登录控制
 
 **数据库设计**:
+
 ```typescript
 interface User {
   id: string;
@@ -626,9 +701,11 @@ interface Session {
 ---
 
 #### 4.2 用户数据管理
+
 **工期**: 1 天
 
 **实现内容**:
+
 - [ ] 用户资料
   - 基本信息
   - 头像系统
@@ -646,9 +723,11 @@ interface Session {
 ---
 
 #### 4.3 安全强化
+
 **工期**: 1 天
 
 **实现内容**:
+
 - [ ] 更严格的速率限制
   - IP 级别限速
   - 用户级别限速
@@ -663,6 +742,7 @@ interface Session {
   - XSS 防护
 
 **技术栈**:
+
 - `express-rate-limit` - API 限速
 - `helmet` - 安全头
 - `joi` - 数据验证
@@ -670,14 +750,17 @@ interface Session {
 ---
 
 #### 4.4 数据库选择
+
 **工期**: 0.5 天
 
 **选项 A: PostgreSQL**
+
 - 关系型数据
 - ACID 保证
 - 复杂查询支持
 
 **选项 B: MongoDB**
+
 - 灵活 schema
 - 水平扩展
 - JSON 原生支持
@@ -687,14 +770,17 @@ interface Session {
 ---
 
 ### 选项 5: 性能优化 ⚡
+
 **优先级**: ⭐⭐⭐ (可选优化)  
 **工期**: 2-3 天  
 **依赖**: 基础功能完成
 
 #### 5.1 协议优化
+
 **工期**: 1 天
 
 **实现内容**:
+
 - [ ] 二进制协议
   - MessagePack 或 Protobuf
   - Schema 定义
@@ -707,15 +793,18 @@ interface Session {
   - Delta encoding
 
 **性能提升**:
+
 - 包大小: -40% ~ -60%
 - CPU: -20% ~ -30%
 
 ---
 
 #### 5.2 物理优化
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] Sleep 策略优化
   - 更快睡眠
   - 分层睡眠
@@ -729,9 +818,11 @@ interface Session {
 ---
 
 #### 5.3 渲染优化
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] LOD (Level of Detail)
   - 距离分级
   - 自动切换
@@ -745,9 +836,11 @@ interface Session {
 ---
 
 #### 5.4 监控系统
+
 **工期**: 0.5 天
 
 **实现内容**:
+
 - [ ] 性能指标
   - CPU 使用率
   - 内存使用
@@ -761,6 +854,7 @@ interface Session {
   - 实时通知
 
 **工具选择**:
+
 - `prom-client` - Prometheus metrics
 - `winston` - 日志
 - `sentry` - 错误追踪
@@ -770,24 +864,29 @@ interface Session {
 ## 📊 推荐开发路线
 
 ### 🥇 路线 A: 快速上线 (2-3 周)
+
 **目标**: MVP 产品上线
 
 **Week 1**:
+
 - Day 1-2: 用户系统 (认证 + 注册/登录)
 - Day 3-4: 计分系统 (掉落检测 + 分数计算)
 - Day 5: 余额系统 + 游戏会话
 
 **Week 2**:
+
 - Day 1-2: 视觉效果 (PBR 材质 + 光影)
 - Day 3: UI/UX 改进
 - Day 4-5: 集成测试 + Bug 修复
 
 **Week 3**:
+
 - Day 1-2: 性能优化
 - Day 3-4: 部署 + 监控
 - Day 5: 正式上线
 
 **优势**:
+
 - 快速验证市场
 - 早期用户反馈
 - 低开发成本
@@ -795,26 +894,32 @@ interface Session {
 ---
 
 ### 🥈 路线 B: 技术优先 (3-4 周)
+
 **目标**: 可扩展架构
 
 **Week 1**:
+
 - Day 1-2: Redis 集成
 - Day 3-5: 多房间系统
 
 **Week 2**:
+
 - Day 1-2: 用户系统
 - Day 3-4: 断线重连
 - Day 5: 游戏重放
 
 **Week 3**:
+
 - Day 1-2: 性能优化
 - Day 3-5: 监控系统
 
 **Week 4**:
+
 - Day 1-3: 计分 + 余额系统
 - Day 4-5: 测试 + 部署
 
 **优势**:
+
 - 架构扎实
 - 易于扩展
 - 长期维护成本低
@@ -822,22 +927,27 @@ interface Session {
 ---
 
 ### 🥉 路线 C: 体验优化 (2-3 周)
+
 **目标**: 极致用户体验
 
 **Week 1**:
+
 - Day 1-2: PBR 材质 + 光影
 - Day 3-4: 粒子特效 + 动画
 - Day 5: 背景装饰 + 音效
 
 **Week 2**:
+
 - Day 1-3: 计分系统 + UI 动效
 - Day 4-5: 游戏机制完善
 
 **Week 3**:
+
 - Day 1-2: 用户系统
 - Day 3-5: 测试 + 部署
 
 **优势**:
+
 - 用户体验好
 - 视觉吸引力强
 - 用户留存率高
@@ -847,12 +957,14 @@ interface Session {
 ## 🎯 里程碑规划
 
 ### Milestone 1: 基础游戏 (2 周)
+
 - ✅ PoC 完成
 - [ ] 用户系统
 - [ ] 计分系统
 - [ ] 基础 UI
 
 **验收标准**:
+
 - 用户可注册/登录
 - 可投币并获得分数
 - 分数正确计算并显示
@@ -860,11 +972,13 @@ interface Session {
 ---
 
 ### Milestone 2: 视觉升级 (1 周)
+
 - [ ] PBR 材质
 - [ ] 光影效果
 - [ ] UI 动画
 
 **验收标准**:
+
 - 画面质感提升
 - 动画流畅
 - 用户反馈良好
@@ -872,11 +986,13 @@ interface Session {
 ---
 
 ### Milestone 3: 架构优化 (2 周)
+
 - [ ] Redis 集成
 - [ ] 多房间
 - [ ] 性能优化
 
 **验收标准**:
+
 - 支持 100+ 同时在线
 - 延迟 < 100ms
 - 稳定运行 24h+
@@ -884,11 +1000,13 @@ interface Session {
 ---
 
 ### Milestone 4: 上线准备 (1 周)
+
 - [ ] 监控系统
 - [ ] 部署流程
 - [ ] 文档完善
 
 **验收标准**:
+
 - CI/CD 自动化
 - 监控告警正常
 - 文档齐全
@@ -898,17 +1016,21 @@ interface Session {
 ## 📝 技术债务追踪
 
 ### 当前已知问题
+
 1. **安全性**
+
    - [ ] 无用户认证
    - [ ] 简单的速率限制
    - [ ] 缺少输入验证
 
 2. **可靠性**
+
    - [ ] 无断线重连
    - [ ] 无状态持久化
    - [ ] 单点故障风险
 
 3. **性能**
+
    - [ ] JSON 协议开销大
    - [ ] 无协议压缩
    - [ ] 未优化物理引擎
@@ -923,6 +1045,7 @@ interface Session {
 ## 🛠️ 技术栈演进
 
 ### 当前技术栈 (PoC)
+
 ```
 Frontend:
 - React 18
@@ -942,6 +1065,7 @@ Infrastructure:
 ```
 
 ### 建议新增 (下阶段)
+
 ```
 Backend:
 - PostgreSQL (用户数据)
@@ -970,6 +1094,7 @@ Testing:
 ## 📚 参考资源
 
 ### 已实现功能文档
+
 - ✅ [README.md](./README.md) - 项目概览
 - ✅ [server/README.md](./server/README.md) - 服务器文档
 - ✅ [client/README.md](./client/README.md) - 客户端文档
@@ -977,6 +1102,7 @@ Testing:
 - ✅ [docs/Scene.md](./docs/Scene.md) - 场景规格
 
 ### 技术参考
+
 - [Rapier3D 文档](https://rapier.rs/docs/)
 - [BabylonJS 文档](https://doc.babylonjs.com/)
 - [WebSocket 协议](https://datatracker.ietf.org/doc/html/rfc6455)
@@ -987,13 +1113,16 @@ Testing:
 ## ✅ 验收清单模板
 
 ### 新功能验收标准
+
 ```markdown
 #### 功能名称: [XXX]
 
 **功能描述**:
-- 
+
+-
 
 **验收标准**:
+
 - [ ] 功能正常运行
 - [ ] 单元测试通过
 - [ ] 集成测试通过
@@ -1002,11 +1131,13 @@ Testing:
 - [ ] 性能符合要求
 
 **性能要求**:
+
 - 响应时间: < XXms
 - 吞吐量: > XXX req/s
 - 错误率: < 0.1%
 
 **测试场景**:
+
 1. 正常场景:
 2. 异常场景:
 3. 边界场景:
@@ -1022,5 +1153,4 @@ Testing:
 
 ---
 
-*此文档将持续更新，记录项目演进历程*
-
+_此文档将持续更新，记录项目演进历程_
