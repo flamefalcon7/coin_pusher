@@ -61,6 +61,7 @@ VITE_WS_URL=ws://localhost:3000
 ## 🎨 Scene Architecture
 
 ### Coordinate System
+
 - **Right-handed** (explicitly set)
 - **Y-up**: Vertical axis
 - **Z-forward**: Depth axis
@@ -68,6 +69,7 @@ VITE_WS_URL=ws://localhost:3000
 ### Components
 
 **Camera (ArcRotateCamera):**
+
 - Target: `(0, 0.3, 0)`
 - Alpha: `-π/2`
 - Beta: `π/3`
@@ -75,20 +77,24 @@ VITE_WS_URL=ws://localhost:3000
 - Smooth controls with inertia
 
 **Lighting:**
+
 - Hemispheric light
 - Intensity: 0.8
 - No real-time shadows (PoC)
 
 **Static Meshes:**
+
 - Platform: 1.2m × 0.05m × 0.8m (gray)
 - Walls: Left, Right, Back (blue-gray)
 - Drop zone: Semi-transparent indicator
 
 **Pusher:**
+
 - Blue rectangular plate
 - Position updated from server state
 
 **Coins:**
+
 - Gold cylinders (thin instances)
 - Efficient rendering for many coins
 - Position & rotation interpolated
@@ -96,21 +102,25 @@ VITE_WS_URL=ws://localhost:3000
 ## 🌐 Network Layer
 
 ### WebSocket Client
+
 - Connects to server on mount
 - Handles reconnection
 - Rate-limited ping (every 5s)
 
 ### Clock Synchronization
+
 - RTT measurement via ping/pong
 - Median of last 5 samples
 - Offset calculation: `(serverTime - clientTime) - RTT/2`
 
 ### State Buffer
+
 - Stores server state updates
 - Maintains ~3 seconds of history
 - Provides states for interpolation
 
 ### Interpolator
+
 - **Delay**: 100-120ms behind server
 - **Position**: Linear interpolation (lerp)
 - **Rotation**: Spherical linear interpolation (slerp)
@@ -132,16 +142,19 @@ Runs at **60fps**:
 ## 🖼️ UI Components
 
 ### HUD (Top Right)
+
 - FPS counter
 - Ping (RTT in ms)
 - Active coin count
 
 ### Connection Status (Top Left)
+
 - 🔄 Connecting... (yellow)
 - ✅ Connected (green)
 - ❌ Disconnected (red)
 
 ### Insert Coin Button (Bottom Center)
+
 - Disabled when disconnected
 - Generates random x position
 - Sends to server via WebSocket
@@ -158,6 +171,7 @@ Runs at **60fps**:
 ## 🎯 State Management
 
 React manages:
+
 - FPS counter
 - Connection status
 - Ping value
@@ -165,11 +179,13 @@ React manages:
 - Button state
 
 Scene manages:
+
 - 3D rendering
 - Mesh updates
 - Camera controls
 
 Network manages:
+
 - WebSocket connection
 - Clock synchronization
 - State interpolation
@@ -178,6 +194,7 @@ Network manages:
 ## 🧪 Testing
 
 ### Visual Testing
+
 1. Open browser dev tools (F12)
 2. Check console for connection logs
 3. Watch FPS counter (should be ≥30)
@@ -185,6 +202,7 @@ Network manages:
 5. Insert coins and verify smooth motion
 
 ### Multi-Tab Testing
+
 1. Open 2+ browser tabs
 2. Insert coin in tab A
 3. Verify coin appears in tab B
@@ -193,11 +211,13 @@ Network manages:
 ## 📦 Dependencies
 
 **Core:**
+
 - `react` - UI framework
 - `@babylonjs/core` - 3D rendering
 - `@coin-pusher/shared` - Shared types
 
 **Build:**
+
 - `vite` - Build tool & dev server
 - `typescript` - Type safety
 - `@vitejs/plugin-react` - React support
@@ -205,6 +225,7 @@ Network manages:
 ## 🐛 Debugging
 
 ### Console Logs
+
 ```javascript
 // Connection
 ✅ WebSocket connected
@@ -220,14 +241,16 @@ Network manages:
 ```
 
 ### Check WebSocket
+
 ```javascript
 // In browser console
-ws = new WebSocket('ws://localhost:3000');
-ws.onopen = () => console.log('Connected');
+ws = new WebSocket("ws://localhost:3000");
+ws.onopen = () => console.log("Connected");
 ws.onmessage = (e) => console.log(JSON.parse(e.data));
 ```
 
 ### Monitor Performance
+
 - Chrome DevTools > Performance tab
 - Check frame rate consistency
 - Monitor network traffic
@@ -236,6 +259,7 @@ ws.onmessage = (e) => console.log(JSON.parse(e.data));
 ## 🎨 Customization
 
 ### Change Materials
+
 ```typescript
 // In StaticMeshes.ts
 material.diffuseColor = new Color3(r, g, b);
@@ -243,13 +267,15 @@ material.specularColor = new Color3(r, g, b);
 ```
 
 ### Adjust Camera
+
 ```typescript
 // In CameraSetup.ts
-this.camera.lowerRadiusLimit = 1.5;  // Min zoom
-this.camera.upperRadiusLimit = 5;    // Max zoom
+this.camera.lowerRadiusLimit = 1.5; // Min zoom
+this.camera.upperRadiusLimit = 5; // Max zoom
 ```
 
 ### Modify Interpolation
+
 ```typescript
 // In App.tsx
 const updateInterval = setInterval(() => {
@@ -279,8 +305,8 @@ pnpm build
 ```
 
 **Environment Variables:**
+
 ```bash
 # Set in deployment platform
 VITE_WS_URL=wss://your-server.com
 ```
-
