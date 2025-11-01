@@ -44,7 +44,7 @@ importers:
       '@coin-pusher/shared':
         specifier: workspace:*
         version: link:../shared
-      '@dimforge/rapier3d':
+      '@dimforge/rapier3d-compat':
         specifier: ^0.11.2
         version: 0.11.2
       ws:
@@ -252,8 +252,8 @@ packages:
     resolution: {integrity: sha512-jU/JyqebRqqziNwHLcBYzANrVRd9S55yNZEjejwg2p4I8NRnoBBNgf4wuUVw17UKNHc1v3KD/Vnr5C2+dIWAqQ==}
     dev: false
 
-  /@dimforge/rapier3d@0.11.2:
-    resolution: {integrity: sha512-B+AKkPmtJxED3goMTGU8v0ju8hUAUQGLgghzCos4G4OeN9X+mJ5lfN2xtNA0n8tJRJk2YfsMk9BOj/6AN89Acg==}
+  /@dimforge/rapier3d-compat@0.11.2:
+    resolution: {integrity: sha512-vdWmlkpS3G8nGAzLuK7GYTpNdrkn/0NKCe0l1Jqxc7ZZOB3N0q9uG/Ap9l9bothWuAvxscIt0U97GVLr0lXWLg==}
     dev: false
 
   /@esbuild/aix-ppc64@0.21.5:

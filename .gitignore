@@ -36,3 +36,7 @@ npm-debug.log*
 coverage/
 *.lcov
 
+# Test files
+test-*.js
+test-*.html
+

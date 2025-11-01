@@ -1,6 +1,6 @@
-import RAPIER from '@dimforge/rapier3d';
-import type { PhysicsWorld } from './PhysicsWorld.js';
-import { PUSHER_CONFIG } from '@coin-pusher/shared';
+import * as RAPIER from "@dimforge/rapier3d-compat";
+import type { PhysicsWorld } from "./PhysicsWorld.js";
+import { PUSHER_CONFIG } from "@coin-pusher/shared";
 
 export class Pusher {
   private rigidBody: RAPIER.RigidBody;
@@ -12,8 +12,8 @@ export class Pusher {
     this.startTime = Date.now();
 
     // Create kinematic rigid body
-    const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased()
-      .setTranslation(0, 0.3, 0);
+    const bodyDesc =
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0.3, 0);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
 
@@ -24,14 +24,18 @@ export class Pusher {
 
     world.createCollider(colliderDesc, this.rigidBody);
 
-    console.log('🔨 Pusher created');
-    console.log(`   Amplitude: ${PUSHER_CONFIG.AMPLITUDE}m, Frequency: ${PUSHER_CONFIG.FREQUENCY}Hz`);
+    console.log("🔨 Pusher created");
+    console.log(
+      `   Amplitude: ${PUSHER_CONFIG.AMPLITUDE}m, Frequency: ${PUSHER_CONFIG.FREQUENCY}Hz`
+    );
   }
 
   update(): void {
     const elapsedTime = (Date.now() - this.startTime) / 1000; // seconds
-    const phase = 2 * Math.PI * PUSHER_CONFIG.FREQUENCY * elapsedTime + PUSHER_CONFIG.INITIAL_PHASE;
-    
+    const phase =
+      2 * Math.PI * PUSHER_CONFIG.FREQUENCY * elapsedTime +
+      PUSHER_CONFIG.INITIAL_PHASE;
+
     // Calculate new z position using sinusoidal motion
     this.currentZ = PUSHER_CONFIG.AMPLITUDE * Math.sin(phase);
 
@@ -51,4 +55,3 @@ export class Pusher {
     return this.rigidBody;
   }
 }
-
