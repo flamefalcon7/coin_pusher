@@ -1,0 +1,290 @@
+PRD.txt
+# PRD: Single-Room Multi-User Coin Pusher (PoC 版本, Rev B)
+
+Platform: Mobile Web  
+Frontend: TypeScript + ReactJS UI + BabylonJS (render) + Rapier (WASM physics)  
+Backend: TypeScript (Node.js) • Authoritative Server (單房) • WebSocket Push  
+
+目標：快速驗證「多人即時互動 + 伺服器權威物理模擬」可行性，降低開發成本，保留最必要的技術路徑。
+
+------------------------------------------------------------
+1) PoC 核心目標
+------------------------------------------------------------
+✅ 驗證 Rapier 在瀏覽器與 Node.js 雙端物理模擬表現  
+✅ 驗證 BabylonJS + Rapier 同步流程（右手座標 + 四元數）  
+✅ 實現「多人同房投幣」即時互動與同步視覺化  
+✅ 測試 WebSocket 穩定性與簡易同步插值效果  
+✅ 新連線世界快照（world_snapshot）與移除事件（despawn）  
+❌ 不追求完整遊戲體驗（得分、登入、重連等可暫略）
+
+------------------------------------------------------------
+2) 保留 / 移除項目
+------------------------------------------------------------
+| 類別 | 保留 | 移除 |
+|------|-------|-------|
+| 基礎架構 | ✅ 單房 authoritative server | ❌ Redis Stream event-driven (以 in-memory queue 代替) |
+| 渲染/物理 | ✅ BabylonJS + Rapier（右手座標, substeps=2） | ❌ PBR / mirror / 即時陰影 / LOD |
+| 同步邏輯 | ✅ 四元數流程（rotationQuaternion）<br>✅ 固定插值緩衝 (100–120ms 建議) | ❌ 動態自適應 buffer、丟包補償 |
+| 通訊 | ✅ WebSocket (JSON，ID=整數，數值量化至小數3位) | ❌ Redis / Kafka / MQ 模擬層 |
+| 遊戲機制 | ✅ 投幣 → 模擬 → 廣播結果 | ❌ 計分、排行榜、重連恢復、快照持久化 |
+| 測試/觀測 | ✅ Console log + FPS + 粗略封包統計 | ❌ OpenTelemetry / metrics |
+| 安全性 | ✅ 基本限速 (每秒 1 次投幣) + 伺服器側座標檢查 | ❌ JWT / Token 驗證 |
+| 持久化 | ❌ 全移除（狀態僅記憶體存在） | - |
+| UI/UX | ✅ React 投幣按鈕 + FPS 顯示 | ❌ 動畫特效、音效、發光效果 |
+
+------------------------------------------------------------
+3) 遊戲流程（PoC 簡化）
+------------------------------------------------------------
+1. 玩家打開頁面即加入唯一房間。  
+1.1 伺服器立即回傳 `world_snapshot`（現存剛體完整清單, 含推板）。  
+2. 點擊「Insert Coin」→ 傳送 `{ op: "coin_insert", x }` 給伺服器。  
+   - `x` 範圍：-0.5 ~ 0.5（公尺），表示投幣橫向位置
+3. 伺服器生成硬幣（高度固定，如 y=1.5m；自由落體階段啟用 CCD）→ Rapier 模擬 @30Hz，substeps=2 → 每 33ms 廣播狀態。  
+4. 推板以正弦運動沿 **z 軸** 往返（振幅 0.3m，頻率 0.5Hz），以「next kinematic translation」更新。  
+5. 所有玩家畫面同步看到硬幣掉落、推板運動（客端僅渲染，不本地模擬）。  
+6. 無計分、無重連；硬幣 `y < -0.1m` → 伺服器廣播 `despawn`，客端移除。  
+7. 重新整理即重置狀態。
+
+------------------------------------------------------------
+4) 技術要點（保留重點）
+------------------------------------------------------------
+A. 座標系統統一（右手系）  
+- Client：`scene.useRightHandedSystem = true`（明確設定）  
+- Rapier：預設右手 + Y-up  
+- 位置直接同步，旋轉只傳四元數  
+
+B. 統一四元數流程（必保留）  
+伺服器推播（位置/旋轉量化至小數3位；四元數每次 normalize）：
+{
+  "id": 1,
+  "pos": [0.1, 0.3, -0.2],
+  "rot": [0.000, 0.707, 0.000, 0.707]
+}
+客端設定：
+mesh.rotationQuaternion = new Quaternion(qx, qy, qz, qw);
+禁用 rotation.x/y/z，避免萬向節。
+
+C. 時鐘同步與插值緩衝（簡化保留）  
+- 伺服器在每條 state_delta 回傳 serverTime（ms）。  
+- 客端連線時發送 ping，伺服器回 pong + serverTime，計算 RTT。  
+- Offset 估算：取最近 5 次 RTT 的中位數，offset = (serverTime - clientTime) - RTT/2  
+- 固定延遲顯示 **100–120ms**：用邏輯時間 `t = now() + offset - delay` 在緩衝區插值。  
+- 插值策略：
+  - 位置：線性插值 `lerp(p1, p2, alpha)`（量化值）
+  - 旋轉：Quaternion.Slerp（量化值）
+- 不實作丟包偵測或動態 buffer。
+
+D. 推板運動（Kinematic）  
+- 伺服器每 tick 計算 z = A*sin(2π f t + phase0)；  
+- 以 **setNextKinematicTranslation**（或對應 API）更新推板位置；  
+- 下行廣播 **`pusherZ`**（或 phase），避免把推板當一般剛體塞進 bodies。
+
+E. 穩定性參數（Rapier）  
+- 伺服器 30Hz + **substeps=2** 或 solver iters：vel=8, pos=3；  
+- **CCD 只在自由落體階段開啟**，落盤且速度低於閾值後關閉；  
+- 啟用 sleep（睡眠門檻）降低長時間堆疊的求解壓力。
+
+------------------------------------------------------------
+5) 系統架構（PoC）
+------------------------------------------------------------
+[Client (React+Babylon)]
+        ⇅ WebSocket(JSON; ID=整數, 數值量化3位)
+[Node.js Server]
+  - 接收 coin_insert（in-memory queue）
+  - Rapier step() @30Hz（固定 deltaTime = 1/30, substeps=2）
+  - 推板：kinematic + next translation（沿 z 軸正弦）
+  - 每 tick 廣播：state_delta（bodies 更新 + pusherZ）
+  - onConnect：先送 world_snapshot
+
+------------------------------------------------------------
+6) 通訊契約（PoC, 量化版）
+------------------------------------------------------------
+上行：
+{ "op": "coin_insert", "x": 0.200 }
+
+下行（初次）：
+{
+  "op": "world_snapshot",
+  "protocolVersion": 1,
+  "serverTime": 1730345678000,
+  "tick": 12222,
+  "bodies": [
+    { "id": 0, "type": "pusher", "z": 0.150 },
+    { "id": 1, "type": "coin", "pos": [0.120,1.250,0.500], "rot": [0.000,0.707,0.000,0.707] }
+  ]
+}
+
+下行（delta；推板獨立欄位）：
+{
+  "op": "state_delta",
+  "serverTime": 1730345678150,
+  "tick": 12345,
+  "updates": [
+    { "id": 1, "pos": [0.130,1.220,0.490], "rot": [0.000,0.700,0.000,0.710] }
+  ],
+  "pusherZ": 0.148
+}
+
+下行（移除）：
+{ "op": "despawn", "tick": 12360, "ids": [17, 19] }
+
+心跳（ping/pong）：
+上行：{ "op": "ping", "clientTime": 1730345678100 }
+下行：{ "op": "pong", "serverTime": 1730345678150 }
+
+------------------------------------------------------------
+7) 數據結構（最小化）
+------------------------------------------------------------
+type BodyState = {
+  id: number; // 整數ID
+  type: "coin" | "pusher";
+  pos?: [number, number, number];         // coin 專用
+  rot?: [number, number, number, number]; // coin 專用
+  z?: number;                              // pusher 專用（沿 z）
+};
+
+type WorldState = {
+  protocolVersion: number;
+  tick: number;
+  serverTime: number;
+  bodies: BodyState[];  // 包含推板（type="pusher"）與所有硬幣
+};
+
+// 硬幣生成參數
+type CoinSpawnParams = {
+  x: number;        // 投幣位置 x（範圍：-0.5 ~ 0.5）
+  y?: number;       // 預設 1.5m
+  z?: number;       // 預設 0（推板前方）
+};
+
+------------------------------------------------------------
+8) 測試與驗證項目
+------------------------------------------------------------
+| 測試項目 | 驗收方式 |
+|-----------|-----------|
+| 右手座標一致性 | 推板、硬幣方向與 Rapier 模擬一致，無鏡像問題 |
+| 四元數旋轉同步 | 硬幣旋轉方向平滑，無跳躍、無萬向鎖抖動 |
+| 時鐘同步準確度 | 多客戶端時鐘 offset 差異 < 20ms |
+| 插值緩衝效果 | RTT ±50ms 時畫面穩定，無明顯延遲感 |
+| 多人同步精度 | 兩瀏覽器位置誤差 < 0.02m（肉眼觀察） |
+| 推板運動流暢度 | 正弦運動平滑，與硬幣碰撞自然 |
+| 效能表現 | 10+ 硬幣同時存在時，FPS ≥ 20（手機） |
+| 初次連線 | world_snapshot 到達並渲染 < 2s |
+| 封包吞吐量 | 平均每客端 < 30 KB/s（10 枚活躍硬幣） |
+| 穿透率 | 10 次自由落體測試中 0 次穿透（CCD on 階段） |
+| 睡眠機制 | 靜止堆疊 3 秒內活躍剛體數下降 ≥ 70% |
+
+------------------------------------------------------------
+9) 架構簡化圖
+------------------------------------------------------------
+[Client React+Babylon]
+   ↓ insert coin
+[WebSocket(JSON; quantized)]
+   ↓
+[Node.js Server]
+   - Rapier World (重力: {x:0, y:-9.81, z:0})
+   - step() @30Hz + substeps=2 + CCD(落體階段)
+   - 推板正弦運動（沿 z）：z = A * sin(2π f t)
+   - world_snapshot onConnect → broadcast state_delta/33ms（含 pusherZ）
+   ↑
+[Clients render interpolated positions/quaternions]
+
+------------------------------------------------------------
+10) 待辦與後續可能擴充
+------------------------------------------------------------
+| 模組 | 下一階段擴充方向 |
+|------|------------------|
+| Event Flow | 導入 Redis Streams event-driven |
+| Persistence | Redis 快照 / Replay |
+| Auth | JWT 登入 + 限速 |
+| Visual | 硬幣材質 / PBR / 陰影 |
+| Score | 掉落檢測 + RTP |
+| Protocol | 二進位/MessagePack |
+| Matchmaking | 多房架構 |
+
+------------------------------------------------------------
+11) PoC 成功條件
+------------------------------------------------------------
+- 多人同時投幣 → 畫面同步、旋轉正確  
+- 系統 2–3 秒內載入成功  
+- 平均 FPS ≥ 20（手機）  
+- RTT ±50ms 下畫面穩定  
+- 無記憶體洩漏（5 分鐘內 GC 穩定）
+- 世界快照一次對齊成功（無需重試）
+
+------------------------------------------------------------
+12) 專案結構（PoC 簡化）
+------------------------------------------------------------
+/coin-pusher/
+├─ client/              # React + Babylon
+│  ├─ src/
+│  │  ├─ ui/           # React 組件（投幣按鈕、HUD）
+│  │  ├─ scene/        # BabylonJS 場景管理
+│  │  ├─ net/          # WebSocket + 時鐘同步 + 插值
+│  │  └─ physics/      # Rapier 客戶端（僅視覺，不模擬）
+│  └─ package.json
+│
+├─ server/              # Node.js
+│  ├─ src/
+│  │  ├─ physics/      # Rapier 物理模擬 + tick loop + pusher kinematic
+│  │  ├─ ws/           # WebSocket server
+│  │  └─ game/         # 遊戲邏輯（投幣、回收）
+│  └─ package.json
+│
+└─ shared/              # 共用型別（TypeScript）
+   └─ types.ts          # BodyState, WorldState, 通訊契約, protocolVersion
+
+註：不使用 Monorepo 工具，先以符號連結或手動複製 shared 資料夾；也可用 npm link/pnpm -r。
+
+------------------------------------------------------------
+13) 非功能性需求（PoC 簡化）
+------------------------------------------------------------
+A. 一致性（必保留）⭐
+- 伺服器結果唯一真實；客戶端僅渲染，不接受本地模擬結果。
+
+B. 可測試性（簡化）⚠️
+- 核心邏輯可被測試（事件處理、時鐘同步、插值）。
+
+C. 可維護性（簡化）⚠️
+- 模組邊界清楚（client/scene/net, server/physics/game）。
+- 共用型別集中於 shared/（手動同步即可）。
+- protocolVersion 檢查以避免前後端不一致。
+
+D. 可觀測性（最簡化）❌
+- ✅ Console.log 輸出關鍵事件與錯誤 + 粗略封包大小。
+- ✅ FPS counter（客戶端）。
+
+------------------------------------------------------------
+14) 併發與公平性（PoC 簡化）
+------------------------------------------------------------
+A. 速率限制（簡化）⭐
+- ✅ Per-connection：每個 WebSocket 連線每秒最多 1 次投幣。
+- ✅ 伺服器側座標檢查：x ∈ [-0.5, 0.5]，越界丟棄。
+- ✅ 100ms 時間窗，同連線最多 1 次投幣（去抖）。
+- ❌ 移除 Token bucket/Per-IP。
+
+B. 服務保護（最簡化）❌
+- ✅ 投幣請求過多 → 丟棄並 console.warn。
+
+------------------------------------------------------------
+15) 預估工作量（PoC）
+------------------------------------------------------------
+| 項目 | 預估時間 |
+|-------|-----------|
+| Babylon + Rapier 整合 (右手系) | 1.5 天 |
+| WebSocket Server + Tick loop + 推板運動（kinematic） | 1.5 天 |
+| 時鐘同步 + 插值緩衝 + 四元數同步 | 2 天 |
+| React UI + HUD + 投幣輸入 | 1 天 |
+| 物理穩定性調參（solver/substeps/CCD） | 0.5–1 天 |
+| 測試與調整（多客戶端同步驗證） | 1 天 |
+| **合計** | **約 6.5–7.5 天** |
+
+------------------------------------------------------------
+16) MISC
+------------------------------------------------------------
+1. 任務切成 1–3 小時粒度並標註依賴。  
+2. 每個任務具備對應測試（單元 / 整合 / 視覺驗證）。  
+3. 最終可運行 PoC（投幣按鈕 + 實際場景渲染）。  
+4. 優先順序：MVP → 多人同步 → 插值與時鐘同步 → 測試與優化。  
+5. TypeScript 嚴格型別；/shared 放共用資料結構 + protocolVersion。  
+6. Before next step, ensure code compiles and commit first.
