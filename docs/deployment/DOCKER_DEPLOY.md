@@ -11,7 +11,7 @@
 ✅ **易于扩展** - 轻松横向扩展  
 ✅ **快速回滚** - 保留多个版本的镜像  
 ✅ **隔离性** - 不污染宿主机环境  
-✅ **资源控制** - 可限制 CPU/内存使用  
+✅ **资源控制** - 可限制 CPU/内存使用
 
 ### 架构
 
@@ -107,7 +107,7 @@ docker logs -f coin-pusher-server
 创建 `docker-compose.prod.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   server:
@@ -163,6 +163,7 @@ docker-compose up -d
 ```
 
 这会启动：
+
 - Server 容器（端口 3000）
 - Nginx 容器（端口 80, 443）
 
@@ -198,7 +199,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -333,8 +334,8 @@ Docker 日志会自动轮转（配置在 `docker-compose.yml` 中）：
 logging:
   driver: "json-file"
   options:
-    max-size: "10m"  # 单文件最大 10MB
-    max-file: "3"    # 保留 3 个文件
+    max-size: "10m" # 单文件最大 10MB
+    max-file: "3" # 保留 3 个文件
 ```
 
 ---
@@ -393,11 +394,13 @@ docker push username/coin-pusher-server:latest
 ### 多阶段构建（已实现）
 
 `Dockerfile` 使用多阶段构建：
+
 - Stage 1: 构建 shared
 - Stage 2: 构建 server
 - Stage 3: 生产镜像（仅包含运行时）
 
 优势：
+
 - 镜像体积小（~150MB vs ~500MB）
 - 不包含开发依赖
 - 构建层缓存优化
@@ -408,7 +411,13 @@ docker push username/coin-pusher-server:latest
 
 ```yaml
 healthcheck:
-  test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+  test:
+    [
+      "CMD",
+      "node",
+      "-e",
+      "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+    ]
   interval: 30s
   timeout: 3s
   retries: 3
@@ -419,8 +428,8 @@ healthcheck:
 
 ```typescript
 // server/src/index.ts
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
 });
 ```
 
@@ -434,10 +443,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 512M
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
 ```
 
@@ -510,16 +519,72 @@ docker service scale coin-pusher_server=5
 
 ## 📝 对比：Docker vs 传统部署
 
-| 特性 | Docker 部署 | 传统部署 |
-|------|-------------|----------|
-| **环境一致性** | ✅ 完全一致 | ⚠️ 可能不同 |
-| **部署时间** | ✅ 1-2 分钟 | ⚠️ 5-10 分钟 |
-| **依赖管理** | ✅ 容器内隔离 | ⚠️ 全局安装 |
-| **回滚速度** | ✅ 秒级 | ⚠️ 分钟级 |
-| **资源隔离** | ✅ 完全隔离 | ❌ 共享资源 |
-| **学习曲线** | ⚠️ 需要学 Docker | ✅ 熟悉的工具 |
-| **资源开销** | ⚠️ 稍高 (~50MB) | ✅ 最小 |
-| **调试难度** | ⚠️ 稍难 | ✅ 直接 |
+| 特性           | Docker 部署      | 传统部署      |
+| -------------- | ---------------- | ------------- |
+| **环境一致性** | ✅ 完全一致      | ⚠️ 可能不同   |
+| **部署时间**   | ✅ 1-2 分钟      | ⚠️ 5-10 分钟  |
+| **依赖管理**   | ✅ 容器内隔离    | ⚠️ 全局安装   |
+| **回滚速度**   | ✅ 秒级          | ⚠️ 分钟级     |
+| **资源隔离**   | ✅ 完全隔离      | ❌ 共享资源   |
+| **学习曲线**   | ⚠️ 需要学 Docker | ✅ 熟悉的工具 |
+| **资源开销**   | ⚠️ 稍高 (~50MB)  | ✅ 最小       |
+| **调试难度**   | ⚠️ 稍难          | ✅ 直接       |
+
+---
+
+## 📁 Docker Compose 配置文件选择
+
+### `docker-compose.yml` (推荐) ✅
+
+**使用场景**: 默认配置，99% 情况使用
+
+```
+架构:
+Cloudflare Pages (客户端) → VM:3000 (服务器容器)
+```
+
+**优点**:
+
+- ✅ 最简单，少一个组件（少一个故障点）
+- ✅ 延迟最低（直接连接，无代理层）
+- ✅ Cloudflare 已处理 SSL、CDN、DDoS 防护
+- ✅ 适合单服务器部署
+
+**部署命令**:
+
+```bash
+docker-compose up -d
+```
+
+**更新命令**:
+
+```bash
+git pull && docker-compose up -d --build
+```
+
+---
+
+### `docker-compose.full.yml` (不推荐) ⚠️
+
+**为什么不推荐**:
+
+- ❌ 多一层 Nginx 代理（增加延迟 +1-2ms）
+- ❌ 占用额外内存（~50MB Nginx 容器）
+- ❌ 增加复杂度（多一个组件需维护）
+- ❌ Cloudflare 已提供 Nginx 的大部分功能
+
+**未来可能需要使用的场景**:
+
+1. **多服务器负载均衡** - 需要 Nginx 分发流量到多个服务器实例
+2. **微服务架构** - 需要路由不同路径到不同服务 (`/game`, `/chat`, `/api`)
+3. **不想使用 Cloudflare Pages** - 需要在同一服务器部署客户端静态文件
+4. **更细粒度控制** - 需要 Nginx 级别的速率限制、日志、Header 操作
+
+**如果必须使用**:
+
+```bash
+docker-compose -f docker-compose.full.yml up -d
+```
 
 ---
 
@@ -532,31 +597,47 @@ Docker 单容器 + Cloudflare Pages
 成本: $12/月
 ```
 
+**配置文件**: `docker-compose.yml`
+
 **优点**:
+
 - 简单易管理
 - 快速部署
 - 环境一致
+- 最低延迟
 
 **部署命令**:
+
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 ```
 
 ### 中规模（100-500 用户）
 
 ```
-Docker Compose (Server + Nginx) + Cloudflare
-成本: $24/月
+Docker Compose (Server) + Cloudflare
+成本: $12/月
 ```
 
+**配置文件**: `docker-compose.yml` (仍然使用简化版)
+
 **优点**:
-- 完整的反向代理
-- SSL 终止
-- 静态文件缓存
+
+- 保持简单
+- Cloudflare 处理所有边缘功能
+- 易于扩展
 
 **部署命令**:
+
 ```bash
 docker-compose up -d
+```
+
+**如果未来需要负载均衡**:
+
+```bash
+# 升级到多服务器架构
+docker-compose -f docker-compose.full.yml up -d
 ```
 
 ### 大规模（500+ 用户）
@@ -567,6 +648,7 @@ Docker Swarm 或 Kubernetes
 ```
 
 **优点**:
+
 - 自动扩展
 - 高可用性
 - 负载均衡
@@ -575,11 +657,11 @@ Docker Swarm 或 Kubernetes
 
 ## 💰 成本对比
 
-| 方案 | 服务器 | 额外成本 | 总成本/月 |
-|------|--------|----------|-----------|
-| **Docker 单容器** | $12 (2GB) | $0 | **$12** |
-| **Docker + Nginx** | $12 (2GB) | $0 | **$12** |
-| **Docker Swarm (3节点)** | $36 (3×2GB) | $0 | **$36** |
+| 方案                      | 服务器      | 额外成本 | 总成本/月 |
+| ------------------------- | ----------- | -------- | --------- |
+| **Docker 单容器**         | $12 (2GB)   | $0       | **$12**   |
+| **Docker + Nginx**        | $12 (2GB)   | $0       | **$12**   |
+| **Docker Swarm (3 节点)** | $36 (3×2GB) | $0       | **$36**   |
 
 Docker 本身不增加成本，反而提高效率！
 
@@ -633,28 +715,33 @@ docker-compose up -d --build
 ## ✅ 部署检查清单
 
 ### Docker 环境
+
 - [ ] Docker Engine 安装
 - [ ] Docker Compose 安装
 - [ ] 用户加入 docker 组
 
 ### 代码准备
+
 - [ ] Git clone 完成
 - [ ] Dockerfile 存在
 - [ ] docker-compose.yml 配置正确
 - [ ] .dockerignore 配置
 
 ### 构建和运行
+
 - [ ] `docker build` 成功
 - [ ] `docker-compose up` 成功
 - [ ] 容器健康检查通过
 - [ ] 端口 3000 可访问
 
 ### 网络配置
+
 - [ ] Cloudflare DNS 配置
 - [ ] 防火墙规则设置
 - [ ] SSL 证书配置（如需要）
 
 ### 监控和日志
+
 - [ ] 日志轮转配置
 - [ ] 资源监控设置
 - [ ] 告警配置（可选）
@@ -666,11 +753,13 @@ docker-compose up -d --build
 ### Docker 部署的核心优势
 
 1. **一条命令部署**
+
    ```bash
    docker-compose up -d
    ```
 
 2. **一条命令更新**
+
    ```bash
    git pull && docker-compose up -d --build
    ```
@@ -682,11 +771,10 @@ docker-compose up -d --build
 
 ### 相比传统部署节省的时间
 
-| 任务 | 传统部署 | Docker 部署 | 节省 |
-|------|----------|-------------|------|
-| **初次部署** | 15-20 分钟 | 3-5 分钟 | **75%** |
-| **更新部署** | 5-10 分钟 | 1-2 分钟 | **80%** |
-| **回滚** | 10-15 分钟 | 30 秒 | **95%** |
+| 任务         | 传统部署   | Docker 部署 | 节省    |
+| ------------ | ---------- | ----------- | ------- |
+| **初次部署** | 15-20 分钟 | 3-5 分钟    | **75%** |
+| **更新部署** | 5-10 分钟  | 1-2 分钟    | **80%** |
+| **回滚**     | 10-15 分钟 | 30 秒       | **95%** |
 
 **推荐使用 Docker！** 🐳
-
