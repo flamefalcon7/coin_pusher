@@ -1,0 +1,32 @@
+# Development Dockerfile with hot reload
+FROM node:20-alpine
+
+# Install pnpm (use latest stable version)
+RUN npm install -g pnpm@9
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY shared/package.json ./shared/
+COPY server/package.json ./server/
+
+# Install all dependencies (including dev)
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY shared/src ./shared/src
+COPY server/src ./server/src
+COPY shared/tsconfig.json ./shared/
+COPY server/tsconfig.json ./server/
+
+# Build shared package
+RUN cd shared && pnpm build
+
+# Expose port
+EXPOSE 3000
+
+# Default command (can be overridden in docker-compose)
+CMD ["pnpm", "--filter", "@coin-pusher/server", "dev"]
+

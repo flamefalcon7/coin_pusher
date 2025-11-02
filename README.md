@@ -274,8 +274,15 @@ VITE_WS_URL=ws://localhost:3000
 
 See [Quick Deployment Guide](docs/deployment/QUICK_START.md) for 5-minute setup.
 
-### Full Documentation
+### Deployment Options
 
+**🐳 Docker (Recommended)** - Simplified deployment with one command
+- **[Docker Deployment Guide](docs/deployment/DOCKER_DEPLOY.md)** - Complete Docker/Docker Compose guide
+- One-command deploy, update, and rollback
+- Environment consistency guaranteed
+- Best for production environments
+
+**🔧 Traditional** - Manual server setup
 - **[Digital Ocean Deployment](docs/deployment/DIGITALOCEAN_DEPLOY.md)** - Complete step-by-step guide
 - **[CDN Configuration](docs/deployment/CDN_GUIDE.md)** - Cloudflare setup guide
 - **[Resource Requirements](docs/deployment/CLOUD_RESOURCES.md)** - Server sizing and cost analysis
