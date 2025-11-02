@@ -1,8 +1,13 @@
 # Dependencies
 node_modules/
-.pnpm-store/
+.pnp
+.pnp.js
 
-# Build outputs
+# Testing
+coverage/
+*.log
+
+# Production
 dist/
 build/
 *.tsbuildinfo
@@ -23,20 +28,20 @@ build/
 .DS_Store
 Thumbs.db
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-
 # Temporary files
-*.tmp
-.cache/
-
-# Coverage
-coverage/
-*.lcov
-
-# Test files
 test-*.js
 test-*.html
 
+# Deployment
+logs/
+*.backup
+*.pid
+
+# PM2
+.pm2/
+
+# pnpm
+.pnpm-store/
+
+# CSP
+.csp/

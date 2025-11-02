@@ -268,15 +268,35 @@ VITE_WS_URL=ws://localhost:3000
 - ❌ Single room only (no matchmaking)
 - ❌ Basic error handling
 
+## 🚀 Deployment
+
+### Quick Start
+
+See [Quick Deployment Guide](docs/deployment/QUICK_START.md) for 5-minute setup.
+
+### Full Documentation
+
+- **[Digital Ocean Deployment](docs/deployment/DIGITALOCEAN_DEPLOY.md)** - Complete step-by-step guide
+- **[CDN Configuration](docs/deployment/CDN_GUIDE.md)** - Cloudflare setup guide
+- **[Resource Requirements](docs/deployment/CLOUD_RESOURCES.md)** - Server sizing and cost analysis
+
+### CI/CD
+
+Automated deployment via GitHub Actions:
+- Push to `main` branch → Auto deploy to server
+- Client builds → Auto deploy to Cloudflare Pages
+
+See `.github/workflows/` for configuration.
+
 ## 📈 Future Enhancements
 
+- [x] Binary protocol (MessagePack) ✅
 - [ ] Redis for event streaming
 - [ ] JWT authentication
 - [ ] State persistence & replay
 - [ ] Multi-room architecture
 - [ ] Advanced physics materials
 - [ ] Score tracking & RTP calculation
-- [ ] Binary protocol (MessagePack)
 - [ ] Dynamic interpolation buffer
 - [ ] Packet loss compensation
 
