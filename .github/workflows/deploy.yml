@@ -1,0 +1,145 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # 允许手动触发
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: cd shared && pnpm build
+
+      - name: Build server
+        run: cd server && pnpm build
+
+      - name: Build client
+        run: cd client && pnpm build
+        env:
+          VITE_WS_URL: wss://api.example.com  # 替换为你的域名
+
+      - name: Run tests (if any)
+        run: echo "Tests would run here"
+        # 如果有测试，取消注释：
+        # run: pnpm test
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-files
+          path: |
+            server/dist
+            client/dist
+            shared/dist
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-files
+          path: .
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            set -e
+            
+            echo "🚀 Starting deployment..."
+            
+            # Navigate to app directory
+            cd /var/www/coin-pusher
+            
+            # Backup current version (optional)
+            if [ -d "dist" ]; then
+              cp -r server/dist server/dist.backup.$(date +%Y%m%d_%H%M%S) || true
+            fi
+            
+            # Stop PM2 (temporary, will restart later)
+            pm2 stop coin-pusher-server || true
+            
+            echo "✅ Deployment completed"
+          EOF
+
+      - name: Copy files to server
+        run: |
+          scp -r server/dist/* ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/var/www/coin-pusher/server/dist/
+          scp -r client/dist/* ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/var/www/coin-pusher/client/dist/
+          scp -r shared/dist/* ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/var/www/coin-pusher/shared/dist/
+          scp package.json pnpm-lock.yaml pnpm-workspace.yaml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/var/www/coin-pusher/
+
+      - name: Install dependencies and restart
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            set -e
+            
+            cd /var/www/coin-pusher
+            
+            echo "📦 Installing dependencies..."
+            pnpm install --frozen-lockfile --prod=false
+            
+            echo "🔄 Restarting PM2..."
+            pm2 restart coin-pusher-server || pm2 start ecosystem.config.js
+            
+            echo "💾 Saving PM2 configuration..."
+            pm2 save
+            
+            echo "📊 PM2 Status:"
+            pm2 status
+            
+            echo "✅ Deployment successful!"
+          EOF
+
+      - name: Verify deployment
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            sleep 5
+            if pm2 status | grep -q "online"; then
+              echo "✅ Server is running"
+            else
+              echo "❌ Server failed to start"
+              pm2 logs --lines 50
+              exit 1
+            fi
+          EOF
+
