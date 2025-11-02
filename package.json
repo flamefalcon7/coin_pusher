@@ -10,6 +10,6 @@
   },
   "keywords": ["coin-pusher", "babylonjs", "rapier", "websocket"],
   "license": "MIT",
-  "packageManager": "pnpm@8.0.0"
+  "packageManager": "pnpm@9.12.3"
 }
 
