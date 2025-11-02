@@ -6,9 +6,33 @@ import * as msgpack from "@msgpack/msgpack";
 export class Connection {
   private ws: WebSocket;
   private lastCoinInsertTime: number = 0;
+  private lastActivityTime: number;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
+    this.lastActivityTime = Date.now();
+  }
+
+  /**
+   * Update the last activity timestamp
+   * Called when receiving any message from client (ping, coin_insert, etc.)
+   */
+  updateActivity(): void {
+    this.lastActivityTime = Date.now();
+  }
+
+  /**
+   * Get the last activity timestamp
+   */
+  getLastActivityTime(): number {
+    return this.lastActivityTime;
+  }
+
+  /**
+   * Check if connection is idle (no activity for specified timeout)
+   */
+  isIdle(timeoutMs: number): boolean {
+    return Date.now() - this.lastActivityTime >= timeoutMs;
   }
 
   send(message: ServerMessage): void {

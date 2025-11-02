@@ -128,6 +128,8 @@ export const NETWORK_CONFIG = {
   INTERPOLATION_DELAY: 110, // ms (100-120ms recommended)
   PING_INTERVAL: 5000, // ms
   RTT_SAMPLES: 5, // Number of RTT samples for median calculation
+  CONNECTION_IDLE_TIMEOUT: 300000, // 5 minutes (300000 ms) - disconnect idle connections
+  CONNECTION_CHECK_INTERVAL: 30000, // 30 seconds - check for idle connections
 } as const;
 
 // Rate limiting

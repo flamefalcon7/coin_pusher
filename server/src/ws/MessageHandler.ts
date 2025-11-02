@@ -66,6 +66,8 @@ export class MessageHandler {
   }
 
   private handlePing(connection: Connection, _message: PingMessage): void {
+    // Ping is considered activity, but updateActivity is already called
+    // in WebSocketServer.onmessage before handleMessage
     const serverTime = Date.now();
     connection.send({
       op: "pong",
