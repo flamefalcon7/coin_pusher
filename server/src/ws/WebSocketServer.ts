@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import { Connection } from "./Connection.js";
 import { MessageHandler, type MessageHandlers } from "./MessageHandler.js";
 import type { ServerMessage, ClientMessage } from "@coin-pusher/shared";
+import { NETWORK_CONFIG } from "@coin-pusher/shared";
 import * as msgpack from "@msgpack/msgpack";
 
 export class WebSocketServer {
@@ -10,6 +11,7 @@ export class WebSocketServer {
   private connections: Set<Connection> = new Set();
   private messageHandler: MessageHandler;
   private newConnectionCallback?: (connection: Connection) => void;
+  private idleCheckInterval?: NodeJS.Timeout;
 
   constructor(port: number) {
     this.wss = new WSServer({ port });
@@ -30,6 +32,9 @@ export class WebSocketServer {
       this.handleConnection(ws);
     });
 
+    // Start idle connection cleanup
+    this.startIdleConnectionCleanup();
+
     console.log(`📡 WebSocket server listening on port ${port}`);
   }
 
@@ -45,6 +50,9 @@ export class WebSocketServer {
     }
 
     ws.on("message", (data: Buffer) => {
+      // Update connection activity timestamp on any message
+      connection.updateActivity();
+
       // Decode MessagePack binary data from client
       try {
         const message = msgpack.decode(data) as ClientMessage;
@@ -93,8 +101,66 @@ export class WebSocketServer {
     return this.connections;
   }
 
+  /**
+   * Start periodic cleanup of idle connections
+   */
+  private startIdleConnectionCleanup(): void {
+    this.idleCheckInterval = setInterval(() => {
+      this.cleanupIdleConnections();
+    }, NETWORK_CONFIG.CONNECTION_CHECK_INTERVAL);
+
+    console.log(
+      `🔄 Idle connection cleanup started (check every ${NETWORK_CONFIG.CONNECTION_CHECK_INTERVAL / 1000}s, timeout: ${NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT / 1000}s)`
+    );
+  }
+
+  /**
+   * Check and disconnect idle connections
+   */
+  private cleanupIdleConnections(): void {
+    const now = Date.now();
+    const idleConnections: Connection[] = [];
+
+    this.connections.forEach((connection) => {
+      if (connection.isIdle(NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT)) {
+        idleConnections.push(connection);
+      }
+    });
+
+    if (idleConnections.length > 0) {
+      console.log(
+        `⏰ Disconnecting ${idleConnections.length} idle connection(s) (no activity for ${NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT / 1000}s)`
+      );
+
+      idleConnections.forEach((connection) => {
+        const idleDuration = now - connection.getLastActivityTime();
+        console.log(
+          `   💤 Connection idle for ${Math.round(idleDuration / 1000)}s, closing...`
+        );
+
+        // Remove from connections set
+        this.connections.delete(connection);
+
+        // Close the WebSocket
+        if (connection.isOpen()) {
+          connection.close();
+        }
+      });
+
+      console.log(
+        `   ✅ Cleanup complete (remaining connections: ${this.connections.size})`
+      );
+    }
+  }
+
   close(): void {
     console.log("Closing WebSocket server...");
+
+    // Stop idle connection cleanup
+    if (this.idleCheckInterval) {
+      clearInterval(this.idleCheckInterval);
+    }
+
     this.connections.forEach((connection) => connection.close());
     this.wss.close();
   }
