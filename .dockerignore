@@ -1,0 +1,64 @@
+# Node modules
+node_modules/
+**/node_modules/
+
+# Build artifacts
+dist/
+**/dist/
+build/
+
+# Development files
+.git/
+.gitignore
+.github/
+*.md
+README.md
+ROADMAP.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test-*.js
+test-*.html
+benchmark-*.js
+
+# Temporary
+*.tmp
+*.temp
+.cache/
+
+# Deployment
+deploy.sh
+ecosystem.config.js
+
+# pnpm
+.pnpm-store/
+
+# Client (not needed for server image)
+client/node_modules/
+client/dist/
+
+# Documentation
+docs/
+
+# Config examples
+*.example
+

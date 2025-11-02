@@ -1,0 +1,44 @@
+# Development docker-compose with hot reload
+version: '3.8'
+
+services:
+  # Development Server with hot reload
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: coin-pusher-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+    volumes:
+      # Mount source code for hot reload
+      - ./server/src:/app/server/src:ro
+      - ./shared/src:/app/shared/src:ro
+    networks:
+      - coin-pusher-network
+    command: pnpm --filter @coin-pusher/server dev
+
+  # Client Dev Server (Vite)
+  client:
+    image: node:20-alpine
+    container_name: coin-pusher-client-dev
+    working_dir: /app
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_WS_URL=ws://localhost:3000
+    volumes:
+      - ./:/app
+    networks:
+      - coin-pusher-network
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm --filter @coin-pusher/client dev --host"
+
+networks:
+  coin-pusher-network:
+    driver: bridge
+
