@@ -102,84 +102,47 @@ docker run -d \
 docker logs -f coin-pusher-server
 ```
 
-#### 3. 使用 Docker Compose（更简单）
+#### 3. 使用 Docker Compose（推荐，更简单）
 
-创建 `docker-compose.prod.yml`:
-
-```yaml
-version: "3.8"
-
-services:
-  server:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: coin-pusher-server
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
-
-启动：
+项目已包含 `docker-compose.yml`，直接使用：
 
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 ```
+
+此配置文件仅包含服务器容器，适用于与 Cloudflare Pages 配合使用。
 
 ---
 
-### 方案 B: 完整部署（服务器 + Nginx）
+### 方案 B: 完整部署（服务器 + Nginx）⚠️ 不推荐
+
+**注意**: 此方案仅在特殊需求时使用（见[配置文件选择](#-docker-compose-配置文件选择)）。推荐使用方案 A + Cloudflare Pages。
 
 包含 Nginx 反向代理和静态文件服务。
 
-#### 1. 准备 Nginx 配置
-
-使用项目中的 `nginx.conf`（已提供）。
-
-#### 2. 构建客户端
+#### 1. 构建客户端
 
 ```bash
 # 在本地或 CI/CD 中构建
 cd client
 pnpm install
 pnpm build
-
-# 将 dist 目录上传到服务器
-scp -r dist/ user@server:/var/www/coin_pusher/client/
 ```
 
-#### 3. 启动完整栈
+#### 2. 启动完整栈
+
+使用 `docker-compose.full.yml`：
 
 ```bash
-docker-compose up -d
+docker-compose -f docker-compose.full.yml up -d
 ```
 
 这会启动：
 
-- Server 容器（端口 3000）
-- Nginx 容器（端口 80, 443）
+- Server 容器（端口 3000，内部）
+- Nginx 容器（端口 80, 443，暴露给外部）
 
-#### 4. 配置 SSL（Let's Encrypt）
-
-```bash
-# 安装 certbot
-sudo apt install certbot
-
-# 获取证书
-sudo certbot certonly --standalone -d api.yourdomain.com
-
-# 证书路径：/etc/letsencrypt/live/api.yourdomain.com/
-
-# 更新 docker-compose.yml 以挂载证书
-```
+Nginx 配置文件使用项目中的 `nginx-docker.conf`。
 
 ---
 
