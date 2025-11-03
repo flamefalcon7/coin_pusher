@@ -1,11 +1,16 @@
-import type { PhysicsWorld } from '../physics/PhysicsWorld.js';
-import type { Pusher } from '../physics/Pusher.js';
-import type { Coin } from '../physics/Coin.js';
-import type { GameState } from './GameState.js';
-import type { CoinManager } from './CoinManager.js';
-import type { WebSocketServer } from '../ws/WebSocketServer.js';
-import type { StateDeltaMessage, DespawnMessage, StateUpdate } from '@coin-pusher/shared';
-import { PHYSICS_CONFIG } from '@coin-pusher/shared';
+import type { PhysicsWorld } from "../physics/PhysicsWorld.js";
+import type { Pusher } from "../physics/Pusher.js";
+import type { Coin } from "../physics/Coin.js";
+import type { GameState } from "./GameState.js";
+import type { CoinManager } from "./CoinManager.js";
+import type { WebSocketServer } from "../ws/WebSocketServer.js";
+import type {
+  StateDeltaMessage,
+  DespawnMessage,
+  StateUpdate,
+} from "@coin-pusher/shared";
+import { PHYSICS_CONFIG } from "@coin-pusher/shared";
+import * as msgpack from "@msgpack/msgpack";
 
 export class GameLoop {
   private physicsWorld: PhysicsWorld;
@@ -16,6 +21,9 @@ export class GameLoop {
   private coins: Map<number, Coin> = new Map();
   private running: boolean = false;
   private intervalId?: NodeJS.Timeout;
+  private statsIntervalId?: NodeJS.Timeout;
+  private tickCount: number = 0;
+  private totalMessageBytes: number = 0;
 
   constructor(
     physicsWorld: PhysicsWorld,
@@ -41,6 +49,11 @@ export class GameLoop {
     this.intervalId = setInterval(() => {
       this.tick();
     }, PHYSICS_CONFIG.TICK_INTERVAL);
+
+    // Start periodic stats logging (every 10 seconds)
+    this.statsIntervalId = setInterval(() => {
+      this.logStats();
+    }, 10000);
   }
 
   stop(): void {
@@ -50,7 +63,10 @@ export class GameLoop {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
-    console.log('🛑 Game loop stopped');
+    if (this.statsIntervalId) {
+      clearInterval(this.statsIntervalId);
+    }
+    console.log("🛑 Game loop stopped");
   }
 
   private tick(): void {
@@ -58,7 +74,7 @@ export class GameLoop {
     this.pusher.update();
 
     // 2. Update coins (CCD check)
-    this.coins.forEach(coin => coin.update());
+    this.coins.forEach((coin) => coin.update());
 
     // 3. Step physics simulation
     this.physicsWorld.step();
@@ -77,7 +93,11 @@ export class GameLoop {
       const rot = coin.getRotation();
 
       // Update game state
-      this.coinManager.updateCoin(id, [pos.x, pos.y, pos.z], [rot.x, rot.y, rot.z, rot.w]);
+      this.coinManager.updateCoin(
+        id,
+        [pos.x, pos.y, pos.z],
+        [rot.x, rot.y, rot.z, rot.w]
+      );
 
       // Add to updates
       updates.push({
@@ -93,13 +113,13 @@ export class GameLoop {
 
     // 5. Handle despawns
     if (despawnIds.length > 0) {
-      despawnIds.forEach(id => {
+      despawnIds.forEach((id) => {
         this.coins.delete(id);
         this.coinManager.removeCoin(id);
       });
 
       const despawnMessage: DespawnMessage = {
-        op: 'despawn',
+        op: "despawn",
         tick: this.gameState.getTick(),
         ids: despawnIds,
       };
@@ -113,17 +133,50 @@ export class GameLoop {
 
     // 7. Broadcast state delta
     const stateDelta: StateDeltaMessage = {
-      op: 'state_delta',
+      op: "state_delta",
       serverTime: Date.now(),
       tick: this.gameState.getTick(),
       updates,
       pusherZ,
     };
 
+    // Track message size for stats
+    const messageBytes = msgpack.encode(stateDelta).length;
+    this.totalMessageBytes += messageBytes;
+    this.tickCount++;
+
     this.wsServer.broadcast(stateDelta);
 
     // 8. Increment tick
     this.gameState.incrementTick();
+  }
+
+  private logStats(): void {
+    const connections = this.wsServer.getConnections().size;
+    const coinCount = this.coins.size;
+    const avgMessageBytes =
+      this.tickCount > 0
+        ? Math.round(this.totalMessageBytes / this.tickCount)
+        : 0;
+    const estimatedBandwidthPerUser = (
+      (avgMessageBytes * PHYSICS_CONFIG.TICK_RATE) /
+      1024
+    ).toFixed(2);
+    const estimatedTotalOutbound = (
+      (avgMessageBytes * PHYSICS_CONFIG.TICK_RATE * connections) /
+      1024
+    ).toFixed(2);
+
+    console.log(
+      `📊 Stats: ${coinCount} coins, ${connections} connections, ` +
+        `avg msg: ${avgMessageBytes}B, ` +
+        `bandwidth/user: ${estimatedBandwidthPerUser} KB/s, ` +
+        `total outbound: ~${estimatedTotalOutbound} KB/s`
+    );
+
+    // Reset counters
+    this.tickCount = 0;
+    this.totalMessageBytes = 0;
   }
 
   addCoin(coin: Coin): void {
@@ -135,7 +188,12 @@ export class GameLoop {
     return Math.round(value * factor) / factor;
   }
 
-  private normalizeAndQuantizeQuaternion(q: { x: number; y: number; z: number; w: number }): [number, number, number, number] {
+  private normalizeAndQuantizeQuaternion(q: {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+  }): [number, number, number, number] {
     // Normalize
     const len = Math.sqrt(q.x ** 2 + q.y ** 2 + q.z ** 2 + q.w ** 2);
     const qx = q.x / len;
@@ -152,4 +210,3 @@ export class GameLoop {
     ];
   }
 }
-
