@@ -1,4 +1,4 @@
-import type { StateUpdate } from '@coin-pusher/shared';
+import type { StateUpdate } from "@coin-pusher/shared";
 
 export interface BufferedState {
   serverTime: number;
@@ -29,7 +29,7 @@ export class StateBuffer {
 
     for (let i = 0; i < this.buffer.length; i++) {
       const state = this.buffer[i];
-      
+
       if (state.serverTime <= targetTime) {
         before = state;
       } else {
@@ -56,7 +56,9 @@ export class StateBuffer {
     return null;
   }
 
-  getStatesForInterpolation(targetTime: number): { before: BufferedState; after: BufferedState } | null {
+  getStatesForInterpolation(
+    targetTime: number
+  ): { before: BufferedState; after: BufferedState } | null {
     if (this.buffer.length < 2) return null;
 
     let before: BufferedState | null = null;
@@ -64,7 +66,7 @@ export class StateBuffer {
 
     for (let i = 0; i < this.buffer.length; i++) {
       const state = this.buffer[i];
-      
+
       if (state.serverTime <= targetTime) {
         before = state;
       } else {
@@ -97,5 +99,15 @@ export class StateBuffer {
     if (this.buffer.length === 0) return 0;
     return this.buffer[this.buffer.length - 1].serverTime;
   }
-}
 
+  getNewestState(): BufferedState | null {
+    if (this.buffer.length === 0) return null;
+    return this.buffer[this.buffer.length - 1];
+  }
+
+  getPreviousState(currentState: BufferedState): BufferedState | null {
+    const currentIndex = this.buffer.indexOf(currentState);
+    if (currentIndex <= 0) return null;
+    return this.buffer[currentIndex - 1];
+  }
+}

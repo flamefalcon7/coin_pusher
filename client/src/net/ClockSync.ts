@@ -1,4 +1,4 @@
-import { NETWORK_CONFIG } from '@coin-pusher/shared';
+import { NETWORK_CONFIG } from "@coin-pusher/shared";
 
 interface RTTSample {
   clientTime: number;
@@ -50,9 +50,7 @@ export class ClockSync {
     if (this.samples.length === 0) return;
 
     // Get median RTT to filter out outliers
-    const sortedRTTs = this.samples
-      .map((s) => s.rtt)
-      .sort((a, b) => a - b);
+    const sortedRTTs = this.samples.map((s) => s.rtt).sort((a, b) => a - b);
 
     const medianRTT = sortedRTTs[Math.floor(sortedRTTs.length / 2)];
 
@@ -83,7 +81,11 @@ export class ClockSync {
 
   getRTT(): number {
     if (this.samples.length === 0) return 0;
-    return this.samples[this.samples.length - 1].rtt;
+
+    // Use median RTT for more stable values (less affected by outliers)
+    const sortedRTTs = this.samples.map((s) => s.rtt).sort((a, b) => a - b);
+
+    const medianIndex = Math.floor(sortedRTTs.length / 2);
+    return sortedRTTs[medianIndex];
   }
 }
-
