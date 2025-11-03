@@ -73,4 +73,15 @@ export class Coin {
     const pos = this.getPosition();
     return pos.y < COIN_CONFIG.DESPAWN_Y;
   }
+
+  destroy(physicsWorld: PhysicsWorld): void {
+    const world = physicsWorld.getWorld();
+
+    // Remove the rigid body from the world
+    // This automatically removes all attached colliders as well
+    world.removeRigidBody(this.rigidBody);
+
+    // Clear reference to prevent accidental reuse
+    this.rigidBody = null as any;
+  }
 }
