@@ -1,22 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
-import './App.css';
-import { HUD } from './ui/HUD';
-import { CoinInsertButton } from './ui/CoinInsertButton';
-import { ConnectionStatus } from './ui/ConnectionStatus';
-import { SceneManager } from './scene/SceneManager';
-import { GameClient } from './net/GameClient';
+import { useEffect, useRef, useState } from "react";
+import "./App.css";
+import { HUD } from "./ui/HUD";
+import { CoinInsertButton } from "./ui/CoinInsertButton";
+import { ConnectionStatus } from "./ui/ConnectionStatus";
+import { SceneManager } from "./scene/SceneManager";
+import { GameClient } from "./net/GameClient";
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3000";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gameClientRef = useRef<GameClient | null>(null);
-  
+
   const [fps, setFps] = useState(0);
   const [ping, setPing] = useState(0);
   const [activeCoinCount, setActiveCoinCount] = useState(0);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connecting" | "connected" | "disconnected"
+  >("disconnected");
   const [buttonDisabled, setButtonDisabled] = useState(false);
 
   useEffect(() => {
@@ -54,49 +56,66 @@ function App() {
     // Track known coin IDs
     const knownCoins = new Set<number>();
 
-    // Update loop (runs at render rate)
-    const updateInterval = setInterval(() => {
-      // Update game client (check for pings, etc.)
+    // Update loop using requestAnimationFrame for smooth rendering
+    let animationFrameId: number;
+    let lastUpdateTime = 0;
+    const targetFPS = 60;
+    const targetFrameTime = 1000 / targetFPS;
+
+    const updateLoop = (currentTime: number) => {
+      // Update game client (check for pings, etc.) - do this every frame
       gameClient.update();
 
-      // Get interpolated state
-      const state = gameClient.getInterpolatedState();
-      if (!state) return;
+      // Throttle game state updates to target FPS
+      const deltaTime = currentTime - lastUpdateTime;
+      if (deltaTime >= targetFrameTime) {
+        lastUpdateTime = currentTime - (deltaTime % targetFrameTime);
 
-      // Update pusher position
-      sceneManager.updatePusherPosition(state.pusherZ);
+        // Get interpolated state
+        const state = gameClient.getInterpolatedState();
+        if (state) {
+          // Update pusher position
+          sceneManager.updatePusherPosition(state.pusherZ);
 
-      // Update coins
-      const currentCoinIds = new Set<number>();
-      
-      for (const coin of state.coins) {
-        currentCoinIds.add(coin.id);
-        
-        if (!knownCoins.has(coin.id)) {
-          // New coin
-          sceneManager.addCoin(coin.id, coin.pos, coin.rot);
-          knownCoins.add(coin.id);
-        } else {
-          // Update existing coin
-          sceneManager.updateCoin(coin.id, coin.pos, coin.rot);
+          // Update coins
+          const currentCoinIds = new Set<number>();
+
+          for (const coin of state.coins) {
+            currentCoinIds.add(coin.id);
+
+            if (!knownCoins.has(coin.id)) {
+              // New coin
+              sceneManager.addCoin(coin.id, coin.pos, coin.rot);
+              knownCoins.add(coin.id);
+            } else {
+              // Update existing coin
+              sceneManager.updateCoin(coin.id, coin.pos, coin.rot);
+            }
+          }
+
+          // Remove despawned coins
+          for (const id of knownCoins) {
+            if (!currentCoinIds.has(id)) {
+              sceneManager.removeCoin(id);
+              knownCoins.delete(id);
+            }
+          }
+
+          // Update coin count
+          setActiveCoinCount(knownCoins.size);
         }
       }
 
-      // Remove despawned coins
-      for (const id of knownCoins) {
-        if (!currentCoinIds.has(id)) {
-          sceneManager.removeCoin(id);
-          knownCoins.delete(id);
-        }
-      }
+      // Continue animation loop
+      animationFrameId = requestAnimationFrame(updateLoop);
+    };
 
-      // Update coin count
-      setActiveCoinCount(knownCoins.size);
-    }, 16); // ~60fps update rate
+    // Start the animation loop
+    animationFrameId = requestAnimationFrame(updateLoop);
 
     // Cleanup on unmount
     return () => {
-      clearInterval(updateInterval);
+      cancelAnimationFrame(animationFrameId);
       gameClient.disconnect();
       sceneManager.dispose();
     };
@@ -104,16 +123,16 @@ function App() {
 
   const handleInsertCoin = () => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
-      console.warn('Not connected to server');
+      console.warn("Not connected to server");
       return;
     }
 
     // Generate random x position
     const x = parseFloat(((Math.random() - 0.5) * 0.8).toFixed(3));
-    
+
     // Send to server
     gameClientRef.current.insertCoin(x);
-    
+
     // Visual feedback
     setButtonDisabled(true);
     setTimeout(() => setButtonDisabled(false), 100);
@@ -126,10 +145,12 @@ function App() {
       <div id="canvas-container">
         <canvas ref={canvasRef} id="babylon-canvas" />
       </div>
-      <CoinInsertButton onClick={handleInsertCoin} disabled={buttonDisabled || connectionStatus !== 'connected'} />
+      <CoinInsertButton
+        onClick={handleInsertCoin}
+        disabled={buttonDisabled || connectionStatus !== "connected"}
+      />
     </div>
   );
 }
 
 export default App;
-

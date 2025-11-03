@@ -125,7 +125,11 @@ export const COIN_CONFIG = {
 
 // Network/Interpolation configuration
 export const NETWORK_CONFIG = {
-  INTERPOLATION_DELAY: 110, // ms (100-120ms recommended)
+  INTERPOLATION_DELAY_BASE: 110, // ms (base delay, will be scaled by RTT)
+  INTERPOLATION_DELAY_MULTIPLIER: 1.5, // Multiply RTT by this for delay (min 1.0, handles high latency)
+  INTERPOLATION_DELAY_MIN: 100, // ms (minimum delay)
+  INTERPOLATION_DELAY_MAX: 500, // ms (maximum delay)
+  EXTRAPOLATION_MAX_TIME: 150, // ms (max time to extrapolate into the future)
   PING_INTERVAL: 5000, // ms
   RTT_SAMPLES: 5, // Number of RTT samples for median calculation
   CONNECTION_IDLE_TIMEOUT: 300000, // 5 minutes (300000 ms) - disconnect idle connections

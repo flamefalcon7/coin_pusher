@@ -1,6 +1,6 @@
-import { NETWORK_CONFIG } from '@coin-pusher/shared';
-import { StateBuffer } from './StateBuffer';
-import { ClockSync } from './ClockSync';
+import { NETWORK_CONFIG } from "@coin-pusher/shared";
+import { StateBuffer } from "./StateBuffer";
+import { ClockSync } from "./ClockSync";
 
 export interface InterpolatedCoin {
   id: number;
@@ -16,54 +16,57 @@ export interface InterpolatedState {
 export class Interpolator {
   private stateBuffer: StateBuffer;
   private clockSync: ClockSync;
-  private interpolationDelay: number;
 
   constructor(stateBuffer: StateBuffer, clockSync: ClockSync) {
     this.stateBuffer = stateBuffer;
     this.clockSync = clockSync;
-    this.interpolationDelay = NETWORK_CONFIG.INTERPOLATION_DELAY;
+  }
+
+  private getInterpolationDelay(): number {
+    const rtt = this.clockSync.getRTT();
+
+    // Calculate adaptive delay: max(base, rtt * multiplier), clamped
+    const adaptiveDelay = Math.max(
+      NETWORK_CONFIG.INTERPOLATION_DELAY_BASE,
+      rtt * NETWORK_CONFIG.INTERPOLATION_DELAY_MULTIPLIER
+    );
+
+    return Math.max(
+      NETWORK_CONFIG.INTERPOLATION_DELAY_MIN,
+      Math.min(NETWORK_CONFIG.INTERPOLATION_DELAY_MAX, adaptiveDelay)
+    );
   }
 
   getInterpolatedState(): InterpolatedState | null {
     // Calculate target time (server time - interpolation delay)
     const serverTime = this.clockSync.getServerTime();
-    const targetTime = serverTime - this.interpolationDelay;
+    const interpolationDelay = this.getInterpolationDelay();
+    const targetTime = serverTime - interpolationDelay;
 
     // Get states for interpolation
     const states = this.stateBuffer.getStatesForInterpolation(targetTime);
 
     if (!states) {
-      // Not enough data for interpolation, use latest available state
-      const latestState = this.stateBuffer.getStateAtTime(targetTime);
-      if (!latestState) return null;
-
-      return {
-        coins: latestState.updates.map(update => ({
-          id: update.id,
-          pos: update.pos,
-          rot: update.rot,
-        })),
-        pusherZ: latestState.pusherZ,
-      };
+      // Not enough data for interpolation, try extrapolation
+      return this.getExtrapolatedState(targetTime);
     }
 
     const { before, after } = states;
 
     // Calculate interpolation alpha
     const timeDiff = after.serverTime - before.serverTime;
-    const alpha = timeDiff > 0 
-      ? (targetTime - before.serverTime) / timeDiff 
-      : 0;
+    const alpha =
+      timeDiff > 0 ? (targetTime - before.serverTime) / timeDiff : 0;
 
     // Clamp alpha to [0, 1]
     const clampedAlpha = Math.max(0, Math.min(1, alpha));
 
     // Interpolate coins
     const coins: InterpolatedCoin[] = [];
-    
+
     for (const afterUpdate of after.updates) {
-      const beforeUpdate = before.updates.find(u => u.id === afterUpdate.id);
-      
+      const beforeUpdate = before.updates.find((u) => u.id === afterUpdate.id);
+
       if (!beforeUpdate) {
         // New coin, just use the after state
         coins.push({
@@ -89,6 +92,109 @@ export class Interpolator {
 
     // Interpolate pusher Z
     const pusherZ = this.lerp(before.pusherZ, after.pusherZ, clampedAlpha);
+
+    return { coins, pusherZ };
+  }
+
+  private getExtrapolatedState(targetTime: number): InterpolatedState | null {
+    // Get the latest state we have
+    const latestState = this.stateBuffer.getNewestState();
+    if (!latestState) return null;
+
+    // Calculate how far we're extrapolating into the future
+    const extrapolationTime = targetTime - latestState.serverTime;
+
+    // If we're extrapolating too far into the future, clamp it
+    const clampedExtrapolationTime = Math.min(
+      extrapolationTime,
+      NETWORK_CONFIG.EXTRAPOLATION_MAX_TIME
+    );
+
+    // If the latest state is too old, just return it as-is (no extrapolation)
+    if (extrapolationTime < 0 || clampedExtrapolationTime <= 0) {
+      return {
+        coins: latestState.updates.map((update) => ({
+          id: update.id,
+          pos: update.pos,
+          rot: update.rot,
+        })),
+        pusherZ: latestState.pusherZ,
+      };
+    }
+
+    // Get previous state to calculate velocities
+    const previousState = this.stateBuffer.getPreviousState(latestState);
+    if (!previousState) {
+      // No previous state, just use latest
+      return {
+        coins: latestState.updates.map((update) => ({
+          id: update.id,
+          pos: update.pos,
+          rot: update.rot,
+        })),
+        pusherZ: latestState.pusherZ,
+      };
+    }
+
+    // Calculate time delta between states
+    const stateTimeDelta = latestState.serverTime - previousState.serverTime;
+    if (stateTimeDelta <= 0) {
+      // Invalid time delta, just use latest
+      return {
+        coins: latestState.updates.map((update) => ({
+          id: update.id,
+          pos: update.pos,
+          rot: update.rot,
+        })),
+        pusherZ: latestState.pusherZ,
+      };
+    }
+
+    // Extrapolate coins
+    const coins: InterpolatedCoin[] = [];
+
+    for (const latestUpdate of latestState.updates) {
+      const previousUpdate = previousState.updates.find(
+        (u) => u.id === latestUpdate.id
+      );
+
+      if (!previousUpdate) {
+        // New coin, just use latest position
+        coins.push({
+          id: latestUpdate.id,
+          pos: latestUpdate.pos,
+          rot: latestUpdate.rot,
+        });
+        continue;
+      }
+
+      // Calculate velocity (change per ms)
+      const vel: [number, number, number] = [
+        (latestUpdate.pos[0] - previousUpdate.pos[0]) / stateTimeDelta,
+        (latestUpdate.pos[1] - previousUpdate.pos[1]) / stateTimeDelta,
+        (latestUpdate.pos[2] - previousUpdate.pos[2]) / stateTimeDelta,
+      ];
+
+      // Extrapolate position
+      const pos: [number, number, number] = [
+        latestUpdate.pos[0] + vel[0] * clampedExtrapolationTime,
+        latestUpdate.pos[1] + vel[1] * clampedExtrapolationTime,
+        latestUpdate.pos[2] + vel[2] * clampedExtrapolationTime,
+      ];
+
+      // For rotation, we can do a simple extrapolation by continuing the rotation
+      // For simplicity, we'll just use the latest rotation (quaternion extrapolation is complex)
+      coins.push({
+        id: latestUpdate.id,
+        pos,
+        rot: latestUpdate.rot,
+      });
+    }
+
+    // Extrapolate pusher Z
+    const pusherVel =
+      (latestState.pusherZ - previousState.pusherZ) / stateTimeDelta;
+    const pusherZ = latestState.pusherZ + pusherVel * clampedExtrapolationTime;
 
     return { coins, pusherZ };
   }
@@ -139,4 +245,3 @@ export class Interpolator {
     ];
   }
 }
-
