@@ -81,27 +81,119 @@ Root directory: /
 VITE_WS_URL=wss://api.yourdomain.com
 ```
 
-#### 4. 自定义域名
+#### 4. 添加域名到 Cloudflare
 
-在 Pages 设置 → **Custom domains**：
+**重要**: Cloudflare Pages 要求域名必须在 Cloudflare 账户中管理才能添加为自定义域名。
 
-- 添加: `yourdomain.com`
-- 添加: `www.yourdomain.com`
+##### 步骤 A: 将域名添加到 Cloudflare
 
-Cloudflare 会自动：
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. 点击右上角 **"Add a site"**
+3. 输入你的域名（例如: `seesawsquad.site`）
+4. 选择 **Free Plan** (完全免费)
+5. Cloudflare 会扫描你现有的 DNS 记录
 
-- 配置 DNS 记录
-- 生成 SSL 证书
-- 启用 HTTPS
+##### 步骤 B: 更新 Namecheap 的 Nameservers
 
-### 优点
+1. **在 Cloudflare**，你会看到两个 Nameservers，例如：
 
-✅ 完全免费
-✅ 自动部署（Git push）
-✅ 全球 CDN
-✅ 自动 HTTPS
-✅ 预览部署
-✅ 回滚功能
+   ```
+   gail.ns.cloudflare.com
+   leif.ns.cloudflare.com
+   ```
+
+2. **登录 Namecheap**
+
+   - 进入 **Domain List**
+   - 找到你的域名
+   - 点击 **Manage**
+
+3. **更新 Nameservers**
+
+   - 选择 **Custom DNS**（而不是 "Namecheap BasicDNS"）
+   - 将两个 Cloudflare Nameservers 复制进去
+   - 保存更改
+
+4. **等待 DNS 传播**（通常 5-30 分钟，最多 24-48 小时）
+
+##### 步骤 C: 配置 DNS 记录
+
+**重要**: 需要手动设置 WebSocket 服务器的 DNS 记录。
+
+1. 在 Cloudflare Dashboard → 你的域名 → **DNS** → **Records**
+2. 添加以下记录：
+
+   **WebSocket 服务器 (必须手动添加)**:
+
+   ```
+   类型: A
+   名称: api
+   内容: [你的 Digital Ocean 服务器 IP]
+   代理状态: ✅ 代理已开启 (橙色云)
+   TTL: 自动
+   ```
+
+3. **主域名和 www（自动配置，见步骤 D）**:
+   - `yourdomain.com` → Cloudflare Pages 会自动配置
+   - `www.yourdomain.com` → Cloudflare Pages 会自动配置
+
+---
+
+**📋 关于其他 DNS 记录类型的说明**:
+
+当你将域名添加到 Cloudflare 后，可能会看到其他类型的 DNS 记录，它们各有用途：
+
+| 记录类型       | 用途                        | 是否需要修改           | 说明                                            |
+| -------------- | --------------------------- | ---------------------- | ----------------------------------------------- |
+| **A 记录**     | 将域名映射到 IPv4 地址      | ✅ **你的 `api` 记录** | 指向你的服务器 IP，应开启代理（橙色云）         |
+| **MX 记录**    | 邮件服务器配置              | ❌ 不需要              | 用于接收邮件，通常为灰色云（DNS only）          |
+| **NS 记录**    | 权威 DNS 服务器             | ❌ 不需要              | 指向 Cloudflare Nameservers，由 Cloudflare 管理 |
+| **TXT 记录**   | 文本信息（SPF、域名验证等） | ❌ 不需要              | 用于邮件认证或服务验证，灰色云（DNS only）      |
+| **CNAME 记录** | 域名别名                    | ⚠️ Pages 可能创建      | Pages 可能自动创建，通常是橙色云                |
+
+**总结**: 对于这个项目，你只需要关心：
+
+- ✅ `api` A 记录（手动添加，指向服务器）
+- ✅ `yourdomain.com` 和 `www`（Pages 自动配置）
+
+其他记录通常不需要修改，除非你有特定需求（如设置邮箱）。
+
+##### 步骤 D: 在 Cloudflare 完成设置
+
+1. 回到 Cloudflare Dashboard
+2. 点击 **Continue**（Cloudflare 会验证 Nameservers）
+3. 设置 SSL/TLS 模式为 **Full (strict)**
+4. 确认 DNS 记录已正确配置
+
+##### 步骤 E: 部署 Pages 并添加自定义域名
+
+1. **确保 Pages 项目已部署**:
+
+   - 进入 **Pages** → 你的项目
+   - 检查是否有成功的构建和部署
+   - 如果没有，手动触发一次部署或等待自动部署完成
+
+2. **添加自定义域名**:
+
+   - 进入 **Pages** → 你的项目 → **Custom domains**
+   - 点击 **"Set up a custom domain"**
+   - 添加 `seesawsquad.site`
+   - 添加 `www.seesawsquad.site`（可选）
+   - Cloudflare Pages 会自动：
+     - 为这些域名配置 DNS 记录（CNAME 记录）
+     - 生成 SSL 证书
+     - 启用 HTTPS
+
+3. **验证 DNS 传播**:
+   - 等待 5-30 分钟让 DNS 记录生效
+   - 访问 `https://seesawsquad.site` 应该看到你的应用
+
+**⚠️ 如果看到 DNS_PROBE_POSSIBLE 错误**:
+
+- 检查 Pages 项目是否已成功部署
+- 确认自定义域名已添加到 Pages
+- 等待 DNS 传播（最多 24-48 小时）
+- 检查 Cloudflare DNS 记录中是否有 `seesawsquad.site` 的 CNAME 记录（Pages 自动创建）
 
 ---
 
@@ -180,20 +272,130 @@ Cloudflare **支持 WebSocket**，但需要正确配置。
 ### 选项 1: 使用单独子域名（推荐）
 
 ```
-客户端: https://yourdomain.com
-WebSocket: wss://api.yourdomain.com
+客户端: https://seesawsquad.site          (Cloudflare Pages)
+WebSocket: wss://api.seesawsquad.site     (Digital Ocean 服务器)
 ```
 
-**配置**:
+**配置步骤**:
 
-1. 在 Cloudflare DNS 添加：
+1. **在 Cloudflare DNS 添加 A 记录**（**必须手动设置**）:
 
-   - `api` → A 记录 → 服务器 IP → ✅ Proxy
+   - 进入 Cloudflare Dashboard → 你的域名 → **DNS** → **Records**
+   - 点击 **Add record**
+   - 设置：
+     ```
+     类型: A
+     名称: api
+     内容: [你的 Digital Ocean 服务器 IP 地址]
+     代理状态: ✅ 代理已开启 (橙色云图标)
+     ```
+   - 保存
 
-2. 客户端环境变量：
+2. **客户端环境变量**（在 Cloudflare Pages 设置）:
    ```
-   VITE_WS_URL=wss://api.yourdomain.com
+   VITE_WS_URL=wss://api.seesawsquad.site
    ```
+
+**注意事项**:
+
+- ✅ `api` 子域名必须手动添加 A 记录
+- ✅ `yourdomain.com` 和 `www.yourdomain.com` 由 Pages 自动配置（不需要手动添加）
+- ✅ 确保代理状态为"已开启"（橙色云），这样才有 DDoS 防护和 SSL
+
+**⚠️ 证书警告说明**:
+
+如果看到 **"This hostname is not covered by a certificate"** 警告：
+
+1. **正常情况** - Cloudflare 正在签发证书（通常 5-30 分钟）
+
+   - 等待一段时间后刷新页面
+   - 证书会自动签发和部署
+   - 不影响实际功能，只是 UI 显示延迟
+
+2. **检查 SSL/TLS 设置**:
+
+   - Cloudflare Dashboard → **SSL/TLS**
+   - 确保模式设置为 **Full (strict)**
+   - 确保 **"Always Use HTTPS"** 已启用
+
+3. **验证证书**（等待 30 分钟后）:
+   - 访问 `https://api.seesawsquad.site`
+   - 如果浏览器显示有效证书（绿色锁图标），说明已成功
+   - 警告信息可能需要更长时间才会消失
+
+**如果 24 小时后仍然有问题**:
+
+- 检查服务器是否正确响应 HTTP 请求
+- 确保服务器端口 3000 已开放防火墙
+- **重要**: 如果遇到 **Error 521**，检查 SSL/TLS 模式（见下方说明）
+
+**⚠️ Error 521 解决方案**:
+
+如果访问 `https://api.seesawsquad.site` 看到 **Error 521: Web server is down**：
+
+1. **检查 SSL/TLS 模式** (最常见原因):
+
+   - Cloudflare Dashboard → SSL/TLS → 加密模式
+   - 对于**只有 WebSocket 的服务器**（没有 HTTP/HTTPS 网站），应设置为 **"Flexible"**
+   - **"Full (strict)"** 要求源服务器有有效 SSL 证书，但纯 WebSocket 服务器没有
+
+2. **为什么需要 Flexible 模式**:
+
+   - ✅ 用户 ↔ Cloudflare: HTTPS/WSS（加密）
+   - ✅ Cloudflare ↔ 源服务器: HTTP/WS（内部网络，Cloudflare 会自动处理加密）
+   - ✅ 适用于只有 WebSocket 的服务器
+
+3. **验证**:
+   - 修改为 Flexible 后等待 1-2 分钟
+   - 再次访问 `https://api.seesawsquad.site`
+   - 应该可以正常连接 WebSocket
+
+**⚠️ 如果看到 Nginx 欢迎页面**:
+
+如果你访问 `https://api.seesawsquad.site/` 看到 "Welcome to nginx!" 页面：
+
+**情况 A**: 你使用了 `docker-compose.full.yml`（不推荐）
+
+如果你在 VM 上运行了 `docker-compose -f docker-compose.full.yml up -d`：
+
+1. **检查 Nginx 配置是否正确**:
+
+   - Nginx 应该代理到 `server:3000`（WebSocket 服务器）
+   - 不应该显示默认欢迎页面
+   - 检查 `nginx-docker.conf` 是否正确挂载
+
+2. **推荐方案**: 停止使用 `docker-compose.full.yml`，改用推荐的 `docker-compose.yml`:
+   ```bash
+   # 在 VM 上执行
+   docker-compose -f docker-compose.full.yml down
+   docker-compose up -d
+   ```
+   然后确保：
+   - Cloudflare SSL/TLS 模式设为 **Flexible**
+   - `api` DNS 记录指向服务器 IP，代理已开启
+
+**情况 B**: 服务器上安装了独立的 Nginx
+
+如果你没有使用 `docker-compose.full.yml` 但看到 nginx 页面：
+
+1. **检查是否有系统级 Nginx 在运行**:
+
+   ```bash
+   # 在 VM 上执行
+   sudo systemctl status nginx
+   docker ps | grep nginx
+   ```
+
+2. **停止系统 Nginx**（如果不需要）:
+
+   ```bash
+   sudo systemctl stop nginx
+   sudo systemctl disable nginx
+   ```
+
+3. **确保只有 Docker 容器在运行**:
+   - WebSocket 服务器应该直接监听 3000 端口
+   - 不需要 Nginx，因为 Cloudflare 已经处理了代理和 SSL
 
 ### 选项 2: 使用路径（需要额外配置）
 
@@ -215,12 +417,41 @@ WebSocket: wss://yourdomain.com/ws
 
 ### Cloudflare SSL 设置
 
+**重要**: SSL/TLS 模式取决于你的服务器配置：
+
+#### 情况 1: 只有 WebSocket 服务器（推荐配置）✅
+
+如果你的服务器**只有 WebSocket 服务**（没有 HTTP/HTTPS 网站，如本项目）：
+
 1. 进入 Cloudflare → SSL/TLS
 2. 设置：
-   - **加密模式**: Full (strict) ✅
+   - **加密模式**: **Flexible** ✅（不是 Full strict）
    - **自动 HTTPS 重写**: 启用
    - **始终使用 HTTPS**: 启用
    - **最小 TLS 版本**: 1.2
+
+**为什么使用 Flexible**:
+
+- ✅ 用户到 Cloudflare: HTTPS/WSS（完全加密）
+- ✅ Cloudflare 到源服务器: HTTP/WS（内部网络，Cloudflare 负责加密）
+- ✅ 不需要在源服务器配置 SSL 证书
+- ✅ 适合纯 WebSocket 服务器
+
+#### 情况 2: 有 HTTP/HTTPS 网站的服务器
+
+如果你的服务器同时运行 HTTP 网站（如 Nginx + SSL）：
+
+1. 进入 Cloudflare → SSL/TLS
+2. 设置：
+   - **加密模式**: **Full** 或 **Full (strict)** ✅
+   - **自动 HTTPS 重写**: 启用
+   - **始终使用 HTTPS**: 启用
+   - **最小 TLS 版本**: 1.2
+
+**Full vs Full (strict)**:
+
+- **Full**: Cloudflare 接受任何 SSL 证书（包括自签名）
+- **Full (strict)**: 源服务器必须有有效、受信任的 SSL 证书
 
 ### 服务器 SSL (如果直接访问)
 
@@ -230,6 +461,11 @@ WebSocket: wss://yourdomain.com/ws
 sudo apt install certbot python3-certbot-nginx
 sudo certbot --nginx -d api.yourdomain.com
 ```
+
+**但对于纯 WebSocket 服务器，通常不需要这个步骤**，因为：
+
+- 用户通过 Cloudflare 访问（已加密）
+- 不需要直接访问服务器 IP
 
 ---
 
@@ -341,22 +577,23 @@ Cloudflare 提供免费统计：
 ### DNS 配置
 
 - [ ] NameServer 已更新到 Cloudflare
-- [ ] DNS 记录已配置
-- [ ] Proxy 已启用（橙色云）
+- [ ] **`api` 子域名 A 记录已手动添加**（指向服务器 IP）
+- [ ] `api` 记录的代理状态为"已开启"（橙色云）
 - [ ] DNS 传播完成（24-48 小时）
+- [ ] 主域名和 www 由 Pages 自动配置（无需手动添加）
 
 ### SSL/TLS
 
-- [ ] 加密模式: Full (strict)
+- [ ] **加密模式: Flexible**（对于纯 WebSocket 服务器）
+  - ⚠️ 如果是 Full (strict) 且遇到 Error 521，改为 Flexible
 - [ ] 自动 HTTPS 重写: 启用
 - [ ] 始终使用 HTTPS: 启用
 
 ### WebSocket
 
-- [ ] 子域名配置 (api.yourdomain.com)
-- [ ] DNS A 记录已添加
-- [ ] Proxy 已启用
-- [ ] 客户端环境变量已更新
+- [ ] **`api` 子域名 DNS A 记录已添加**（最重要！）
+- [ ] `api` 记录 Proxy 已启用（橙色云）
+- [ ] 客户端环境变量 `VITE_WS_URL` 已设置
 
 ### 验证
 
