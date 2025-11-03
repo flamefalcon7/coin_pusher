@@ -114,8 +114,13 @@ export class GameLoop {
     // 5. Handle despawns
     if (despawnIds.length > 0) {
       despawnIds.forEach((id) => {
-        this.coins.delete(id);
-        this.coinManager.removeCoin(id);
+        const coin = this.coins.get(id);
+        if (coin) {
+          // Properly remove RigidBody and Collider from physics world
+          coin.destroy(this.physicsWorld);
+          this.coins.delete(id);
+          this.coinManager.removeCoin(id);
+        }
       });
 
       const despawnMessage: DespawnMessage = {
