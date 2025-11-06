@@ -5,6 +5,7 @@
   "description": "Multi-user coin pusher game PoC with authoritative server physics",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
+    "dev:shared": "pnpm --filter @coin-pusher/shared dev",
     "build": "pnpm -r build",
     "clean": "pnpm -r clean"
   },
