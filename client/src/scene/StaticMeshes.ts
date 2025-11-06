@@ -4,7 +4,8 @@ import {
   StandardMaterial,
   Color3,
   Vector3,
-} from '@babylonjs/core';
+} from "@babylonjs/core";
+import { SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class StaticMeshes {
   private scene: Scene;
@@ -15,82 +16,113 @@ export class StaticMeshes {
   }
 
   private createStaticScene(): void {
-    console.log('🏗️  Building client scene...');
+    console.log("🏗️  Building client scene...");
 
     // Create materials
     const platformMat = this.createPlatformMaterial();
     const wallMat = this.createWallMaterial();
 
-    // Main platform: 1.2m × 0.8m × 0.05m at (0, 0.25, 0)
+    // Main platform
+    const { WIDTH, DEPTH, THICKNESS, POSITION, TILT_ANGLE } =
+      SCENE_CONFIG.PLATFORM;
     const platform = MeshBuilder.CreateBox(
-      'platform',
-      { width: 1.2, height: 0.05, depth: 0.8 },
+      "platform",
+      { width: WIDTH, height: THICKNESS, depth: DEPTH },
       this.scene
     );
-    platform.position = new Vector3(0, 0.25, 0);
-    
-    // Slight forward tilt (2 degrees)
-    platform.rotation.x = 2 * (Math.PI / 180);
+    platform.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
+
+    // Slight forward tilt
+    platform.rotation.x = TILT_ANGLE * (Math.PI / 180);
     platform.material = platformMat;
 
     // Back wall
+    const {
+      WIDTH: BACK_WIDTH,
+      HEIGHT: BACK_HEIGHT,
+      THICKNESS: BACK_THICKNESS,
+      POSITION: BACK_POS,
+    } = SCENE_CONFIG.BACK_WALL;
     const backWall = MeshBuilder.CreateBox(
-      'backWall',
-      { width: 1.2, height: 0.3, depth: 0.05 },
+      "backWall",
+      { width: BACK_WIDTH, height: BACK_HEIGHT, depth: BACK_THICKNESS },
       this.scene
     );
-    backWall.position = new Vector3(0, 0.4, -0.4);
+    backWall.position = new Vector3(BACK_POS.x, BACK_POS.y, BACK_POS.z);
     backWall.material = wallMat;
+
+    // Side walls
+    const {
+      THICKNESS: WALL_THICKNESS,
+      HEIGHT: WALL_HEIGHT,
+      DEPTH: WALL_DEPTH,
+      LEFT_POSITION,
+      RIGHT_POSITION,
+      INNER_TILT_ANGLE,
+    } = SCENE_CONFIG.SIDE_WALLS;
 
     // Left wall
     const leftWall = MeshBuilder.CreateBox(
-      'leftWall',
-      { width: 0.05, height: 0.3, depth: 0.8 },
+      "leftWall",
+      { width: WALL_THICKNESS, height: WALL_HEIGHT, depth: WALL_DEPTH },
       this.scene
     );
-    leftWall.position = new Vector3(-0.6, 0.4, 0);
+    leftWall.position = new Vector3(
+      LEFT_POSITION.x,
+      LEFT_POSITION.y,
+      LEFT_POSITION.z
+    );
     // Inner tilt
-    leftWall.rotation.z = -1.5 * (Math.PI / 180);
+    leftWall.rotation.z = -INNER_TILT_ANGLE * (Math.PI / 180);
     leftWall.material = wallMat;
 
     // Right wall
     const rightWall = MeshBuilder.CreateBox(
-      'rightWall',
-      { width: 0.05, height: 0.3, depth: 0.8 },
+      "rightWall",
+      { width: WALL_THICKNESS, height: WALL_HEIGHT, depth: WALL_DEPTH },
       this.scene
     );
-    rightWall.position = new Vector3(0.6, 0.4, 0);
+    rightWall.position = new Vector3(
+      RIGHT_POSITION.x,
+      RIGHT_POSITION.y,
+      RIGHT_POSITION.z
+    );
     // Inner tilt
-    rightWall.rotation.z = 1.5 * (Math.PI / 180);
+    rightWall.rotation.z = INNER_TILT_ANGLE * (Math.PI / 180);
     rightWall.material = wallMat;
 
     // Drop zone indicator (subtle visual)
+    const {
+      WIDTH: DROP_WIDTH,
+      HEIGHT: DROP_HEIGHT,
+      DEPTH: DROP_DEPTH,
+      POSITION: DROP_POS,
+    } = SCENE_CONFIG.DROP_ZONE;
     const dropZone = MeshBuilder.CreateBox(
-      'dropZone',
-      { width: 1.0, height: 0.05, depth: 0.2 },
+      "dropZone",
+      { width: DROP_WIDTH, height: DROP_HEIGHT, depth: DROP_DEPTH },
       this.scene
     );
-    dropZone.position = new Vector3(0, 0.15, 0.45);
-    const dropZoneMat = new StandardMaterial('dropZoneMat', this.scene);
+    dropZone.position = new Vector3(DROP_POS.x, DROP_POS.y, DROP_POS.z);
+    const dropZoneMat = new StandardMaterial("dropZoneMat", this.scene);
     dropZoneMat.diffuseColor = new Color3(0.2, 0.3, 0.2);
     dropZoneMat.alpha = 0.3;
     dropZone.material = dropZoneMat;
 
-    console.log('  ✓ Static meshes created');
+    console.log("  ✓ Static meshes created");
   }
 
   private createPlatformMaterial(): StandardMaterial {
-    const mat = new StandardMaterial('platformMat', this.scene);
+    const mat = new StandardMaterial("platformMat", this.scene);
     mat.diffuseColor = new Color3(0.6, 0.6, 0.6);
     mat.specularColor = new Color3(0.2, 0.2, 0.2);
     return mat;
   }
 
   private createWallMaterial(): StandardMaterial {
-    const mat = new StandardMaterial('wallMat', this.scene);
+    const mat = new StandardMaterial("wallMat", this.scene);
     mat.diffuseColor = new Color3(0.5, 0.5, 0.6);
     mat.specularColor = new Color3(0.1, 0.1, 0.1);
     return mat;
   }
 }
-

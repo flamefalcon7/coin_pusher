@@ -141,3 +141,41 @@ export const RATE_LIMIT_CONFIG = {
   COIN_INSERT_COOLDOWN: 100, // ms between coin inserts per connection
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
+
+// Scene geometry configuration (shared between server physics and client rendering)
+export const SCENE_CONFIG = {
+  PLATFORM: {
+    WIDTH: 1.2, // meters
+    DEPTH: 0.8, // meters
+    THICKNESS: 0.05, // meters
+    POSITION: { x: 0, y: 0.25, z: 0 },
+    TILT_ANGLE: 2.0, // degrees (forward tilt to help coin outflow)
+    FRICTION: 0.35,
+    RESTITUTION: 0.15,
+  },
+  BACK_WALL: {
+    WIDTH: 1.2, // meters
+    HEIGHT: 0.3, // meters
+    THICKNESS: 0.05, // meters
+    POSITION: { x: 0, y: 0.4, z: -0.4 },
+    FRICTION: 0.3,
+    RESTITUTION: 0.1,
+  },
+  SIDE_WALLS: {
+    DEPTH: 0.8, // meters
+    HEIGHT: 0.3, // meters
+    THICKNESS: 0.05, // meters
+    LEFT_POSITION: { x: -0.6, y: 0.4, z: 0 },
+    RIGHT_POSITION: { x: 0.6, y: 0.4, z: 0 },
+    INNER_TILT_ANGLE: 1.5, // degrees (inward tilt)
+    FRICTION: 0.3,
+    RESTITUTION: 0.1,
+  },
+  // Client-only visual elements
+  DROP_ZONE: {
+    WIDTH: 1.0, // meters
+    HEIGHT: 0.05, // meters
+    DEPTH: 0.2, // meters
+    POSITION: { x: 0, y: 0.15, z: 0.45 },
+  },
+} as const;

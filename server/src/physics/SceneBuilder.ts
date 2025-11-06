@@ -1,5 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { PhysicsWorld } from "./PhysicsWorld.js";
+import { SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class SceneBuilder {
   private world: RAPIER.World;
@@ -25,26 +26,32 @@ export class SceneBuilder {
   }
 
   private createPlatform(): void {
-    const width = 1.2;
-    const depth = 0.8;
-    const thickness = 0.05;
-    const tiltAngle = 2.0 * (Math.PI / 180); // 2 degrees
+    const {
+      WIDTH,
+      DEPTH,
+      THICKNESS,
+      POSITION,
+      TILT_ANGLE,
+      FRICTION,
+      RESTITUTION,
+    } = SCENE_CONFIG.PLATFORM;
+    const tiltAngle = TILT_ANGLE * (Math.PI / 180);
 
     // Create rigid body descriptor
     const bodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(0, 0.25, 0)
+      .setTranslation(POSITION.x, POSITION.y, POSITION.z)
       .setRotation({ x: tiltAngle, y: 0, z: 0, w: 1 }); // Tilt forward
 
     const body = this.world.createRigidBody(bodyDesc);
 
     // Create collider
     const colliderDesc = RAPIER.ColliderDesc.cuboid(
-      width / 2,
-      thickness / 2,
-      depth / 2
+      WIDTH / 2,
+      THICKNESS / 2,
+      DEPTH / 2
     )
-      .setFriction(0.35)
-      .setRestitution(0.15);
+      .setFriction(FRICTION)
+      .setRestitution(RESTITUTION);
 
     this.world.createCollider(colliderDesc, body);
 
@@ -52,21 +59,24 @@ export class SceneBuilder {
   }
 
   private createBackWall(): void {
-    const width = 1.2;
-    const height = 0.3;
-    const thickness = 0.05;
+    const { WIDTH, HEIGHT, THICKNESS, POSITION, FRICTION, RESTITUTION } =
+      SCENE_CONFIG.BACK_WALL;
 
-    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0.4, -0.4);
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
+      POSITION.x,
+      POSITION.y,
+      POSITION.z
+    );
 
     const body = this.world.createRigidBody(bodyDesc);
 
     const colliderDesc = RAPIER.ColliderDesc.cuboid(
-      width / 2,
-      height / 2,
-      thickness / 2
+      WIDTH / 2,
+      HEIGHT / 2,
+      THICKNESS / 2
     )
-      .setFriction(0.3)
-      .setRestitution(0.1);
+      .setFriction(FRICTION)
+      .setRestitution(RESTITUTION);
 
     this.world.createCollider(colliderDesc, body);
 
@@ -74,42 +84,49 @@ export class SceneBuilder {
   }
 
   private createSideWalls(): void {
-    const depth = 0.8;
-    const height = 0.3;
-    const thickness = 0.05;
-    const innerTiltAngle = 1.5 * (Math.PI / 180); // 1.5 degrees inner tilt
+    const {
+      DEPTH,
+      HEIGHT,
+      THICKNESS,
+      LEFT_POSITION,
+      RIGHT_POSITION,
+      INNER_TILT_ANGLE,
+      FRICTION,
+      RESTITUTION,
+    } = SCENE_CONFIG.SIDE_WALLS;
+    const innerTiltAngle = INNER_TILT_ANGLE * (Math.PI / 180);
 
-    // Left wall (x = -0.6)
+    // Left wall
     const leftBodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(-0.6, 0.4, 0)
+      .setTranslation(LEFT_POSITION.x, LEFT_POSITION.y, LEFT_POSITION.z)
       .setRotation({ x: 0, y: 0, z: -innerTiltAngle, w: 1 }); // Tilt inward
 
     const leftBody = this.world.createRigidBody(leftBodyDesc);
 
     const leftColliderDesc = RAPIER.ColliderDesc.cuboid(
-      thickness / 2,
-      height / 2,
-      depth / 2
+      THICKNESS / 2,
+      HEIGHT / 2,
+      DEPTH / 2
     )
-      .setFriction(0.3)
-      .setRestitution(0.1);
+      .setFriction(FRICTION)
+      .setRestitution(RESTITUTION);
 
     this.world.createCollider(leftColliderDesc, leftBody);
 
-    // Right wall (x = 0.6)
+    // Right wall
     const rightBodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(0.6, 0.4, 0)
+      .setTranslation(RIGHT_POSITION.x, RIGHT_POSITION.y, RIGHT_POSITION.z)
       .setRotation({ x: 0, y: 0, z: innerTiltAngle, w: 1 }); // Tilt inward
 
     const rightBody = this.world.createRigidBody(rightBodyDesc);
 
     const rightColliderDesc = RAPIER.ColliderDesc.cuboid(
-      thickness / 2,
-      height / 2,
-      depth / 2
+      THICKNESS / 2,
+      HEIGHT / 2,
+      DEPTH / 2
     )
-      .setFriction(0.3)
-      .setRestitution(0.1);
+      .setFriction(FRICTION)
+      .setRestitution(RESTITUTION);
 
     this.world.createCollider(rightColliderDesc, rightBody);
 

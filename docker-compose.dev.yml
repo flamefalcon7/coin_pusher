@@ -1,5 +1,17 @@
 # Development docker-compose with hot reload
 services:
+  # Shared package with watch mode (auto-rebuild on changes)
+  shared:
+    image: node:20-alpine
+    container_name: coin-pusher-shared-dev
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./:/app
+    networks:
+      - coin-pusher-network
+    command: sh -c "npm install -g pnpm && (pnpm install || true) && pnpm --filter @coin-pusher/shared build && pnpm --filter @coin-pusher/shared dev"
+
   # Development Server with hot reload
   server:
     build:
@@ -16,8 +28,12 @@ services:
       # Mount source code for hot reload
       - ./server/src:/app/server/src:ro
       - ./shared/src:/app/shared/src:ro
+      # Mount shared dist for access to compiled files
+      - ./shared/dist:/app/shared/dist:ro
     networks:
       - coin-pusher-network
+    depends_on:
+      - shared
     command: pnpm --filter @coin-pusher/server dev
 
   # Client Dev Server (Vite)
@@ -34,9 +50,10 @@ services:
       - ./:/app
     networks:
       - coin-pusher-network
+    depends_on:
+      - shared
     command: sh -c "npm install -g pnpm && pnpm install && pnpm --filter @coin-pusher/client dev --host"
 
 networks:
   coin-pusher-network:
     driver: bridge
-
