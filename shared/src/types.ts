@@ -112,8 +112,8 @@ export const PUSHER_CONFIG = {
 
 // Coin configuration
 export const COIN_CONFIG = {
-  RADIUS: 0.02, // meters
-  THICKNESS: 0.009, // meters
+  RADIUS: 0.04, // meters
+  THICKNESS: 0.015, // meters
   MASS: 0.01, // kg
   FRICTION: 0.3,
   RESTITUTION: 0.2,
@@ -149,7 +149,7 @@ export const SCENE_CONFIG = {
     DEPTH: 1, // meters
     THICKNESS: 0.05, // meters
     POSITION: { x: 0, y: 0.25, z: 0 },
-    TILT_ANGLE: 2.0, // degrees (forward tilt to help coin outflow)
+    TILT_ANGLE: 0, // degrees (no tilt)
     FRICTION: 0.35,
     RESTITUTION: 0.15,
   },
