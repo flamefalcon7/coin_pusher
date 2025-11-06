@@ -1,4 +1,4 @@
-import { ArcRotateCamera, Vector3, Scene } from '@babylonjs/core';
+import { ArcRotateCamera, Vector3, Scene } from "@babylonjs/core";
 
 export class CameraSetup {
   private camera: ArcRotateCamera;
@@ -10,11 +10,11 @@ export class CameraSetup {
     // Beta: π/3 (45 degrees above horizontal)
     // Radius: 3 meters
     this.camera = new ArcRotateCamera(
-      'camera',
-      -Math.PI / 2,
-      Math.PI / 3,
+      "camera",
+      Math.PI / 2,
+      Math.PI / 2.5,
       3,
-      new Vector3(0, 0.3, 0),
+      new Vector3(0, 1, 0),
       scene
     );
 
@@ -26,8 +26,8 @@ export class CameraSetup {
     this.camera.upperRadiusLimit = 4;
 
     // Limit vertical rotation (prevent flipping)
-    this.camera.lowerBetaLimit = Math.PI / 6; // 30 degrees
-    this.camera.upperBetaLimit = Math.PI / 2.2; // ~80 degrees
+    // this.camera.lowerBetaLimit = Math.PI / 6; // 30 degrees
+    // this.camera.upperBetaLimit = Math.PI / 2.2; // ~80 degrees
 
     // Smooth camera movement
     this.camera.inertia = 0.8;
@@ -38,11 +38,10 @@ export class CameraSetup {
     // Panning settings
     this.camera.panningSensibility = 0; // Disable panning
 
-    console.log('📷 Camera initialized');
+    console.log("📷 Camera initialized");
   }
 
   getCamera(): ArcRotateCamera {
     return this.camera;
   }
 }
-

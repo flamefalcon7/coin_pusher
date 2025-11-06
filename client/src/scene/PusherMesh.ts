@@ -6,19 +6,22 @@ import {
   Vector3,
   Mesh,
 } from "@babylonjs/core";
+import { SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class PusherMesh {
   private mesh: Mesh;
 
   constructor(scene: Scene) {
-    // Create pusher plate: 1.1m × 0.05m × 0.7m
+    const { WIDTH, HEIGHT, DEPTH, POSITION } = SCENE_CONFIG.PUSHER;
+
+    // Create pusher plate
     this.mesh = MeshBuilder.CreateBox(
       "pusher",
-      { width: 1.1, height: 0.05, depth: 0.7 },
+      { width: WIDTH, height: HEIGHT, depth: DEPTH },
       scene
     );
 
-    this.mesh.position = new Vector3(0, 0.3, 0);
+    this.mesh.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
 
     // Create material
     const material = new StandardMaterial("pusherMat", scene);

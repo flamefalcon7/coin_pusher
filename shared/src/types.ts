@@ -105,8 +105,8 @@ export const PHYSICS_CONFIG = {
 
 // Pusher configuration
 export const PUSHER_CONFIG = {
-  AMPLITUDE: 0.3, // meters
-  FREQUENCY: 0.5, // Hz
+  AMPLITUDE: 0.15, // meters
+  FREQUENCY: 0.25, // Hz
   INITIAL_PHASE: 0,
 } as const;
 
@@ -146,7 +146,7 @@ export const RATE_LIMIT_CONFIG = {
 export const SCENE_CONFIG = {
   PLATFORM: {
     WIDTH: 1.2, // meters
-    DEPTH: 0.8, // meters
+    DEPTH: 1, // meters
     THICKNESS: 0.05, // meters
     POSITION: { x: 0, y: 0.25, z: 0 },
     TILT_ANGLE: 2.0, // degrees (forward tilt to help coin outflow)
@@ -155,27 +155,35 @@ export const SCENE_CONFIG = {
   },
   BACK_WALL: {
     WIDTH: 1.2, // meters
-    HEIGHT: 0.3, // meters
+    HEIGHT: 2, // meters
     THICKNESS: 0.05, // meters
-    POSITION: { x: 0, y: 0.4, z: -0.4 },
+    POSITION: { x: 0, y: 0.5, z: -0.4 },
     FRICTION: 0.3,
     RESTITUTION: 0.1,
   },
   SIDE_WALLS: {
-    DEPTH: 0.8, // meters
-    HEIGHT: 0.3, // meters
+    DEPTH: 1, // meters
+    HEIGHT: 2, // meters
     THICKNESS: 0.05, // meters
-    LEFT_POSITION: { x: -0.6, y: 0.4, z: 0 },
-    RIGHT_POSITION: { x: 0.6, y: 0.4, z: 0 },
+    LEFT_POSITION: { x: -0.6, y: 0.5, z: 0 },
+    RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0 },
     INNER_TILT_ANGLE: 1.5, // degrees (inward tilt)
     FRICTION: 0.3,
+    RESTITUTION: 0.1,
+  },
+  PUSHER: {
+    WIDTH: 1.2, // meters
+    HEIGHT: 0.2, // meters (thickness)
+    DEPTH: 1, // meters
+    POSITION: { x: 0, y: 0.3, z: -0.5 },
+    FRICTION: 0.5,
     RESTITUTION: 0.1,
   },
   // Client-only visual elements
   DROP_ZONE: {
     WIDTH: 1.0, // meters
     HEIGHT: 0.05, // meters
-    DEPTH: 0.2, // meters
+    DEPTH: 0.3, // meters
     POSITION: { x: 0, y: 0.15, z: 0.45 },
   },
 } as const;
