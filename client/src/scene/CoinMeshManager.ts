@@ -8,6 +8,7 @@ import {
   Mesh,
   Matrix,
 } from "@babylonjs/core";
+import { COIN_CONFIG } from "@coin-pusher/shared";
 
 export class CoinMeshManager {
   private scene: Scene;
@@ -22,12 +23,13 @@ export class CoinMeshManager {
   }
 
   private createPrototype(): void {
-    // Create coin cylinder: radius 0.02m, thickness 0.009m
+    // Create coin cylinder using shared configuration
+    const { RADIUS, THICKNESS } = COIN_CONFIG;
     this.prototypeMesh = MeshBuilder.CreateCylinder(
       "coinPrototype",
       {
-        height: 0.009,
-        diameter: 0.04, // radius * 2
+        height: THICKNESS,
+        diameter: RADIUS * 2, // radius * 2
         tessellation: 32,
       },
       this.scene

@@ -1,6 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { PhysicsWorld } from "./PhysicsWorld.js";
-import { PUSHER_CONFIG } from "@coin-pusher/shared";
+import { PUSHER_CONFIG, SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class Pusher {
   private rigidBody: RAPIER.RigidBody;
@@ -11,16 +11,27 @@ export class Pusher {
     const world = physicsWorld.getWorld();
     this.startTime = Date.now();
 
+    const { WIDTH, HEIGHT, DEPTH, POSITION, FRICTION, RESTITUTION } =
+      SCENE_CONFIG.PUSHER;
+
     // Create kinematic rigid body
     const bodyDesc =
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0.3, 0);
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(
+        POSITION.x,
+        POSITION.y,
+        POSITION.z
+      );
 
     this.rigidBody = world.createRigidBody(bodyDesc);
 
-    // Create collider: 1.1m × 0.05m × 0.7m
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(1.1 / 2, 0.05 / 2, 0.7 / 2)
-      .setFriction(0.5)
-      .setRestitution(0.1);
+    // Create collider
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(
+      WIDTH / 2,
+      HEIGHT / 2,
+      DEPTH / 2
+    )
+      .setFriction(FRICTION)
+      .setRestitution(RESTITUTION);
 
     world.createCollider(colliderDesc, this.rigidBody);
 
@@ -37,18 +48,22 @@ export class Pusher {
       PUSHER_CONFIG.INITIAL_PHASE;
 
     // Calculate new z position using sinusoidal motion
+    // currentZ is the offset from POSITION.z
     this.currentZ = PUSHER_CONFIG.AMPLITUDE * Math.sin(phase);
 
     // Update kinematic body position
+    const { POSITION } = SCENE_CONFIG.PUSHER;
     this.rigidBody.setNextKinematicTranslation({
-      x: 0,
-      y: 0.3,
-      z: this.currentZ,
+      x: POSITION.x,
+      y: POSITION.y,
+      z: POSITION.z + this.currentZ, // Add offset to base position
     });
   }
 
   getCurrentZ(): number {
-    return this.currentZ;
+    // Return absolute z position (base position + offset)
+    const { POSITION } = SCENE_CONFIG.PUSHER;
+    return POSITION.z + this.currentZ;
   }
 
   getRigidBody(): RAPIER.RigidBody {
