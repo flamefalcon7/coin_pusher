@@ -26,21 +26,14 @@ export class SceneBuilder {
   }
 
   private createPlatform(): void {
-    const {
-      WIDTH,
-      DEPTH,
-      THICKNESS,
-      POSITION,
-      TILT_ANGLE,
-      FRICTION,
-      RESTITUTION,
-    } = SCENE_CONFIG.PLATFORM;
-    const tiltAngle = TILT_ANGLE * (Math.PI / 180);
-
-    // Create rigid body descriptor
-    const bodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(POSITION.x, POSITION.y, POSITION.z)
-      .setRotation({ x: tiltAngle, y: 0, z: 0, w: 1 }); // Tilt forward
+    const { WIDTH, DEPTH, THICKNESS, POSITION, FRICTION, RESTITUTION } =
+      SCENE_CONFIG.PLATFORM;
+    // Create rigid body descriptor (no rotation - flat platform)
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
+      POSITION.x,
+      POSITION.y,
+      POSITION.z
+    );
 
     const body = this.world.createRigidBody(bodyDesc);
 

@@ -23,17 +23,14 @@ export class StaticMeshes {
     const wallMat = this.createWallMaterial();
 
     // Main platform
-    const { WIDTH, DEPTH, THICKNESS, POSITION, TILT_ANGLE } =
-      SCENE_CONFIG.PLATFORM;
+    const { WIDTH, DEPTH, THICKNESS, POSITION } = SCENE_CONFIG.PLATFORM;
     const platform = MeshBuilder.CreateBox(
       "platform",
       { width: WIDTH, height: THICKNESS, depth: DEPTH },
       this.scene
     );
     platform.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
-
-    // Slight forward tilt
-    platform.rotation.x = TILT_ANGLE * (Math.PI / 180);
+    // No rotation - flat platform
     platform.material = platformMat;
 
     // Back wall
