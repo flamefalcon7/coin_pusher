@@ -158,8 +158,22 @@ export const SCENE_CONFIG = {
     HEIGHT: 2, // meters
     THICKNESS: 0.05, // meters
     POSITION: { x: 0, y: 0.5, z: -0.4 },
+    TILT_ANGLE: -5, // degrees (backward tilt)
     FRICTION: 0.3,
     RESTITUTION: 0.1,
+  },
+  PINS: {
+    RADIUS: 0.015, // meters
+    HEIGHT: 0.12, // meters
+    ROWS: 5,
+    ODD_ROW_COUNT: 5, // pins per odd row
+    EVEN_ROW_COUNT: 6, // pins per even row
+    HORIZONTAL_SPACING: 0.2, // meters
+    VERTICAL_SPACING: 0.15, // meters
+    START_Y: 0.3, // meters from bottom of back wall
+    Y_OFFSET: 0.8, // meters (adjust vertical position of all pins)
+    FRICTION: 0.2,
+    RESTITUTION: 0.3,
   },
   SIDE_WALLS: {
     DEPTH: 1, // meters
