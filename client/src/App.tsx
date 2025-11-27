@@ -5,6 +5,7 @@ import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { SceneManager } from "./scene/SceneManager";
 import { GameClient } from "./net/GameClient";
+import { SLOT_CONFIG } from "@coin-pusher/shared";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3000";
 
@@ -121,14 +122,14 @@ function App() {
     };
   }, []);
 
-  const handleInsertCoin = () => {
+  const handleInsertCoin = (slotIndex: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
       console.warn("Not connected to server");
       return;
     }
 
-    // Generate random x position
-    const x = parseFloat(((Math.random() - 0.5) * 0.8).toFixed(3));
+    // Get X position from slot configuration
+    const x = SLOT_CONFIG.POSITIONS[slotIndex];
 
     // Send to server
     gameClientRef.current.insertCoin(x);

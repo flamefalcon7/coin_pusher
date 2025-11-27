@@ -4,10 +4,19 @@ import type {
   CoinInsertMessage,
   PingMessage,
 } from "@coin-pusher/shared";
-import { RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import {
+  COIN_CONFIG,
+  RATE_LIMIT_CONFIG,
+  SCENE_CONFIG,
+} from "@coin-pusher/shared";
 
 export type MessageHandlers = {
-  onCoinInsert: (connection: Connection, x: number) => void;
+  onCoinInsert: (
+    connection: Connection,
+    x: number,
+    y: number,
+    z: number
+  ) => void;
   onPing: (connection: Connection, clientTime: number) => void;
 };
 
@@ -21,9 +30,8 @@ export class MessageHandler {
   handleMessage(connection: Connection, data: string | ClientMessage): void {
     try {
       // Handle both string (JSON) and object (MessagePack decoded)
-      const message = typeof data === 'string' 
-        ? (JSON.parse(data) as ClientMessage)
-        : data;
+      const message =
+        typeof data === "string" ? (JSON.parse(data) as ClientMessage) : data;
 
       switch (message.op) {
         case "coin_insert":
@@ -61,8 +69,12 @@ export class MessageHandler {
       return;
     }
 
+    const y = COIN_CONFIG.SPAWN_HEIGHT;
+    // const z = SLOT_CONFIG.SPAWN_Z;
+    const z = SCENE_CONFIG.BACK_WALL.POSITION.z;
+
     // Forward to game logic
-    this.handlers.onCoinInsert(connection, x);
+    this.handlers.onCoinInsert(connection, x, y, z);
   }
 
   private handlePing(connection: Connection, _message: PingMessage): void {

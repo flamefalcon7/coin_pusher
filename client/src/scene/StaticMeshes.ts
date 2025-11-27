@@ -6,7 +6,7 @@ import {
   Vector3,
   TransformNode,
 } from "@babylonjs/core";
-import { SCENE_CONFIG } from "@coin-pusher/shared";
+import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
 
 export class StaticMeshes {
   private scene: Scene;
@@ -140,6 +140,9 @@ export class StaticMeshes {
     // Create pins
     this.createPinMeshes(backWallGroup);
 
+    // Create coin slot indicators on back wall
+    this.createSlotIndicators(backWallGroup);
+
     console.log("  ✓ Back wall with pins rendered");
   }
 
@@ -205,5 +208,39 @@ export class StaticMeshes {
     }
 
     console.log(`  ✓ ${pinsCreated} pin meshes rendered`);
+  }
+
+  private createSlotIndicators(parentNode: TransformNode): void {
+    const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
+
+    // Create material for slot indicators
+    const slotMat = new StandardMaterial("slotMat", this.scene);
+    slotMat.diffuseColor = new Color3(1.0, 0.8, 0.2); // Golden/yellow color
+    slotMat.emissiveColor = new Color3(0.3, 0.2, 0.05); // Slight glow
+    slotMat.alpha = 0.7; // Semi-transparent
+
+    // Create rectangular slot boxes at each position on the back wall
+    SLOT_CONFIG.POSITIONS.forEach((x: number, index: number) => {
+      // Create a rectangular box as a slot
+      const slot = MeshBuilder.CreateBox(
+        `slotIndicator_${index}`,
+        {
+          width: 0.1, // Width of slot opening
+          height: 0.12, // Height of slot opening
+          depth: 0.02, // Thin depth (barely protrudes from wall)
+        },
+        this.scene
+      );
+
+      // Position relative to back wall center
+      // Y: top of the wall (WALL_HEIGHT/2)
+      // Z: just in front of the wall surface
+      slot.position = new Vector3(x, WALL_HEIGHT / 2, THICKNESS / 2 + 0.01);
+
+      slot.material = slotMat;
+      slot.parent = parentNode;
+    });
+
+    console.log(`  ✓ ${SLOT_CONFIG.POSITIONS.length} slot indicators created`);
   }
 }

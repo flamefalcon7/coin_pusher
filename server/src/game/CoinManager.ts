@@ -1,5 +1,5 @@
-import { COIN_CONFIG, RATE_LIMIT_CONFIG } from '@coin-pusher/shared';
-import type { GameState } from './GameState.js';
+import { COIN_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import type { GameState } from "./GameState.js";
 
 export class CoinManager {
   private gameState: GameState;
@@ -10,7 +10,10 @@ export class CoinManager {
 
   spawnCoin(x: number, y?: number, z?: number): number | null {
     // Validate x position
-    if (x < -RATE_LIMIT_CONFIG.MAX_X_POSITION || x > RATE_LIMIT_CONFIG.MAX_X_POSITION) {
+    if (
+      x < -RATE_LIMIT_CONFIG.MAX_X_POSITION ||
+      x > RATE_LIMIT_CONFIG.MAX_X_POSITION
+    ) {
       console.warn(`Invalid coin spawn x: ${x}`);
       return null;
     }
@@ -31,7 +34,11 @@ export class CoinManager {
     console.log(`Removed coin ${id}`);
   }
 
-  updateCoin(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+  updateCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
     const quantizedPos: [number, number, number] = [
       this.quantize(pos[0], 3),
       this.quantize(pos[1], 3),
@@ -53,4 +60,3 @@ export class CoinManager {
     return Math.round(value * factor) / factor;
   }
 }
-

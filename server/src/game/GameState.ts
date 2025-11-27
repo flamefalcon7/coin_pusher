@@ -1,5 +1,5 @@
-import type { BodyState, WorldState } from '@coin-pusher/shared';
-import { PROTOCOL_VERSION } from '@coin-pusher/shared';
+import type { BodyState, WorldState } from "@coin-pusher/shared";
+import { PROTOCOL_VERSION } from "@coin-pusher/shared";
 
 export class GameState {
   private nextBodyId: number = 1; // ID 0 reserved for pusher
@@ -11,7 +11,7 @@ export class GameState {
     // Initialize pusher at ID 0
     this.bodies.set(0, {
       id: 0,
-      type: 'pusher',
+      type: "pusher",
       z: 0,
     });
   }
@@ -21,17 +21,28 @@ export class GameState {
   }
 
   addCoin(id: number, x: number, y: number, z: number): void {
+    // Initial rotation: 90 degrees around X-axis (coin standing up)
+    const rot: [number, number, number, number] = [
+      Math.SQRT1_2,
+      0,
+      0,
+      Math.SQRT1_2,
+    ];
     this.bodies.set(id, {
       id,
-      type: 'coin',
+      type: "coin",
       pos: [x, y, z],
-      rot: [0, 0, 0, 1], // Identity quaternion
+      rot,
     });
   }
 
-  updateCoinState(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+  updateCoinState(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
     const body = this.bodies.get(id);
-    if (body && body.type === 'coin') {
+    if (body && body.type === "coin") {
       body.pos = pos;
       body.rot = rot;
     }
@@ -73,7 +84,7 @@ export class GameState {
   getAllCoins(): Map<number, BodyState> {
     const coins = new Map<number, BodyState>();
     this.bodies.forEach((body, id) => {
-      if (body.type === 'coin') {
+      if (body.type === "coin") {
         coins.set(id, body);
       }
     });
@@ -88,4 +99,3 @@ export class GameState {
     return this.bodies.get(id);
   }
 }
-
