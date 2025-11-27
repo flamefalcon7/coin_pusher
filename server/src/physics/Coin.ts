@@ -18,7 +18,11 @@ export class Coin {
     this.id = id;
 
     // Create dynamic rigid body at spawn position
-    const bodyDesc = RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z);
+    // Rotate 90 degrees around X-axis so coin stands up vertically
+    const rotation = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }; // 90° rotation
+    const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(x, y, z)
+      .setRotation(rotation);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall

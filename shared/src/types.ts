@@ -142,6 +142,19 @@ export const RATE_LIMIT_CONFIG = {
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
 
+// Coin spawn slot configuration
+export const SLOT_CONFIG = {
+  POSITIONS: [
+    -0.4, // Slot 1 (leftmost)
+    -0.2, // Slot 2
+    0.0, // Slot 3 (center)
+    0.2, // Slot 4
+    0.4, // Slot 5 (rightmost)
+  ],
+  SPAWN_HEIGHT: 1.5, // meters (same as COIN_CONFIG.SPAWN_HEIGHT)
+  SPAWN_Z: 0, // meters (centered)
+} as const;
+
 // Scene geometry configuration (shared between server physics and client rendering)
 export const SCENE_CONFIG = {
   PLATFORM: {

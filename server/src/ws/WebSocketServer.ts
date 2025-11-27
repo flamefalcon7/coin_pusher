@@ -18,8 +18,12 @@ export class WebSocketServer {
 
     // Temporary handlers (will be replaced when game state is ready)
     const handlers: MessageHandlers = {
-      onCoinInsert: (_connection, x) => {
-        console.log(`Coin insert at x=${x.toFixed(3)}`);
+      onCoinInsert: (_connection, x, y, z) => {
+        console.log(
+          `Coin insert at x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(
+            3
+          )}`
+        );
       },
       onPing: (_connection, _clientTime) => {
         // Handled by MessageHandler
@@ -110,7 +114,9 @@ export class WebSocketServer {
     }, NETWORK_CONFIG.CONNECTION_CHECK_INTERVAL);
 
     console.log(
-      `🔄 Idle connection cleanup started (check every ${NETWORK_CONFIG.CONNECTION_CHECK_INTERVAL / 1000}s, timeout: ${NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT / 1000}s)`
+      `🔄 Idle connection cleanup started (check every ${
+        NETWORK_CONFIG.CONNECTION_CHECK_INTERVAL / 1000
+      }s, timeout: ${NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT / 1000}s)`
     );
   }
 
@@ -129,13 +135,19 @@ export class WebSocketServer {
 
     if (idleConnections.length > 0) {
       console.log(
-        `⏰ Disconnecting ${idleConnections.length} idle connection(s) (no activity for ${NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT / 1000}s)`
+        `⏰ Disconnecting ${
+          idleConnections.length
+        } idle connection(s) (no activity for ${
+          NETWORK_CONFIG.CONNECTION_IDLE_TIMEOUT / 1000
+        }s)`
       );
 
       idleConnections.forEach((connection) => {
         const idleDuration = now - connection.getLastActivityTime();
         console.log(
-          `   💤 Connection idle for ${Math.round(idleDuration / 1000)}s, closing...`
+          `   💤 Connection idle for ${Math.round(
+            idleDuration / 1000
+          )}s, closing...`
         );
 
         // Remove from connections set

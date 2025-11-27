@@ -35,35 +35,42 @@
   margin: 4px 0;
 }
 
-.coin-insert-button {
+.slot-buttons-container {
   position: absolute;
   bottom: 32px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 16px 32px;
-  font-size: 18px;
+  display: flex;
+  gap: 12px;
+  user-select: none;
+}
+
+.slot-button {
+  padding: 14px 24px;
+  font-size: 16px;
   font-weight: bold;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  border-radius: 50px;
+  border-radius: 12px;
   cursor: pointer;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
   transition: all 0.2s;
-  user-select: none;
   -webkit-tap-highlight-color: transparent;
+  min-width: 80px;
 }
 
-.coin-insert-button:hover:not(:disabled) {
-  transform: translateX(-50%) translateY(-2px);
+.slot-button:hover:not(:disabled) {
+  transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
-.coin-insert-button:active:not(:disabled) {
-  transform: translateX(-50%) translateY(0px);
+.slot-button:active:not(:disabled) {
+  transform: translateY(0px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.coin-insert-button:disabled {
+.slot-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

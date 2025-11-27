@@ -35,14 +35,25 @@ async function initialize() {
   pusher = new Pusher(physicsWorld);
 
   // Create game loop
-  gameLoop = new GameLoop(physicsWorld, pusher, gameState, coinManager, wsServer);
+  gameLoop = new GameLoop(
+    physicsWorld,
+    pusher,
+    gameState,
+    coinManager,
+    wsServer
+  );
 
   // Set message handlers
   wsServer.setMessageHandlers({
-    onCoinInsert: (_connection: Connection, x: number) => {
-      const coinId = coinManager.spawnCoin(x);
+    onCoinInsert: (
+      _connection: Connection,
+      x: number,
+      y: number,
+      z: number
+    ) => {
+      const coinId = coinManager.spawnCoin(x, y, z);
       if (coinId !== null) {
-        const coin = new Coin(physicsWorld, coinId, x, 1.5, 0);
+        const coin = new Coin(physicsWorld, coinId, x, y, z);
         gameLoop.addCoin(coin);
       }
     },
@@ -59,7 +70,9 @@ async function initialize() {
       ...worldState,
     };
     connection.send(snapshot);
-    console.log(`📸 Sent world snapshot to new connection (${snapshot.bodies.length} bodies)`);
+    console.log(
+      `📸 Sent world snapshot to new connection (${snapshot.bodies.length} bodies)`
+    );
   });
 
   // Start game loop
