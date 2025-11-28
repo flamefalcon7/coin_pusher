@@ -1,9 +1,9 @@
-import { Engine, Scene } from '@babylonjs/core';
-import { CameraSetup } from './CameraSetup';
-import { Lighting } from './Lighting';
-import { StaticMeshes } from './StaticMeshes';
-import { PusherMesh } from './PusherMesh';
-import { CoinMeshManager } from './CoinMeshManager';
+import { Engine, Scene } from "@babylonjs/core";
+import { CameraSetup } from "./CameraSetup";
+import { Lighting } from "./Lighting";
+import { StaticMeshes } from "./StaticMeshes";
+import { PusherMesh } from "./PusherMesh";
+import { CoinMeshManager } from "./CoinMeshManager";
 
 export class SceneManager {
   private engine: Engine;
@@ -14,7 +14,7 @@ export class SceneManager {
   private fpsCallback?: (fps: number) => void;
 
   constructor(canvas: HTMLCanvasElement) {
-    console.log('🎮 Initializing BabylonJS scene...');
+    console.log("🎮 Initializing BabylonJS scene...");
 
     // Create engine
     this.engine = new Engine(canvas, true, {
@@ -28,7 +28,7 @@ export class SceneManager {
     // IMPORTANT: Set right-handed coordinate system
     this.scene.useRightHandedSystem = true;
 
-    console.log('✅ Right-handed coordinate system enabled');
+    console.log("✅ Right-handed coordinate system enabled");
 
     // Initialize components
     new CameraSetup(this.scene, canvas);
@@ -37,10 +37,10 @@ export class SceneManager {
     this.pusherMesh = new PusherMesh(this.scene);
     this.coinManager = new CoinMeshManager(this.scene);
 
-    console.log('✅ Scene initialized successfully');
+    console.log("✅ Scene initialized successfully");
 
     // Handle window resize
-    window.addEventListener('resize', () => {
+    window.addEventListener("resize", () => {
       this.engine.resize();
     });
   }
@@ -49,7 +49,7 @@ export class SceneManager {
     if (this.running) return;
 
     this.running = true;
-    console.log('▶️  Render loop started');
+    console.log("▶️  Render loop started");
 
     this.engine.runRenderLoop(() => {
       this.scene.render();
@@ -67,18 +67,26 @@ export class SceneManager {
 
     this.running = false;
     this.engine.stopRenderLoop();
-    console.log('⏸️  Render loop stopped');
+    console.log("⏸️  Render loop stopped");
   }
 
   updatePusherPosition(z: number): void {
     this.pusherMesh.updatePosition(z);
   }
 
-  addCoin(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+  addCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
     this.coinManager.addCoin(id, pos, rot);
   }
 
-  updateCoin(id: number, pos: [number, number, number], rot: [number, number, number, number]): void {
+  updateCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
     this.coinManager.updateCoin(id, pos, rot);
   }
 
@@ -94,6 +102,10 @@ export class SceneManager {
     this.coinManager.clear();
   }
 
+  updateCoinBuffers(): void {
+    this.coinManager.updateInstances();
+  }
+
   setFpsCallback(callback: (fps: number) => void): void {
     this.fpsCallback = callback;
   }
@@ -102,7 +114,7 @@ export class SceneManager {
     this.stopRenderLoop();
     this.scene.dispose();
     this.engine.dispose();
-    console.log('🗑️  Scene disposed');
+    console.log("🗑️  Scene disposed");
   }
 
   getScene(): Scene {
@@ -113,4 +125,3 @@ export class SceneManager {
     return this.engine;
   }
 }
-
