@@ -22,7 +22,9 @@ export class Coin {
     const rotation = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }; // 90° rotation
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, y, z)
-      .setRotation(rotation);
+      .setRotation(rotation)
+      .setLinearDamping(10.0)
+      .setAngularDamping(5.0);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall
@@ -34,7 +36,8 @@ export class Coin {
     )
       .setMass(COIN_CONFIG.MASS)
       .setFriction(COIN_CONFIG.FRICTION)
-      .setRestitution(COIN_CONFIG.RESTITUTION);
+      .setRestitution(COIN_CONFIG.RESTITUTION)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
 
     world.createCollider(colliderDesc, this.rigidBody);
   }
