@@ -73,8 +73,7 @@ export class CoinMeshManager {
 
     this.coinInstances.set(id, { matrixIndex });
 
-    // Update thin instances
-    this.updateInstances();
+    // Batch update optimization: Removed this.updateInstances();
   }
 
   updateCoin(
@@ -93,8 +92,7 @@ export class CoinMeshManager {
     const matrix = this.createTransformMatrix(pos, rot);
     this.matrices[instance.matrixIndex] = matrix;
 
-    // Update thin instances
-    this.updateInstances();
+    // Batch update optimization: Removed this.updateInstances();
   }
 
   removeCoin(id: number): void {
@@ -107,8 +105,7 @@ export class CoinMeshManager {
     this.matrices[instance.matrixIndex] = Matrix.Translation(0, -100, 0);
     this.coinInstances.delete(id);
 
-    // Update thin instances
-    this.updateInstances();
+    // Batch update optimization: Removed this.updateInstances();
   }
 
   private createTransformMatrix(
@@ -126,7 +123,7 @@ export class CoinMeshManager {
     );
   }
 
-  private updateInstances(): void {
+  public updateInstances(): void {
     if (this.matrices.length === 0) {
       this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
       return;

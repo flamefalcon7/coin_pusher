@@ -53,10 +53,10 @@ export class MessageHandler {
     message: CoinInsertMessage
   ): void {
     // Rate limiting check
-    if (!connection.canInsertCoin()) {
-      console.warn("Coin insert rate limited");
-      return;
-    }
+    // if (!connection.canInsertCoin()) {
+    //   console.warn("Coin insert rate limited");
+    //   return;
+    // }
 
     // Validate x coordinate
     const x = message.x;

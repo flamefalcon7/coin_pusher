@@ -97,7 +97,7 @@ export const PHYSICS_CONFIG = {
   TICK_RATE: 30, // Hz
   TICK_INTERVAL: 1000 / 30, // ~33.333ms
   SUBSTEPS: 4,
-  SOLVER_VELOCITY_ITERATIONS: 8,
+  SOLVER_VELOCITY_ITERATIONS: 4,
   SOLVER_POSITION_ITERATIONS: 4,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
   QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places

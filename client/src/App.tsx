@@ -21,6 +21,7 @@ function App() {
     "connecting" | "connected" | "disconnected"
   >("disconnected");
   const [buttonDisabled, setButtonDisabled] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -102,6 +103,9 @@ function App() {
             }
           }
 
+          // Batch update coin instances to GPU
+          sceneManager.updateCoinBuffers();
+
           // Update coin count
           setActiveCoinCount(knownCoins.size);
         }
@@ -139,12 +143,61 @@ function App() {
     setTimeout(() => setButtonDisabled(false), 100);
   };
 
+  const handleTestLoop = () => {
+    if (isTesting || !gameClientRef.current?.isConnected()) return;
+
+    setIsTesting(true);
+    let count = 0;
+    const maxCoins = 200;
+    const intervalTime = 50; // 0.05 seconds
+
+    const interval = setInterval(() => {
+      if (count >= maxCoins) {
+        clearInterval(interval);
+        setIsTesting(false);
+        return;
+      }
+
+      // Pick a random slot index (0 to 4)
+      const randomSlotIndex = Math.floor(
+        Math.random() * SLOT_CONFIG.POSITIONS.length
+      );
+      handleInsertCoin(randomSlotIndex);
+
+      count++;
+    }, intervalTime);
+  };
+
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
       <div id="canvas-container">
         <canvas ref={canvasRef} id="babylon-canvas" />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          top: "10px",
+          right: "10px",
+          zIndex: 100,
+        }}
+      >
+        <button
+          onClick={handleTestLoop}
+          disabled={isTesting || connectionStatus !== "connected"}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: isTesting ? "#666" : "#ff4444",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: isTesting ? "not-allowed" : "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          {isTesting ? "Testing..." : "Test: Insert 200 Coins"}
+        </button>
       </div>
       <CoinInsertButton
         onClick={handleInsertCoin}
