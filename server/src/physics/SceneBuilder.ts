@@ -4,8 +4,10 @@ import { SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class SceneBuilder {
   private world: RAPIER.World;
+  private physicsWorld: PhysicsWorld;
 
   constructor(physicsWorld: PhysicsWorld) {
+    this.physicsWorld = physicsWorld;
     this.world = physicsWorld.getWorld();
   }
 
@@ -139,9 +141,11 @@ export class SceneBuilder {
           .setTranslation(x, relativeY, relativeZ)
           .setRotation(pinRotation)
           .setFriction(FRICTION)
-          .setRestitution(RESTITUTION);
+          .setRestitution(RESTITUTION)
+          .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
 
-        this.world.createCollider(pinColliderDesc, parentBody);
+        const collider = this.world.createCollider(pinColliderDesc, parentBody);
+        this.physicsWorld.registerPinCollider(collider.handle);
         pinsCreated++;
       }
     }
