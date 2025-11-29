@@ -13,12 +13,29 @@ import { COIN_CONFIG } from "@coin-pusher/shared";
 export class CoinMeshManager {
   private scene: Scene;
   private prototypeMesh!: Mesh;
-  private coinInstances: Map<number, { matrixIndex: number }> = new Map();
-  private matrices: Matrix[] = [];
-  private nextMatrixIndex: number = 0;
+
+  // Optimized storage: pre-allocated buffer for instance matrices
+  // 16 floats per instance (4x4 matrix)
+  private matrixBuffer: Float32Array;
+  private activeCoins: number = 0;
+  private capacity: number = 2000;
+
+  // Maps for swap-and-pop management
+  // coinId -> buffer index
+  private idToIndex: Map<number, number> = new Map();
+  // buffer index -> coinId
+  private indexToId: Map<number, number> = new Map();
+
+  // Reusable temporary objects to avoid GC per coin per frame
+  private static tmpVector = new Vector3();
+  private static tmpQuaternion = new Quaternion();
+  private static tmpMatrix = new Matrix();
+  private static tmpScale = new Vector3(1, 1, 1);
 
   constructor(scene: Scene) {
     this.scene = scene;
+    // Initialize buffer with default capacity
+    this.matrixBuffer = new Float32Array(this.capacity * 16);
     this.createPrototype();
   }
 
@@ -55,25 +72,26 @@ export class CoinMeshManager {
     pos: [number, number, number],
     rot: [number, number, number, number]
   ): void {
-    if (this.coinInstances.has(id)) {
+    if (this.idToIndex.has(id)) {
       console.warn(`Coin ${id} already exists`);
       return;
     }
 
-    const matrixIndex = this.nextMatrixIndex++;
-
-    // Create transformation matrix
-    const matrix = this.createTransformMatrix(pos, rot);
-
-    if (matrixIndex < this.matrices.length) {
-      this.matrices[matrixIndex] = matrix;
-    } else {
-      this.matrices.push(matrix);
+    // Resize buffer if full
+    if (this.activeCoins >= this.capacity) {
+      this.resizeBuffer();
     }
 
-    this.coinInstances.set(id, { matrixIndex });
+    // Assign new index at the end
+    const index = this.activeCoins;
+    this.activeCoins++;
 
-    // Batch update optimization: Removed this.updateInstances();
+    // Update maps
+    this.idToIndex.set(id, index);
+    this.indexToId.set(index, id);
+
+    // Write transform to buffer
+    this.writeMatrixToBuffer(index, pos, rot);
   }
 
   updateCoin(
@@ -81,71 +99,107 @@ export class CoinMeshManager {
     pos: [number, number, number],
     rot: [number, number, number, number]
   ): void {
-    const instance = this.coinInstances.get(id);
-    if (!instance) {
+    const index = this.idToIndex.get(id);
+    if (index === undefined) {
       // Coin doesn't exist yet, add it
       this.addCoin(id, pos, rot);
       return;
     }
 
-    // Update matrix
-    const matrix = this.createTransformMatrix(pos, rot);
-    this.matrices[instance.matrixIndex] = matrix;
-
-    // Batch update optimization: Removed this.updateInstances();
+    // Update transform in buffer
+    this.writeMatrixToBuffer(index, pos, rot);
   }
 
   removeCoin(id: number): void {
-    const instance = this.coinInstances.get(id);
-    if (!instance) {
+    const index = this.idToIndex.get(id);
+    if (index === undefined) {
       return;
     }
 
-    // Mark matrix as unused by setting it far away (optimization)
-    this.matrices[instance.matrixIndex] = Matrix.Translation(0, -100, 0);
-    this.coinInstances.delete(id);
+    // Swap-and-pop: replace this coin with the last active coin
+    // to keep the array dense and avoid gaps.
+    const lastIndex = this.activeCoins - 1;
 
-    // Batch update optimization: Removed this.updateInstances();
-  }
+    if (index !== lastIndex) {
+      // If we're not removing the last coin, move the last coin to this slot
+      const lastCoinId = this.indexToId.get(lastIndex)!;
 
-  private createTransformMatrix(
-    pos: [number, number, number],
-    rot: [number, number, number, number]
-  ): Matrix {
-    const position = new Vector3(pos[0], pos[1], pos[2]);
-    const quaternion = new Quaternion(rot[0], rot[1], rot[2], rot[3]);
+      // Copy matrix data: from lastIndex to index
+      // copyWithin(targetStart, sourceStart, sourceEnd)
+      this.matrixBuffer.copyWithin(
+        index * 16,
+        lastIndex * 16,
+        (lastIndex + 1) * 16
+      );
 
-    // Combine rotation and translation
-    return Matrix.Compose(
-      Vector3.One(), // scale
-      quaternion,
-      position
-    );
+      // Update maps for the moved coin
+      this.idToIndex.set(lastCoinId, index);
+      this.indexToId.set(index, lastCoinId);
+    }
+
+    // Remove the deleted coin from maps
+    this.idToIndex.delete(id);
+    this.indexToId.delete(lastIndex);
+
+    this.activeCoins--;
   }
 
   public updateInstances(): void {
-    if (this.matrices.length === 0) {
+    if (this.activeCoins === 0) {
       this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
       return;
     }
 
-    // Convert matrices to Float32Array
-    const matrixData = new Float32Array(this.matrices.length * 16);
-    this.matrices.forEach((matrix, index) => {
-      matrix.copyToArray(matrixData, index * 16);
-    });
+    // Pass the active portion of the buffer to BabylonJS
+    // Using subarray is efficient (creates a view, copies nothing)
+    const activeData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
 
-    this.prototypeMesh.thinInstanceSetBuffer("matrix", matrixData, 16);
+    // Update the thin instance buffer
+    // 16 floats per instance, 4th arg false = don't instantiate new buffer if possible (static optimization)
+    this.prototypeMesh.thinInstanceSetBuffer("matrix", activeData, 16, false);
+  }
+
+  private writeMatrixToBuffer(
+    index: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
+    // Update temporary objects (reuse to avoid GC)
+    CoinMeshManager.tmpVector.set(pos[0], pos[1], pos[2]);
+    CoinMeshManager.tmpQuaternion.set(rot[0], rot[1], rot[2], rot[3]);
+
+    // Compose matrix directly into reusable temporary matrix
+    Matrix.ComposeToRef(
+      CoinMeshManager.tmpScale,
+      CoinMeshManager.tmpQuaternion,
+      CoinMeshManager.tmpVector,
+      CoinMeshManager.tmpMatrix
+    );
+
+    // Copy to the Float32Array buffer at the correct offset
+    CoinMeshManager.tmpMatrix.copyToArray(this.matrixBuffer, index * 16);
+  }
+
+  private resizeBuffer(): void {
+    const newCapacity = this.capacity * 2;
+    console.log(
+      `📈 Resizing coin buffer: ${this.capacity} -> ${newCapacity} coins`
+    );
+
+    const newBuffer = new Float32Array(newCapacity * 16);
+    newBuffer.set(this.matrixBuffer);
+    this.matrixBuffer = newBuffer;
+    this.capacity = newCapacity;
   }
 
   getCoinCount(): number {
-    return this.coinInstances.size;
+    return this.activeCoins;
   }
 
   clear(): void {
-    this.coinInstances.clear();
-    this.matrices = [];
-    this.nextMatrixIndex = 0;
+    this.idToIndex.clear();
+    this.indexToId.clear();
+    this.activeCoins = 0;
     this.updateInstances();
   }
 }
