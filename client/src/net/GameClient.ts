@@ -1,10 +1,12 @@
-import type { ServerMessage, ClientMessage } from '@coin-pusher/shared';
-import { WebSocketClient } from './WebSocketClient';
-import { ClockSync } from './ClockSync';
-import { StateBuffer } from './StateBuffer';
-import { Interpolator, type InterpolatedState } from './Interpolator';
+import type { ServerMessage, ClientMessage } from "@coin-pusher/shared";
+import { WebSocketClient } from "./WebSocketClient";
+import { ClockSync } from "./ClockSync";
+import { StateBuffer } from "./StateBuffer";
+import { Interpolator, type InterpolatedState } from "./Interpolator";
 
-export type ConnectionStatusCallback = (status: 'connecting' | 'connected' | 'disconnected') => void;
+export type ConnectionStatusCallback = (
+  status: "connecting" | "connected" | "disconnected"
+) => void;
 export type PingCallback = (ping: number) => void;
 
 export class GameClient {
@@ -12,7 +14,7 @@ export class GameClient {
   private clockSync: ClockSync;
   private stateBuffer: StateBuffer;
   private interpolator: Interpolator;
-  
+
   private connectionStatusCallback?: ConnectionStatusCallback;
   private pingCallback?: PingCallback;
   private pendingPingTime: number = 0;
@@ -33,44 +35,48 @@ export class GameClient {
 
     this.wsClient.onOpen(() => {
       if (this.connectionStatusCallback) {
-        this.connectionStatusCallback('connected');
+        this.connectionStatusCallback("connected");
       }
     });
 
     this.wsClient.onClose(() => {
       if (this.connectionStatusCallback) {
-        this.connectionStatusCallback('disconnected');
+        this.connectionStatusCallback("disconnected");
       }
     });
 
     this.wsClient.onError(() => {
       if (this.connectionStatusCallback) {
-        this.connectionStatusCallback('disconnected');
+        this.connectionStatusCallback("disconnected");
       }
     });
   }
 
   private handleMessage(message: ServerMessage): void {
     switch (message.op) {
-      case 'world_snapshot':
-        console.log('📸 World snapshot received:', message.bodies.length, 'bodies');
+      case "world_snapshot":
+        console.log(
+          "📸 World snapshot received:",
+          message.bodies.length,
+          "bodies"
+        );
         // Initialize state buffer with snapshot
         this.stateBuffer.clear();
         this.stateBuffer.addState({
           serverTime: message.serverTime,
           tick: message.tick,
           updates: message.bodies
-            .filter(b => b.type === 'coin' && b.pos && b.rot)
-            .map(b => ({
+            .filter((b) => b.type === "coin" && b.pos && b.rot)
+            .map((b) => ({
               id: b.id,
               pos: b.pos!,
               rot: b.rot!,
             })),
-          pusherZ: message.bodies.find(b => b.type === 'pusher')?.z ?? 0,
+          pusherZ: message.bodies.find((b) => b.type === "pusher")?.z ?? 0,
         });
         break;
 
-      case 'state_delta':
+      case "state_delta":
         // Add to state buffer
         this.stateBuffer.addState({
           serverTime: message.serverTime,
@@ -80,12 +86,12 @@ export class GameClient {
         });
         break;
 
-      case 'despawn':
-        console.log('🗑️  Despawned:', message.ids);
+      case "despawn":
+        console.log("🗑️  Despawned:", message.ids);
         // Despawn will be handled by checking which IDs are in interpolated state
         break;
 
-      case 'pong':
+      case "pong":
         if (this.pendingPingTime > 0) {
           this.clockSync.recordPong(this.pendingPingTime, message.serverTime);
           this.pendingPingTime = 0;
@@ -101,7 +107,7 @@ export class GameClient {
 
   connect(): void {
     if (this.connectionStatusCallback) {
-      this.connectionStatusCallback('connecting');
+      this.connectionStatusCallback("connecting");
     }
     this.wsClient.connect();
   }
@@ -116,7 +122,7 @@ export class GameClient {
       const clientTime = Date.now();
       this.pendingPingTime = clientTime;
       this.wsClient.send({
-        op: 'ping',
+        op: "ping",
         clientTime,
       });
     }
@@ -125,7 +131,7 @@ export class GameClient {
   insertCoin(x: number): void {
     // Send MessagePack encoded message
     const message: ClientMessage = {
-      op: 'coin_insert',
+      op: "coin_insert",
       x,
     };
     this.wsClient.send(message);
@@ -155,4 +161,3 @@ export class GameClient {
     return this.stateBuffer.getBufferSize();
   }
 }
-

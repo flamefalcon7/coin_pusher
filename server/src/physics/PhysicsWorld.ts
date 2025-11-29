@@ -21,6 +21,8 @@ export class PhysicsWorld {
 
     // Create world with gravity
     this.world = new RAPIER.World(PHYSICS_PARAMS.GRAVITY);
+    this.world.maxVelocityIterations = PHYSICS_PARAMS.VELOCITY_ITERATIONS;
+    this.world.maxStabilizationIterations = PHYSICS_PARAMS.POSITION_ITERATIONS;
     this.eventQueue = new RAPIER.EventQueue(true);
 
     console.log("⚙️  Rapier physics world initialized");
@@ -29,7 +31,7 @@ export class PhysicsWorld {
     );
     console.log(`   Substeps: ${PHYSICS_PARAMS.SUBSTEPS}`);
     console.log(
-      `   Solver iterations: vel=${PHYSICS_PARAMS.VELOCITY_ITERATIONS}, pos=${PHYSICS_PARAMS.POSITION_ITERATIONS}`
+      `   Solver iterations: vel=${this.world.maxVelocityIterations}, pos=${this.world.maxStabilizationIterations}`
     );
 
     this.initialized = true;
@@ -43,14 +45,19 @@ export class PhysicsWorld {
     const start = performance.now();
 
     // Step the physics simulation
-    this.world.timestep = PHYSICS_PARAMS.DELTA_TIME;
-    this.world.step(this.eventQueue);
+    const substeps = PHYSICS_PARAMS.SUBSTEPS;
+    const dt = PHYSICS_PARAMS.DELTA_TIME / substeps;
+    this.world.timestep = dt;
 
-    // Handle collision events
-    this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-      if (!started) return;
-      this.handleCollisions(handle1, handle2);
-    });
+    for (let i = 0; i < substeps; i++) {
+      this.world.step(this.eventQueue);
+
+      // Handle collision events within substep
+      this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+        if (!started) return;
+        this.handleCollisions(handle1, handle2);
+      });
+    }
 
     const end = performance.now();
     // 如果超過 16ms (60fps) 或 33ms (30fps)，說明 CPU 吃不消了
