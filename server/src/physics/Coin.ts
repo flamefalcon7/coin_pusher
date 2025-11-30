@@ -1,11 +1,13 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { PhysicsWorld } from "./PhysicsWorld.js";
 import { COIN_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_PARAMS } from "./config.js";
 
 export class Coin {
   private rigidBody: RAPIER.RigidBody;
   private id: number;
   private ccdEnabled: boolean = true;
+  private sleepTimer: number = 0;
 
   constructor(
     physicsWorld: PhysicsWorld,
@@ -24,20 +26,27 @@ export class Coin {
       .setTranslation(x, y, z)
       .setRotation(rotation)
       .setLinearDamping(10.0)
-      .setAngularDamping(5.0);
+      .setAngularDamping(10.0);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall
 
-    // Create cylinder collider (coin shape)
-    const colliderDesc = RAPIER.ColliderDesc.cylinder(
-      COIN_CONFIG.THICKNESS / 2,
-      COIN_CONFIG.RADIUS
+    // Create chamfered cylinder collider (round cylinder)
+    // Use BORDER_RADIUS to create rounded edges for better physics stability
+    // Subtract BORDER_RADIUS from dimensions because roundCylinder expands the shape
+    const coreHalfHeight =
+      COIN_CONFIG.THICKNESS / 2 - COIN_CONFIG.BORDER_RADIUS;
+    const coreRadius = COIN_CONFIG.RADIUS - COIN_CONFIG.BORDER_RADIUS;
+
+    const colliderDesc = RAPIER.ColliderDesc.roundCylinder(
+      coreHalfHeight,
+      coreRadius,
+      COIN_CONFIG.BORDER_RADIUS
     )
       .setMass(COIN_CONFIG.MASS)
       .setFriction(COIN_CONFIG.FRICTION)
-      .setRestitution(COIN_CONFIG.RESTITUTION)
-      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+      .setRestitution(COIN_CONFIG.RESTITUTION);
+    // .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
 
     world.createCollider(colliderDesc, this.rigidBody);
   }
@@ -45,11 +54,40 @@ export class Coin {
   update(): void {
     // Check if we should disable CCD
     if (this.ccdEnabled) {
+      // Optimization: If body is already sleeping, we don't need to check anything
+      if (this.rigidBody.isSleeping()) {
+        this.sleepTimer = 0;
+        return;
+      }
+
       const linvel = this.rigidBody.linvel();
-      const velocity = Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2);
+      const angvel = this.rigidBody.angvel();
       const position = this.rigidBody.translation();
 
+      // Calculate velocity squared
+      // equivalent to Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2)
+      // but sqrt consumes more CPU time
+      const vSq = linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2;
+      const wSq = angvel.x ** 2 + angvel.y ** 2 + angvel.z ** 2;
+
+      // Sleep Logic using Config
+      const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
+      const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
+
+      // Only apply sleep logic if low enough (on platform/bed)
+      // TODO: monitor these values to see if the thresholds are too low or too high
+      if (vSq < linThresholdSq && wSq < angThresholdSq && position.y < 0.5) {
+        this.sleepTimer += PHYSICS_PARAMS.DELTA_TIME;
+        if (this.sleepTimer >= PHYSICS_PARAMS.SLEEP_TIME_UNTIL_SLEEP) {
+          this.rigidBody.sleep();
+          this.sleepTimer = 0;
+        }
+      } else {
+        this.sleepTimer = 0;
+      }
+
       // Disable CCD when coin is slow and low (resting on platform)
+      const velocity = Math.sqrt(vSq);
       if (
         velocity < COIN_CONFIG.CCD_DISABLE_VELOCITY &&
         position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT

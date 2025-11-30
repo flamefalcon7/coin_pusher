@@ -172,8 +172,15 @@ export class GameLoop {
       1024
     ).toFixed(2);
 
+    let activeCoins = 0;
+    this.coins.forEach((coin) => {
+      if (!coin.getRigidBody().isSleeping()) {
+        activeCoins++;
+      }
+    });
+
     console.log(
-      `📊 Stats: ${coinCount} coins, ${connections} connections, ` +
+      `📊 Stats: ${activeCoins} active coins, ${coinCount} coins, ${connections} connections, ` +
         `avg msg: ${avgMessageBytes}B, ` +
         `bandwidth/user: ${estimatedBandwidthPerUser} KB/s, ` +
         `total outbound: ~${estimatedTotalOutbound} KB/s`

@@ -96,9 +96,9 @@ export type CoinSpawnParams = {
 export const PHYSICS_CONFIG = {
   TICK_RATE: 30, // Hz
   TICK_INTERVAL: 1000 / 30, // ~33.333ms
-  SUBSTEPS: 4,
-  SOLVER_VELOCITY_ITERATIONS: 4,
-  SOLVER_POSITION_ITERATIONS: 4,
+  SUBSTEPS: 2,
+  SOLVER_VELOCITY_ITERATIONS: 6,
+  SOLVER_POSITION_ITERATIONS: 6,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
   QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places
 } as const;
@@ -115,12 +115,13 @@ export const COIN_CONFIG = {
   RADIUS: 0.04, // meters
   THICKNESS: 0.015, // meters
   MASS: 0.01, // kg
-  FRICTION: 0.3,
-  RESTITUTION: 0.3,
+  FRICTION: 0.5,
+  RESTITUTION: 0.0,
   SPAWN_HEIGHT: 1.5, // meters
   DESPAWN_Y: -0.1, // meters (below this = remove)
   CCD_DISABLE_VELOCITY: 0.5, // m/s
   CCD_DISABLE_HEIGHT: 0.5, // meters
+  BORDER_RADIUS: 0.006, // meters (chamfer radius)
 } as const;
 
 // Network/Interpolation configuration
@@ -176,7 +177,7 @@ export const SCENE_CONFIG = {
     RESTITUTION: 0.1,
   },
   PINS: {
-    RADIUS: 0.015, // meters
+    RADIUS: 0.01, // meters
     HEIGHT: 0.12, // meters
     ROWS: 5,
     ODD_ROW_COUNT: 5, // pins per odd row
