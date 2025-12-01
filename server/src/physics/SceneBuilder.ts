@@ -128,7 +128,8 @@ export class SceneBuilder {
         START_Y + row * VERTICAL_SPACING - WALL_HEIGHT / 2 + Y_OFFSET;
 
       // Z position: just in front of the back wall (pin height is along Z when rotated)
-      const relativeZ = THICKNESS / 2 + HEIGHT / 2;
+      // Embed pins slightly (0.01) into the wall to prevent gaps where coins can get stuck
+      const relativeZ = THICKNESS / 2 + HEIGHT / 2 - 0.01;
 
       for (let col = 0; col < pinCount; col++) {
         const x = startX + col * HORIZONTAL_SPACING;
