@@ -96,7 +96,7 @@ export type CoinSpawnParams = {
 export const PHYSICS_CONFIG = {
   TICK_RATE: 30, // Hz
   TICK_INTERVAL: 1000 / 30, // ~33.333ms
-  SUBSTEPS: 2,
+  SUBSTEPS: 4,
   SOLVER_VELOCITY_ITERATIONS: 6,
   SOLVER_POSITION_ITERATIONS: 6,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
@@ -105,14 +105,15 @@ export const PHYSICS_CONFIG = {
 
 // Pusher configuration
 export const PUSHER_CONFIG = {
-  AMPLITUDE: 0.15, // meters
+  AMPLITUDE: 0.1, // meters
   FREQUENCY: 0.25, // Hz
   INITIAL_PHASE: 0,
+  Z_OFFSET: 0.1, // meters
 } as const;
 
 // Coin configuration
 export const COIN_CONFIG = {
-  RADIUS: 0.04, // meters
+  RADIUS: 0.05, // meters
   THICKNESS: 0.015, // meters
   MASS: 0.01, // kg
   FRICTION: 0.5,
@@ -121,7 +122,7 @@ export const COIN_CONFIG = {
   DESPAWN_Y: -0.1, // meters (below this = remove)
   CCD_DISABLE_VELOCITY: 0.5, // m/s
   CCD_DISABLE_HEIGHT: 0.5, // meters
-  BORDER_RADIUS: 0.006, // meters (chamfer radius)
+  BORDER_RADIUS: 0.002, // meters (chamfer radius)
 } as const;
 
 // Network/Interpolation configuration
@@ -187,7 +188,7 @@ export const SCENE_CONFIG = {
     START_Y: 0.3, // meters from bottom of back wall
     Y_OFFSET: 0.8, // meters (adjust vertical position of all pins)
     FRICTION: 0.0,
-    RESTITUTION: 0.3,
+    RESTITUTION: 0.7,
   },
   SIDE_WALLS: {
     DEPTH: 1, // meters
