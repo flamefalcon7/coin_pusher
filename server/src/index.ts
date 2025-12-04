@@ -3,10 +3,12 @@ import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
 import { Coin } from "./physics/Coin.js";
+import { StackSpawner } from "./game/StackSpawner.js";
 import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
 import { GameLoop } from "./game/GameLoop.js";
 import type { Connection } from "./ws/Connection.js";
+import type { StackType } from "@coin-pusher/shared";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
@@ -56,6 +58,44 @@ async function initialize() {
         const coin = new Coin(physicsWorld, coinId, x, y, z);
         gameLoop.addCoin(coin);
       }
+    },
+    onStackSpawn: (
+      _connection: Connection,
+      type: StackType,
+      x: number,
+      y: number,
+      z: number
+    ) => {
+      const coins = StackSpawner.getStackCoins(type, x, y, z);
+      coins.forEach((coinData) => {
+        // Convert rotation object to tuple
+        const rot: [number, number, number, number] = [
+          coinData.rotation.x,
+          coinData.rotation.y,
+          coinData.rotation.z,
+          coinData.rotation.w,
+        ];
+
+        const coinId = coinManager.spawnCoin(
+          coinData.x,
+          coinData.y,
+          coinData.z,
+          rot
+        );
+
+        if (coinId !== null) {
+          const coin = new Coin(
+            physicsWorld,
+            coinId,
+            coinData.x,
+            coinData.y,
+            coinData.z,
+            coinData.rotation
+          );
+          gameLoop.addCoin(coin);
+        }
+      });
+      console.log(`Spawned ${type} stack with ${coins.length} coins`);
     },
     onPing: (_connection: Connection, _clientTime: number) => {
       // Handled by MessageHandler

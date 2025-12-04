@@ -14,17 +14,23 @@ export class Coin {
     id: number,
     x: number,
     y: number,
-    z: number
+    z: number,
+    rotation?: { x: number; y: number; z: number; w: number }
   ) {
     const world = physicsWorld.getWorld();
     this.id = id;
 
     // Create dynamic rigid body at spawn position
-    // Rotate 90 degrees around X-axis so coin stands up vertically
-    const rotation = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }; // 90° rotation
+    // Default rotation: 90 degrees around X-axis (coin standing up)
+    const finalRotation = rotation || {
+      x: Math.SQRT1_2,
+      y: 0,
+      z: 0,
+      w: Math.SQRT1_2,
+    };
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, y, z)
-      .setRotation(rotation)
+      .setRotation(finalRotation)
       .setLinearDamping(5.0)
       .setAngularDamping(5.0);
 

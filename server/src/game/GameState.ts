@@ -20,9 +20,15 @@ export class GameState {
     return this.nextBodyId++;
   }
 
-  addCoin(id: number, x: number, y: number, z: number): void {
-    // Initial rotation: 90 degrees around X-axis (coin standing up)
-    const rot: [number, number, number, number] = [
+  addCoin(
+    id: number,
+    x: number,
+    y: number,
+    z: number,
+    rotation?: [number, number, number, number]
+  ): void {
+    // Default rotation: 90 degrees around X-axis (coin standing up)
+    const rot: [number, number, number, number] = rotation || [
       Math.SQRT1_2,
       0,
       0,
