@@ -132,7 +132,7 @@ export const COIN_CONFIG = {
   DESPAWN_Y: -0.1, // meters (below this = remove)
   CCD_DISABLE_VELOCITY: 0.5, // m/s
   CCD_DISABLE_HEIGHT: 0.5, // meters
-  BORDER_RADIUS: 0.002, // meters (chamfer radius)
+  BORDER_RADIUS: 0.001, // meters (chamfer radius)
 } as const;
 
 // Network/Interpolation configuration

@@ -15,7 +15,10 @@ export const PHYSICS_PARAMS = {
   GRAVITY: PHYSICS_CONFIG.GRAVITY,
 
   // Sleep configuration
-  SLEEP_LINEAR_THRESHOLD: 0.5, // m/s
-  SLEEP_ANGULAR_THRESHOLD: 0.5, // rad/s
+  SLEEP_LINEAR_THRESHOLD: 0.1, // m/s
+  SLEEP_ANGULAR_THRESHOLD: 0.1, // rad/s
   SLEEP_TIME_UNTIL_SLEEP: 0.5, // seconds
+
+  // Debug flags
+  DEBUG_SLEEP: false,
 } as const;

@@ -6,7 +6,8 @@ import { PHYSICS_PARAMS } from "./config.js";
 export class Coin {
   private rigidBody: RAPIER.RigidBody;
   private id: number;
-  private ccdEnabled: boolean = true;
+  // private ccdEnabled: boolean = true;
+  private ccdEnabled: boolean = false;
   private sleepTimer: number = 0;
 
   constructor(
@@ -58,44 +59,51 @@ export class Coin {
   }
 
   update(): void {
+    // Optimization: If body is already sleeping, we don't need to check anything
+    if (this.rigidBody.isSleeping()) {
+      this.sleepTimer = 0;
+      return;
+    }
+
+    const linvel = this.rigidBody.linvel();
+    const angvel = this.rigidBody.angvel();
+    const position = this.rigidBody.translation();
+
+    // Calculate velocity squared
+    // equivalent to Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2)
+    // but sqrt consumes more CPU time
+    const vSq = linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2;
+    const wSq = angvel.x ** 2 + angvel.y ** 2 + angvel.z ** 2;
+
+    // Sleep Logic using Config
+    const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
+    const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
+
+    // Only apply sleep logic if low enough (on platform/bed)
+    // TODO: monitor these values to see if the thresholds are too low or too high
+    if (vSq < linThresholdSq && wSq < angThresholdSq && position.y < 0.5) {
+      this.sleepTimer += PHYSICS_PARAMS.DELTA_TIME;
+      if (this.sleepTimer >= PHYSICS_PARAMS.SLEEP_TIME_UNTIL_SLEEP) {
+        if (PHYSICS_PARAMS.DEBUG_SLEEP) {
+          console.log(
+            `💤 Coin ${this.id} sleeping. ` +
+              `Lin: ${Math.sqrt(vSq).toFixed(3)}, ` +
+              `Ang: ${Math.sqrt(wSq).toFixed(3)}, ` +
+              `Y: ${position.y.toFixed(3)}`
+          );
+        }
+        this.rigidBody.sleep();
+        this.sleepTimer = 0;
+      }
+    } else {
+      this.sleepTimer = 0;
+    }
+
     // Check if we should disable CCD
     if (this.ccdEnabled) {
-      // Optimization: If body is already sleeping, we don't need to check anything
-      if (this.rigidBody.isSleeping()) {
-        this.sleepTimer = 0;
-        return;
-      }
-
-      const linvel = this.rigidBody.linvel();
-      const angvel = this.rigidBody.angvel();
-      const position = this.rigidBody.translation();
-
-      // Calculate velocity squared
-      // equivalent to Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2)
-      // but sqrt consumes more CPU time
-      const vSq = linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2;
-      const wSq = angvel.x ** 2 + angvel.y ** 2 + angvel.z ** 2;
-
-      // Sleep Logic using Config
-      const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
-      const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
-
-      // Only apply sleep logic if low enough (on platform/bed)
-      // TODO: monitor these values to see if the thresholds are too low or too high
-      if (vSq < linThresholdSq && wSq < angThresholdSq && position.y < 0.5) {
-        this.sleepTimer += PHYSICS_PARAMS.DELTA_TIME;
-        if (this.sleepTimer >= PHYSICS_PARAMS.SLEEP_TIME_UNTIL_SLEEP) {
-          this.rigidBody.sleep();
-          this.sleepTimer = 0;
-        }
-      } else {
-        this.sleepTimer = 0;
-      }
-
       // Disable CCD when coin is slow and low (resting on platform)
-      const velocity = Math.sqrt(vSq);
       if (
-        velocity < COIN_CONFIG.CCD_DISABLE_VELOCITY &&
+        vSq < COIN_CONFIG.CCD_DISABLE_VELOCITY ** 2 &&
         position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT
       ) {
         this.rigidBody.enableCcd(false);

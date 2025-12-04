@@ -10,6 +10,7 @@ import type {
   StateUpdate,
 } from "@coin-pusher/shared";
 import { PHYSICS_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_PARAMS } from "../physics/config.js";
 import * as msgpack from "@msgpack/msgpack";
 
 export class GameLoop {
@@ -173,22 +174,53 @@ export class GameLoop {
     ).toFixed(2);
 
     let activeCoins = 0;
-    this.coins.forEach((coin) => {
-      if (!coin.getRigidBody().isSleeping()) {
-        activeCoins++;
-      }
-    });
+    let sleepingCoins = 0;
+    let lowVelActiveCoins = 0;
+    let totalLinVel = 0;
+    let totalAngVel = 0;
 
-    console.log(
-      `📊 Stats: ${activeCoins} active coins, ${coinCount} coins, ${connections} connections, ` +
-        `avg msg: ${avgMessageBytes}B, ` +
-        `bandwidth/user: ${estimatedBandwidthPerUser} KB/s, ` +
-        `total outbound: ~${estimatedTotalOutbound} KB/s`
-    );
+    const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
+    const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
 
-    // Reset counters
-    this.tickCount = 0;
-    this.totalMessageBytes = 0;
+    if (PHYSICS_PARAMS.DEBUG_SLEEP) {
+      this.coins.forEach((coin) => {
+        const body = coin.getRigidBody();
+        if (body.isSleeping()) {
+          sleepingCoins++;
+        } else {
+          activeCoins++;
+          const linvel = body.linvel();
+          const angvel = body.angvel();
+
+          const vSq = linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2;
+          const wSq = angvel.x ** 2 + angvel.y ** 2 + angvel.z ** 2;
+
+          totalLinVel += Math.sqrt(vSq);
+          totalAngVel += Math.sqrt(wSq);
+
+          // Check if coin is candidate for sleep (low velocity)
+          // We ignore position.y check here to just check velocity behavior
+          if (vSq < linThresholdSq && wSq < angThresholdSq) {
+            lowVelActiveCoins++;
+          }
+        }
+      });
+
+      const avgLinVel =
+        activeCoins > 0 ? (totalLinVel / activeCoins).toFixed(3) : "0.000";
+      const avgAngVel =
+        activeCoins > 0 ? (totalAngVel / activeCoins).toFixed(3) : "0.000";
+
+      console.log(
+        `📊 Stats: ${activeCoins} active (${lowVelActiveCoins} low-vel), ${sleepingCoins} sleeping, ${coinCount} total\n` +
+          `   Velocities (active): Lin: ${avgLinVel}, Ang: ${avgAngVel}\n` +
+          `   Net: ${connections} conns, ${estimatedBandwidthPerUser} KB/s/user, Total: ${estimatedTotalOutbound} KB/s`
+      );
+
+      // Reset counters
+      this.tickCount = 0;
+      this.totalMessageBytes = 0;
+    }
   }
 
   addCoin(coin: Coin): void {
