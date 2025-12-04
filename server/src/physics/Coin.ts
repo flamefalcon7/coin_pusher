@@ -80,8 +80,8 @@ export class Coin {
     const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
 
     // Only apply sleep logic if low enough (on platform/bed)
-    // TODO: monitor these values to see if the thresholds are too low or too high
-    if (vSq < linThresholdSq && wSq < angThresholdSq && position.y < 0.5) {
+    // Remove height check to allow tall stacks to sleep
+    if (vSq < linThresholdSq && wSq < angThresholdSq) {
       this.sleepTimer += PHYSICS_PARAMS.DELTA_TIME;
       if (this.sleepTimer >= PHYSICS_PARAMS.SLEEP_TIME_UNTIL_SLEEP) {
         if (PHYSICS_PARAMS.DEBUG_SLEEP) {

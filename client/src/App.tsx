@@ -148,6 +148,10 @@ function App() {
           gameClientRef.current.spawnStack("pyramid", x);
           break;
         case "4":
+          console.log("Spawning pyramid3bleLayer");
+          gameClientRef.current.spawnStack("pyramid3bleLayer", x);
+          break;
+        case "5":
           console.log("Spawning cylinder");
           gameClientRef.current.spawnStack("cylinder", x);
           break;
