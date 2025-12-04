@@ -39,7 +39,12 @@ export type CoinInsertMessage = {
 };
 
 // Stack types
-export type StackType = "wall" | "tower" | "pyramid" | "cylinder";
+export type StackType =
+  | "wall"
+  | "tower"
+  | "pyramid"
+  | "pyramid3bleLayer"
+  | "cylinder";
 
 // Client → Server: Spawn a stack of coins
 export type StackSpawnMessage = {
@@ -106,9 +111,9 @@ export type CoinSpawnParams = {
 export const PHYSICS_CONFIG = {
   TICK_RATE: 30, // Hz
   TICK_INTERVAL: 1000 / 30, // ~33.333ms
-  SUBSTEPS: 4,
-  SOLVER_VELOCITY_ITERATIONS: 6,
-  SOLVER_POSITION_ITERATIONS: 6,
+  SUBSTEPS: 8, // Increased from 4 for better stability
+  SOLVER_VELOCITY_ITERATIONS: 10, // Increased from 6
+  SOLVER_POSITION_ITERATIONS: 10, // Increased from 6
   GRAVITY: { x: 0, y: -9.81, z: 0 },
   QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places
 } as const;
@@ -126,13 +131,13 @@ export const COIN_CONFIG = {
   RADIUS: 0.05, // meters
   THICKNESS: 0.015, // meters
   MASS: 0.01, // kg
-  FRICTION: 0.5,
+  FRICTION: 1,
   RESTITUTION: 0.0,
   SPAWN_HEIGHT: 1.5, // meters
   DESPAWN_Y: -0.1, // meters (below this = remove)
   CCD_DISABLE_VELOCITY: 0.5, // m/s
   CCD_DISABLE_HEIGHT: 0.5, // meters
-  BORDER_RADIUS: 0.001, // meters (chamfer radius)
+  BORDER_RADIUS: 0.0001, // meters (chamfer radius)
 } as const;
 
 // Network/Interpolation configuration

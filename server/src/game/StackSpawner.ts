@@ -31,6 +31,8 @@ export class StackSpawner {
         return this.generateTower(startX, startY, startZ);
       case "pyramid":
         return this.generatePyramid(startX, startY, startZ);
+      case "pyramid3bleLayer":
+        return this.generatePyramid3bleLayer(startX, startY, startZ);
       case "cylinder":
         return this.generateCylinder(startX, startY, startZ);
       default:
@@ -44,22 +46,26 @@ export class StackSpawner {
     startZ: number
   ): CoinSpawnData[] {
     const coins: CoinSpawnData[] = [];
-    const rows = 3;
-    const cols = 3;
-    const spacingX = COIN_CONFIG.RADIUS * 2.1; // Slightly more than diameter
-    const spacingY = COIN_CONFIG.RADIUS * 2.1;
+    const numStacks = 6;
+    const coinsPerStack = 12;
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        // Center the wall around startX
-        const xOffset = (c - (cols - 1) / 2) * spacingX;
-        const yOffset = r * spacingY;
+    // Spacing for straight arrangement
+    const xStep = COIN_CONFIG.RADIUS * 2.05;
+    const spacingY = COIN_CONFIG.THICKNESS * 1.02; // Slight gap to prevent physics jitter
+
+    for (let s = 0; s < numStacks; s++) {
+      // Center the wall around startX
+      const xOffset = (s - (numStacks - 1) / 2) * xStep;
+
+      for (let h = 0; h < coinsPerStack; h++) {
+        // Stagger every other row for stability (brick pattern)
+        const rowOffset = h % 2 === 0 ? 0 : xStep / 2;
 
         coins.push({
-          x: startX + xOffset,
-          y: startY + yOffset,
+          x: startX + xOffset + rowOffset,
+          y: startY + h * spacingY,
           z: startZ,
-          rotation: this.VERTICAL_ROTATION,
+          rotation: this.FLAT_ROTATION,
         });
       }
     }
@@ -72,8 +78,8 @@ export class StackSpawner {
     startZ: number
   ): CoinSpawnData[] {
     const coins: CoinSpawnData[] = [];
-    const height = 5;
-    const spacingY = COIN_CONFIG.THICKNESS * 1.05; // Slightly more than thickness
+    const height = 10;
+    const spacingY = COIN_CONFIG.THICKNESS;
 
     for (let i = 0; i < height; i++) {
       coins.push({
@@ -92,23 +98,66 @@ export class StackSpawner {
     startZ: number
   ): CoinSpawnData[] {
     const coins: CoinSpawnData[] = [];
-    const levels = 3;
-    const spacingX = COIN_CONFIG.RADIUS * 1.1; // Half overlap
+    const levels = 10;
+    const depth = 3; // 設定深度為 3 排
+    const spacingX = COIN_CONFIG.RADIUS * 1.1; // X軸重疊
     const spacingY = COIN_CONFIG.THICKNESS * 1.05;
+    const spacingZ = COIN_CONFIG.RADIUS * 2.05; // Z軸標準間距 (避免重疊)
+
+    for (let level = 0; level < levels; level++) {
+      const coinsInLevel = levels - level;
+      for (let c = 0; c < coinsInLevel; c++) {
+        // 計算 X 偏移 (置中)
+        const xOffset = (c - (coinsInLevel - 1) / 2) * spacingX * 2;
+        const yOffset = level * spacingY;
+
+        // 增加深度迴圈 (Z軸)
+        for (let d = 0; d < depth; d++) {
+          // 計算 Z 偏移 (置中)
+          const zOffset = (d - (depth - 1) / 2) * spacingZ;
+
+          coins.push({
+            x: startX + xOffset,
+            y: startY + yOffset,
+            z: startZ + zOffset,
+            rotation: this.FLAT_ROTATION,
+          });
+        }
+      }
+    }
+    return coins;
+  }
+
+  private static generatePyramid3bleLayer(
+    startX: number,
+    startY: number,
+    startZ: number
+  ): CoinSpawnData[] {
+    const coins: CoinSpawnData[] = [];
+    const levels = 10;
+    const stackHeight = 3; // Every unit is a stack of 3 coins
+    const spacingX = COIN_CONFIG.RADIUS * 1.1;
+    const spacingY = COIN_CONFIG.THICKNESS * 1.05;
+    // Height of one pyramid level (3 coins)
+    const levelStepY = stackHeight * spacingY;
 
     for (let level = 0; level < levels; level++) {
       const coinsInLevel = levels - level;
       for (let c = 0; c < coinsInLevel; c++) {
         // Center the level
         const xOffset = (c - (coinsInLevel - 1) / 2) * spacingX * 2;
-        const yOffset = level * spacingY;
+        // Base Y position for this pyramid level
+        const levelBaseY = startY + level * levelStepY;
 
-        coins.push({
-          x: startX + xOffset,
-          y: startY + yOffset,
-          z: startZ,
-          rotation: this.FLAT_ROTATION,
-        });
+        // Generate the stack of 3 coins
+        for (let h = 0; h < stackHeight; h++) {
+          coins.push({
+            x: startX + xOffset,
+            y: levelBaseY + h * spacingY,
+            z: startZ,
+            rotation: this.FLAT_ROTATION,
+          });
+        }
       }
     }
     return coins;
