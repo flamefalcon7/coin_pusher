@@ -3,6 +3,8 @@ import type {
   ClientMessage,
   CoinInsertMessage,
   PingMessage,
+  StackSpawnMessage,
+  StackType,
 } from "@coin-pusher/shared";
 import {
   COIN_CONFIG,
@@ -13,6 +15,13 @@ import {
 export type MessageHandlers = {
   onCoinInsert: (
     connection: Connection,
+    x: number,
+    y: number,
+    z: number
+  ) => void;
+  onStackSpawn: (
+    connection: Connection,
+    type: StackType,
     x: number,
     y: number,
     z: number
@@ -36,6 +45,9 @@ export class MessageHandler {
       switch (message.op) {
         case "coin_insert":
           this.handleCoinInsert(connection, message);
+          break;
+        case "spawn_stack":
+          this.handleStackSpawn(connection, message);
           break;
         case "ping":
           this.handlePing(connection, message);
@@ -75,6 +87,28 @@ export class MessageHandler {
 
     // Forward to game logic
     this.handlers.onCoinInsert(connection, x, y, z);
+  }
+
+  private handleStackSpawn(
+    connection: Connection,
+    message: StackSpawnMessage
+  ): void {
+    const x = message.x;
+    const type = message.type;
+
+    if (
+      typeof x !== "number" ||
+      x < -RATE_LIMIT_CONFIG.MAX_X_POSITION ||
+      x > RATE_LIMIT_CONFIG.MAX_X_POSITION
+    ) {
+      console.warn(`Invalid stack x position: ${x}`);
+      return;
+    }
+
+    const y = 0.3; // Spawn just above the platform (0.25 + 0.025 = 0.275)
+    const z = 0.3; // Closer to the frontend (platform extends to 0.5)
+
+    this.handlers.onStackSpawn(connection, type, x, y, z);
   }
 
   private handlePing(connection: Connection, _message: PingMessage): void {

@@ -8,7 +8,12 @@ export class CoinManager {
     this.gameState = gameState;
   }
 
-  spawnCoin(x: number, y?: number, z?: number): number | null {
+  spawnCoin(
+    x: number,
+    y?: number,
+    z?: number,
+    rotation?: [number, number, number, number]
+  ): number | null {
     // Validate x position
     if (
       x < -RATE_LIMIT_CONFIG.MAX_X_POSITION ||
@@ -23,7 +28,7 @@ export class CoinManager {
     const spawnY = y ?? COIN_CONFIG.SPAWN_HEIGHT;
     const spawnZ = z ?? 0;
 
-    this.gameState.addCoin(id, spawnX, spawnY, spawnZ);
+    this.gameState.addCoin(id, spawnX, spawnY, spawnZ, rotation);
     console.log(`Spawned coin ${id} at (${spawnX}, ${spawnY}, ${spawnZ})`);
 
     return id;

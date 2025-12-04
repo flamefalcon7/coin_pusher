@@ -25,6 +25,13 @@ export class WebSocketServer {
           )}`
         );
       },
+      onStackSpawn: (_connection, type, x, y, z) => {
+        console.log(
+          `Stack spawn: ${type} at x=${x.toFixed(3)}, y=${y.toFixed(
+            3
+          )}, z=${z.toFixed(3)}`
+        );
+      },
       onPing: (_connection, _clientTime) => {
         // Handled by MessageHandler
       },

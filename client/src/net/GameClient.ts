@@ -1,4 +1,8 @@
-import type { ServerMessage, ClientMessage } from "@coin-pusher/shared";
+import type {
+  ServerMessage,
+  ClientMessage,
+  StackType,
+} from "@coin-pusher/shared";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
 import { StateBuffer } from "./StateBuffer";
@@ -132,6 +136,16 @@ export class GameClient {
     // Send MessagePack encoded message
     const message: ClientMessage = {
       op: "coin_insert",
+      x,
+    };
+    this.wsClient.send(message);
+  }
+
+  spawnStack(type: StackType, x: number): void {
+    // Send MessagePack encoded message
+    const message: ClientMessage = {
+      op: "spawn_stack",
+      type,
       x,
     };
     this.wsClient.send(message);

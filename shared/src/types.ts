@@ -38,6 +38,16 @@ export type CoinInsertMessage = {
   x: number; // Range: [-0.5, 0.5]
 };
 
+// Stack types
+export type StackType = "wall" | "tower" | "pyramid" | "cylinder";
+
+// Client → Server: Spawn a stack of coins
+export type StackSpawnMessage = {
+  op: "spawn_stack";
+  type: StackType;
+  x: number;
+};
+
 // Client → Server: Ping for clock sync
 export type PingMessage = {
   op: "ping";
@@ -76,7 +86,7 @@ export type PongMessage = {
 };
 
 // Union of all client-to-server messages
-export type ClientMessage = CoinInsertMessage | PingMessage;
+export type ClientMessage = CoinInsertMessage | StackSpawnMessage | PingMessage;
 
 // Union of all server-to-client messages
 export type ServerMessage =

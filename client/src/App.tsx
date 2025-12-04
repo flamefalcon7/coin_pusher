@@ -126,6 +126,40 @@ function App() {
     };
   }, []);
 
+  // Keyboard controls for stack spawning (Dev/Test feature)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!gameClientRef.current || !gameClientRef.current.isConnected())
+        return;
+
+      const x = 0; // Center spawn for stacks
+
+      switch (event.key) {
+        case "1":
+          console.log("Spawning wall");
+          gameClientRef.current.spawnStack("wall", x);
+          break;
+        case "2":
+          console.log("Spawning tower");
+          gameClientRef.current.spawnStack("tower", x);
+          break;
+        case "3":
+          console.log("Spawning pyramid");
+          gameClientRef.current.spawnStack("pyramid", x);
+          break;
+        case "4":
+          console.log("Spawning cylinder");
+          gameClientRef.current.spawnStack("cylinder", x);
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const handleInsertCoin = (slotIndex: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
       console.warn("Not connected to server");
