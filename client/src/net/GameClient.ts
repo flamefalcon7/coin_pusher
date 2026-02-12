@@ -64,6 +64,8 @@ export class GameClient {
           message.bodies.length,
           "bodies"
         );
+        // Reset interpolator known coins on new snapshot
+        this.interpolator.clear();
         // Initialize state buffer with snapshot
         this.stateBuffer.clear();
         this.stateBuffer.addState({
@@ -91,8 +93,10 @@ export class GameClient {
         break;
 
       case "despawn":
-        console.log("🗑️  Despawned:", message.ids);
-        // Despawn will be handled by checking which IDs are in interpolated state
+        // Remove despawned coins from interpolator's known coins
+        for (const id of message.ids) {
+          this.interpolator.removeCoin(id);
+        }
         break;
 
       case "pong":

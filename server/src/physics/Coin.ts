@@ -6,9 +6,16 @@ import { PHYSICS_PARAMS } from "./config.js";
 export class Coin {
   private rigidBody: RAPIER.RigidBody;
   private id: number;
-  // private ccdEnabled: boolean = true;
   private ccdEnabled: boolean = false;
   private sleepTimer: number = 0;
+
+  // Pre-computed constants (avoid recomputing every update())
+  private static readonly LIN_THRESHOLD_SQ =
+    PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
+  private static readonly ANG_THRESHOLD_SQ =
+    PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
+  private static readonly CCD_DISABLE_VEL_SQ =
+    COIN_CONFIG.CCD_DISABLE_VELOCITY ** 2;
 
   constructor(
     physicsWorld: PhysicsWorld,
@@ -75,13 +82,7 @@ export class Coin {
     const vSq = linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2;
     const wSq = angvel.x ** 2 + angvel.y ** 2 + angvel.z ** 2;
 
-    // Sleep Logic using Config
-    const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
-    const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
-
-    // Only apply sleep logic if low enough (on platform/bed)
-    // Remove height check to allow tall stacks to sleep
-    if (vSq < linThresholdSq && wSq < angThresholdSq) {
+    if (vSq < Coin.LIN_THRESHOLD_SQ && wSq < Coin.ANG_THRESHOLD_SQ) {
       this.sleepTimer += PHYSICS_PARAMS.DELTA_TIME;
       if (this.sleepTimer >= PHYSICS_PARAMS.SLEEP_TIME_UNTIL_SLEEP) {
         if (PHYSICS_PARAMS.DEBUG_SLEEP) {
@@ -99,11 +100,9 @@ export class Coin {
       this.sleepTimer = 0;
     }
 
-    // Check if we should disable CCD
     if (this.ccdEnabled) {
-      // Disable CCD when coin is slow and low (resting on platform)
       if (
-        vSq < COIN_CONFIG.CCD_DISABLE_VELOCITY ** 2 &&
+        vSq < Coin.CCD_DISABLE_VEL_SQ &&
         position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT
       ) {
         this.rigidBody.enableCcd(false);
@@ -122,6 +121,10 @@ export class Coin {
 
   getRotation(): { x: number; y: number; z: number; w: number } {
     return this.rigidBody.rotation();
+  }
+
+  isSleeping(): boolean {
+    return this.rigidBody.isSleeping();
   }
 
   getRigidBody(): RAPIER.RigidBody {

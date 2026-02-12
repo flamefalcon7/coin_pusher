@@ -89,9 +89,12 @@ export class WebSocketServer {
   }
 
   broadcast(message: ServerMessage): void {
+    if (this.connections.size === 0) return;
+    // Encode once, send raw buffer to all connections
+    const buffer = msgpack.encode(message);
     this.connections.forEach((connection) => {
       if (connection.isOpen()) {
-        connection.send(message);
+        connection.sendRaw(buffer);
       }
     });
   }

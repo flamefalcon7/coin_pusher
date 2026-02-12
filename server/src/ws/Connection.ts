@@ -37,10 +37,15 @@ export class Connection {
 
   send(message: ServerMessage): void {
     if (this.ws.readyState === 1) {
-      // WebSocket.OPEN
-      // Use MessagePack for binary encoding (40% smaller than JSON)
       const binary = msgpack.encode(message);
       this.ws.send(binary);
+    }
+  }
+
+  /** Send a pre-encoded binary buffer (avoids re-encoding per connection). */
+  sendRaw(buffer: Uint8Array): void {
+    if (this.ws.readyState === 1) {
+      this.ws.send(buffer);
     }
   }
 

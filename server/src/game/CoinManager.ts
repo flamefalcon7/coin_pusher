@@ -19,24 +19,22 @@ export class CoinManager {
       x < -RATE_LIMIT_CONFIG.MAX_X_POSITION ||
       x > RATE_LIMIT_CONFIG.MAX_X_POSITION
     ) {
-      console.warn(`Invalid coin spawn x: ${x}`);
       return null;
     }
 
     const id = this.gameState.getNextBodyId();
-    const spawnX = this.quantize(x, 3);
+    const f = 1000;
+    const spawnX = Math.round(x * f) / f;
     const spawnY = y ?? COIN_CONFIG.SPAWN_HEIGHT;
     const spawnZ = z ?? 0;
 
     this.gameState.addCoin(id, spawnX, spawnY, spawnZ, rotation);
-    console.log(`Spawned coin ${id} at (${spawnX}, ${spawnY}, ${spawnZ})`);
 
     return id;
   }
 
   removeCoin(id: number): void {
     this.gameState.removeCoin(id);
-    console.log(`Removed coin ${id}`);
   }
 
   updateCoin(
@@ -44,24 +42,7 @@ export class CoinManager {
     pos: [number, number, number],
     rot: [number, number, number, number]
   ): void {
-    const quantizedPos: [number, number, number] = [
-      this.quantize(pos[0], 3),
-      this.quantize(pos[1], 3),
-      this.quantize(pos[2], 3),
-    ];
-
-    const quantizedRot: [number, number, number, number] = [
-      this.quantize(rot[0], 3),
-      this.quantize(rot[1], 3),
-      this.quantize(rot[2], 3),
-      this.quantize(rot[3], 3),
-    ];
-
-    this.gameState.updateCoinState(id, quantizedPos, quantizedRot);
-  }
-
-  private quantize(value: number, decimals: number): number {
-    const factor = Math.pow(10, decimals);
-    return Math.round(value * factor) / factor;
+    // Store raw values — quantization for network is done in GameLoop
+    this.gameState.updateCoinState(id, pos, rot);
   }
 }
