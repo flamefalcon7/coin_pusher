@@ -45,3 +45,8 @@ logs/
 
 # CSP
 .csp/
+
+# ai
+.shared/
+.agents/
+.cursor/

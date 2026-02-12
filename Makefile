@@ -1,3 +1,6 @@
+dev:
+	pnpm dev
+
 # docker compose locally
 up_local:
 	docker compose -f docker-compose.dev.yml up --build
