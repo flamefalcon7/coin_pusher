@@ -95,7 +95,8 @@ function App() {
             }
           }
 
-          // Remove despawned coins
+          // Remove despawned coins (coins no longer in interpolated state
+          // have been removed by the Interpolator via despawn messages)
           for (const id of knownCoins) {
             if (!currentCoinIds.has(id)) {
               sceneManager.removeCoin(id);

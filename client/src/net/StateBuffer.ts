@@ -7,66 +7,60 @@ export interface BufferedState {
   pusherZ: number;
 }
 
+/**
+ * Ring buffer for server state snapshots.
+ * O(1) add, no array shifting.
+ */
 export class StateBuffer {
-  private buffer: BufferedState[] = [];
-  private maxBufferSize: number = 100; // Keep last 100 states (~3 seconds at 30Hz)
+  private buffer: (BufferedState | null)[];
+  private capacity: number;
+  private head: number = 0; // next write index
+  private count: number = 0; // number of valid entries
+
+  constructor(capacity: number = 100) {
+    this.capacity = capacity;
+    this.buffer = new Array(capacity).fill(null);
+  }
 
   addState(state: BufferedState): void {
-    this.buffer.push(state);
-
-    // Keep buffer size manageable
-    if (this.buffer.length > this.maxBufferSize) {
-      this.buffer.shift();
+    this.buffer[this.head] = state;
+    this.head = (this.head + 1) % this.capacity;
+    if (this.count < this.capacity) {
+      this.count++;
     }
   }
 
-  getStateAtTime(targetTime: number): BufferedState | null {
-    if (this.buffer.length === 0) return null;
-
-    // Find two states to interpolate between
-    let before: BufferedState | null = null;
-    let after: BufferedState | null = null;
-
-    for (let i = 0; i < this.buffer.length; i++) {
-      const state = this.buffer[i];
-
-      if (state.serverTime <= targetTime) {
-        before = state;
-      } else {
-        after = state;
-        break;
-      }
+  /**
+   * Get the ordered array of valid states (oldest first).
+   * Only called for interpolation searches — not every frame for all states.
+   */
+  private getOrdered(): BufferedState[] {
+    if (this.count === 0) return [];
+    const result: BufferedState[] = [];
+    const start =
+      this.count < this.capacity
+        ? 0
+        : this.head; // oldest entry
+    for (let i = 0; i < this.count; i++) {
+      const idx = (start + i) % this.capacity;
+      const entry = this.buffer[idx];
+      if (entry) result.push(entry);
     }
-
-    // If we only have states in the future, use the earliest one
-    if (!before && after) {
-      return after;
-    }
-
-    // If we only have states in the past, use the latest one
-    if (before && !after) {
-      return before;
-    }
-
-    // If we have both, return the one before (interpolation happens in Interpolator)
-    if (before && after) {
-      return before;
-    }
-
-    return null;
+    return result;
   }
 
   getStatesForInterpolation(
     targetTime: number
   ): { before: BufferedState; after: BufferedState } | null {
-    if (this.buffer.length < 2) return null;
+    if (this.count < 2) return null;
+
+    const ordered = this.getOrdered();
 
     let before: BufferedState | null = null;
     let after: BufferedState | null = null;
 
-    for (let i = 0; i < this.buffer.length; i++) {
-      const state = this.buffer[i];
-
+    for (let i = 0; i < ordered.length; i++) {
+      const state = ordered[i];
       if (state.serverTime <= targetTime) {
         before = state;
       } else {
@@ -83,31 +77,42 @@ export class StateBuffer {
   }
 
   clear(): void {
-    this.buffer = [];
+    this.buffer.fill(null);
+    this.head = 0;
+    this.count = 0;
   }
 
   getBufferSize(): number {
-    return this.buffer.length;
+    return this.count;
   }
 
   getOldestTime(): number {
-    if (this.buffer.length === 0) return 0;
-    return this.buffer[0].serverTime;
+    if (this.count === 0) return 0;
+    const oldestIdx =
+      this.count < this.capacity ? 0 : this.head;
+    return this.buffer[oldestIdx]?.serverTime ?? 0;
   }
 
   getNewestTime(): number {
-    if (this.buffer.length === 0) return 0;
-    return this.buffer[this.buffer.length - 1].serverTime;
+    if (this.count === 0) return 0;
+    const newestIdx = (this.head - 1 + this.capacity) % this.capacity;
+    return this.buffer[newestIdx]?.serverTime ?? 0;
   }
 
   getNewestState(): BufferedState | null {
-    if (this.buffer.length === 0) return null;
-    return this.buffer[this.buffer.length - 1];
+    if (this.count === 0) return null;
+    const newestIdx = (this.head - 1 + this.capacity) % this.capacity;
+    return this.buffer[newestIdx];
   }
 
   getPreviousState(currentState: BufferedState): BufferedState | null {
-    const currentIndex = this.buffer.indexOf(currentState);
-    if (currentIndex <= 0) return null;
-    return this.buffer[currentIndex - 1];
+    // Find currentState in ordered list and return the one before it
+    const ordered = this.getOrdered();
+    for (let i = 1; i < ordered.length; i++) {
+      if (ordered[i] === currentState) {
+        return ordered[i - 1];
+      }
+    }
+    return null;
   }
 }

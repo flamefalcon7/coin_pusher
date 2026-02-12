@@ -11,7 +11,6 @@ import type {
 } from "@coin-pusher/shared";
 import { PHYSICS_CONFIG } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
-import * as msgpack from "@msgpack/msgpack";
 
 export class GameLoop {
   private physicsWorld: PhysicsWorld;
@@ -24,7 +23,9 @@ export class GameLoop {
   private intervalId?: NodeJS.Timeout;
   private statsIntervalId?: NodeJS.Timeout;
   private tickCount: number = 0;
-  private totalMessageBytes: number = 0;
+
+  // Quantize factor cached (avoid Math.pow every tick per coin)
+  private static readonly Q_FACTOR = 1000; // 10^3
 
   constructor(
     physicsWorld: PhysicsWorld,
@@ -83,10 +84,16 @@ export class GameLoop {
     // 4. Collect body states and check for despawns
     const updates: StateUpdate[] = [];
     const despawnIds: number[] = [];
+    const f = GameLoop.Q_FACTOR;
 
     this.coins.forEach((coin, id) => {
       if (coin.shouldDespawn()) {
         despawnIds.push(id);
+        return;
+      }
+
+      // Skip sleeping coins — their position hasn't changed
+      if (coin.isSleeping()) {
         return;
       }
 
@@ -100,15 +107,20 @@ export class GameLoop {
         [rot.x, rot.y, rot.z, rot.w]
       );
 
-      // Add to updates
+      // Add to updates — skip normalization, Rapier quaternions are already normalized
       updates.push({
         id,
         pos: [
-          this.quantize(pos.x, 3),
-          this.quantize(pos.y, 3),
-          this.quantize(pos.z, 3),
+          Math.round(pos.x * f) / f,
+          Math.round(pos.y * f) / f,
+          Math.round(pos.z * f) / f,
         ],
-        rot: this.normalizeAndQuantizeQuaternion(rot),
+        rot: [
+          Math.round(rot.x * f) / f,
+          Math.round(rot.y * f) / f,
+          Math.round(rot.z * f) / f,
+          Math.round(rot.w * f) / f,
+        ],
       });
     });
 
@@ -134,7 +146,7 @@ export class GameLoop {
     }
 
     // 6. Update pusher z in game state
-    const pusherZ = this.quantize(this.pusher.getCurrentZ(), 3);
+    const pusherZ = Math.round(this.pusher.getCurrentZ() * f) / f;
     this.gameState.updatePusherZ(pusherZ);
 
     // 7. Broadcast state delta
@@ -146,9 +158,6 @@ export class GameLoop {
       pusherZ,
     };
 
-    // Track message size for stats
-    const messageBytes = msgpack.encode(stateDelta).length;
-    this.totalMessageBytes += messageBytes;
     this.tickCount++;
 
     this.wsServer.broadcast(stateDelta);
@@ -160,18 +169,6 @@ export class GameLoop {
   private logStats(): void {
     const connections = this.wsServer.getConnections().size;
     const coinCount = this.coins.size;
-    const avgMessageBytes =
-      this.tickCount > 0
-        ? Math.round(this.totalMessageBytes / this.tickCount)
-        : 0;
-    const estimatedBandwidthPerUser = (
-      (avgMessageBytes * PHYSICS_CONFIG.TICK_RATE) /
-      1024
-    ).toFixed(2);
-    const estimatedTotalOutbound = (
-      (avgMessageBytes * PHYSICS_CONFIG.TICK_RATE * connections) /
-      1024
-    ).toFixed(2);
 
     let activeCoins = 0;
     let sleepingCoins = 0;
@@ -199,7 +196,6 @@ export class GameLoop {
           totalAngVel += Math.sqrt(wSq);
 
           // Check if coin is candidate for sleep (low velocity)
-          // We ignore position.y check here to just check velocity behavior
           if (vSq < linThresholdSq && wSq < angThresholdSq) {
             lowVelActiveCoins++;
           }
@@ -214,43 +210,15 @@ export class GameLoop {
       console.log(
         `📊 Stats: ${activeCoins} active (${lowVelActiveCoins} low-vel), ${sleepingCoins} sleeping, ${coinCount} total\n` +
           `   Velocities (active): Lin: ${avgLinVel}, Ang: ${avgAngVel}\n` +
-          `   Net: ${connections} conns, ${estimatedBandwidthPerUser} KB/s/user, Total: ${estimatedTotalOutbound} KB/s`
+          `   Net: ${connections} conns`
       );
 
       // Reset counters
       this.tickCount = 0;
-      this.totalMessageBytes = 0;
     }
   }
 
   addCoin(coin: Coin): void {
     this.coins.set(coin.getId(), coin);
-  }
-
-  private quantize(value: number, decimals: number): number {
-    const factor = Math.pow(10, decimals);
-    return Math.round(value * factor) / factor;
-  }
-
-  private normalizeAndQuantizeQuaternion(q: {
-    x: number;
-    y: number;
-    z: number;
-    w: number;
-  }): [number, number, number, number] {
-    // Normalize
-    const len = Math.sqrt(q.x ** 2 + q.y ** 2 + q.z ** 2 + q.w ** 2);
-    const qx = q.x / len;
-    const qy = q.y / len;
-    const qz = q.z / len;
-    const qw = q.w / len;
-
-    // Quantize
-    return [
-      this.quantize(qx, 3),
-      this.quantize(qy, 3),
-      this.quantize(qz, 3),
-      this.quantize(qw, 3),
-    ];
   }
 }
