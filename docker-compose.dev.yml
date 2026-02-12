@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./:/app
+      - /app/node_modules
     networks:
       - coin-pusher-network
     command: sh -c "npm install -g pnpm && (pnpm install || true) && pnpm --filter @coin-pusher/shared build && pnpm --filter @coin-pusher/shared dev"
@@ -51,6 +52,7 @@ services:
       - VITE_WS_URL=ws://localhost:3000
     volumes:
       - ./:/app
+      - /app/node_modules
     networks:
       - coin-pusher-network
     depends_on:
