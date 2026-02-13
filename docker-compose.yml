@@ -1,10 +1,10 @@
 services:
   # Game Server
-  server:
+  game:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: coin-pusher-server
+    container_name: coin-pusher-game
     restart: unless-stopped
     ports:
       - "3000:3000"

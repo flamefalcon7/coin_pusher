@@ -14,12 +14,12 @@ services:
       - coin-pusher-network
     command: sh -c "npm install -g pnpm && (pnpm install || true) && pnpm --filter @coin-pusher/shared build && pnpm --filter @coin-pusher/shared dev"
 
-  # Development Server with hot reload
-  server:
+  # Development Game Server with hot reload
+  game:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: coin-pusher-dev
+    container_name: coin-pusher-game-dev
     stop_grace_period: 0s
     restart: unless-stopped
     ports:
@@ -29,7 +29,7 @@ services:
       - PORT=3000
     volumes:
       # Mount source code for hot reload
-      - ./server/src:/app/server/src:ro
+      - ./game/src:/app/game/src:ro
       - ./shared/src:/app/shared/src:ro
       # Mount shared dist for access to compiled files
       - ./shared/dist:/app/shared/dist:ro
@@ -37,7 +37,7 @@ services:
       - coin-pusher-network
     depends_on:
       - shared
-    command: pnpm --filter @coin-pusher/server dev
+    command: pnpm --filter @coin-pusher/game dev
 
   # Client Dev Server (Vite)
   client:

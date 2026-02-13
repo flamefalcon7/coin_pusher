@@ -18,13 +18,13 @@ COPY shared ./shared
 RUN cd shared && pnpm install --frozen-lockfile && pnpm build
 
 # ===========================
-# Stage 2: Build server
+# Stage 2: Build game server
 # ===========================
-FROM base AS server-builder
+FROM base AS game-builder
 COPY shared ./shared
 COPY --from=shared-builder /app/shared/dist ./shared/dist
-COPY server ./server
-RUN cd server && pnpm install --frozen-lockfile && pnpm build
+COPY game ./game
+RUN cd game && pnpm install --frozen-lockfile && pnpm build
 
 # ===========================
 # Stage 3: Production
@@ -43,9 +43,9 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY shared/package.json ./shared/
 COPY --from=shared-builder /app/shared/dist ./shared/dist
 
-# Copy server package
-COPY server/package.json ./server/
-COPY --from=server-builder /app/server/dist ./server/dist
+# Copy game server package
+COPY game/package.json ./game/
+COPY --from=game-builder /app/game/dist ./game/dist
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
@@ -57,6 +57,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "require('net').connect(3000, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
 
-# Start server
-CMD ["node", "server/dist/index.js"]
+# Start game server
+CMD ["node", "game/dist/index.js"]
 
