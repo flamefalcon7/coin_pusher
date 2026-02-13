@@ -74,11 +74,8 @@ export class Coin {
 
     const linvel = this.rigidBody.linvel();
     const angvel = this.rigidBody.angvel();
-    const position = this.rigidBody.translation();
 
-    // Calculate velocity squared
-    // equivalent to Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2)
-    // but sqrt consumes more CPU time
+    // Calculate velocity squared (avoid sqrt — compare squared values)
     const vSq = linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2;
     const wSq = angvel.x ** 2 + angvel.y ** 2 + angvel.z ** 2;
 
@@ -86,6 +83,7 @@ export class Coin {
       this.sleepTimer += PHYSICS_PARAMS.DELTA_TIME;
       if (this.sleepTimer >= PHYSICS_PARAMS.SLEEP_TIME_UNTIL_SLEEP) {
         if (PHYSICS_PARAMS.DEBUG_SLEEP) {
+          const position = this.rigidBody.translation();
           console.log(
             `💤 Coin ${this.id} sleeping. ` +
               `Lin: ${Math.sqrt(vSq).toFixed(3)}, ` +
@@ -100,11 +98,10 @@ export class Coin {
       this.sleepTimer = 0;
     }
 
-    if (this.ccdEnabled) {
-      if (
-        vSq < Coin.CCD_DISABLE_VEL_SQ &&
-        position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT
-      ) {
+    // Only fetch position when CCD is still enabled and we need to check height
+    if (this.ccdEnabled && vSq < Coin.CCD_DISABLE_VEL_SQ) {
+      const position = this.rigidBody.translation();
+      if (position.y < COIN_CONFIG.CCD_DISABLE_HEIGHT) {
         this.rigidBody.enableCcd(false);
         this.ccdEnabled = false;
       }

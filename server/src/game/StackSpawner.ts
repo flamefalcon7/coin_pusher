@@ -10,12 +10,6 @@ export type CoinSpawnData = {
 
 export class StackSpawner {
   // Rotations
-  private static readonly VERTICAL_ROTATION = {
-    x: Math.SQRT1_2,
-    y: 0,
-    z: 0,
-    w: Math.SQRT1_2,
-  }; // 90 degrees around X (standard spawn)
   private static readonly FLAT_ROTATION = { x: 0, y: 0, z: 0, w: 1 }; // Flat on ground
 
   static getStackCoins(

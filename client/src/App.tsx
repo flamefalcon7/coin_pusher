@@ -58,6 +58,12 @@ function App() {
     // Track known coin IDs
     const knownCoins = new Set<number>();
 
+    // Reusable set for reconciliation — cleared each frame instead of re-allocated
+    const currentCoinIds = new Set<number>();
+
+    // Track last reported coin count to avoid unnecessary React re-renders
+    let lastReportedCoinCount = 0;
+
     // Update loop using requestAnimationFrame for smooth rendering
     let animationFrameId: number;
     let lastUpdateTime = 0;
@@ -79,10 +85,12 @@ function App() {
           // Update pusher position
           sceneManager.updatePusherPosition(state.pusherZ);
 
-          // Update coins
-          const currentCoinIds = new Set<number>();
+          // Update coins — reuse the Set instead of allocating a new one
+          currentCoinIds.clear();
+          const coins = state.coins;
 
-          for (const coin of state.coins) {
+          for (let i = 0, len = coins.length; i < len; i++) {
+            const coin = coins[i];
             currentCoinIds.add(coin.id);
 
             if (!knownCoins.has(coin.id)) {
@@ -107,8 +115,12 @@ function App() {
           // Batch update coin instances to GPU
           sceneManager.updateCoinBuffers();
 
-          // Update coin count
-          setActiveCoinCount(knownCoins.size);
+          // Only trigger React re-render when coin count actually changes
+          const size = knownCoins.size;
+          if (size !== lastReportedCoinCount) {
+            lastReportedCoinCount = size;
+            setActiveCoinCount(size);
+          }
         }
       }
 

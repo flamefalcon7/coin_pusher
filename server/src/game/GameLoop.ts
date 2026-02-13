@@ -27,6 +27,14 @@ export class GameLoop {
   // Quantize factor cached (avoid Math.pow every tick per coin)
   private static readonly Q_FACTOR = 1000; // 10^3
 
+  // Pre-allocated reusable arrays to reduce GC pressure
+  private updates: StateUpdate[] = [];
+  private despawnIds: number[] = [];
+
+  // Tick timing stats
+  private tickTimings: number[] = [];
+  private static readonly TIMING_WINDOW = 300; // samples (~10s at 30Hz)
+
   constructor(
     physicsWorld: PhysicsWorld,
     pusher: Pusher,
@@ -72,18 +80,27 @@ export class GameLoop {
   }
 
   private tick(): void {
+    const tickStart = performance.now();
+
     // 1. Update pusher position
     this.pusher.update();
 
-    // 2. Update coins (CCD check)
+    // 2. Pre-sleep check for coins (CCD management) BEFORE physics step
+    const t1 = performance.now();
     this.coins.forEach((coin) => coin.update());
+    const coinUpdateMs = performance.now() - t1;
 
     // 3. Step physics simulation
+    const t2 = performance.now();
     this.physicsWorld.step();
+    const physicsMs = performance.now() - t2;
 
-    // 4. Collect body states and check for despawns
-    const updates: StateUpdate[] = [];
-    const despawnIds: number[] = [];
+    // 4. Single pass: collect body states and check for despawns
+    //    Reuse arrays — clear length instead of allocating new arrays each tick
+    const updates = this.updates;
+    const despawnIds = this.despawnIds;
+    updates.length = 0;
+    despawnIds.length = 0;
     const f = GameLoop.Q_FACTOR;
 
     this.coins.forEach((coin, id) => {
@@ -126,15 +143,15 @@ export class GameLoop {
 
     // 5. Handle despawns
     if (despawnIds.length > 0) {
-      despawnIds.forEach((id) => {
+      for (let i = 0; i < despawnIds.length; i++) {
+        const id = despawnIds[i];
         const coin = this.coins.get(id);
         if (coin) {
-          // Properly remove RigidBody and Collider from physics world
           coin.destroy(this.physicsWorld);
           this.coins.delete(id);
           this.coinManager.removeCoin(id);
         }
-      });
+      }
 
       const despawnMessage: DespawnMessage = {
         op: "despawn",
@@ -149,7 +166,7 @@ export class GameLoop {
     const pusherZ = Math.round(this.pusher.getCurrentZ() * f) / f;
     this.gameState.updatePusherZ(pusherZ);
 
-    // 7. Broadcast state delta
+    // 7. Broadcast state delta (always send so client stays in sync with pusherZ)
     const stateDelta: StateDeltaMessage = {
       op: "state_delta",
       serverTime: Date.now(),
@@ -162,7 +179,24 @@ export class GameLoop {
 
     this.wsServer.broadcast(stateDelta);
 
-    // 8. Increment tick
+    // 8. Record tick timing
+    const tickMs = performance.now() - tickStart;
+    this.tickTimings.push(tickMs);
+    if (this.tickTimings.length > GameLoop.TIMING_WINDOW) {
+      this.tickTimings.shift();
+    }
+
+    // Warn if tick exceeds budget (33.3ms at 30Hz)
+    if (tickMs > PHYSICS_CONFIG.TICK_INTERVAL) {
+      console.warn(
+        `⚠️  Tick ${this.tickCount} overran: ${tickMs.toFixed(1)}ms ` +
+          `(budget: ${PHYSICS_CONFIG.TICK_INTERVAL.toFixed(1)}ms) ` +
+          `[physics: ${physicsMs.toFixed(1)}ms, coinUpdate: ${coinUpdateMs.toFixed(1)}ms, ` +
+          `coins: ${this.coins.size}, active: ${updates.length}]`
+      );
+    }
+
+    // 9. Increment tick
     this.gameState.incrementTick();
   }
 
@@ -170,16 +204,40 @@ export class GameLoop {
     const connections = this.wsServer.getConnections().size;
     const coinCount = this.coins.size;
 
-    let activeCoins = 0;
-    let sleepingCoins = 0;
-    let lowVelActiveCoins = 0;
-    let totalLinVel = 0;
-    let totalAngVel = 0;
+    // Tick timing stats (always log)
+    const timings = this.tickTimings;
+    if (timings.length > 0) {
+      const sorted = timings.slice().sort((a, b) => a - b);
+      const avg = timings.reduce((s, v) => s + v, 0) / timings.length;
+      const p50 = sorted[Math.floor(sorted.length * 0.5)];
+      const p95 = sorted[Math.floor(sorted.length * 0.95)];
+      const p99 = sorted[Math.floor(sorted.length * 0.99)];
+      const max = sorted[sorted.length - 1];
+      const overruns = timings.filter((t) => t > PHYSICS_CONFIG.TICK_INTERVAL).length;
 
-    const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
-    const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
+      console.log(
+        `📊 Tick timing (${timings.length} samples): ` +
+          `avg=${avg.toFixed(1)}ms, p50=${p50.toFixed(1)}ms, p95=${p95.toFixed(1)}ms, ` +
+          `p99=${p99.toFixed(1)}ms, max=${max.toFixed(1)}ms, ` +
+          `overruns=${overruns}/${timings.length}`
+      );
+    }
 
+    console.log(
+      `   Coins: ${coinCount} total, Connections: ${connections}`
+    );
+
+    // Detailed sleep stats (when DEBUG_SLEEP enabled)
     if (PHYSICS_PARAMS.DEBUG_SLEEP) {
+      let activeCoins = 0;
+      let sleepingCoins = 0;
+      let lowVelActiveCoins = 0;
+      let totalLinVel = 0;
+      let totalAngVel = 0;
+
+      const linThresholdSq = PHYSICS_PARAMS.SLEEP_LINEAR_THRESHOLD ** 2;
+      const angThresholdSq = PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
+
       this.coins.forEach((coin) => {
         const body = coin.getRigidBody();
         if (body.isSleeping()) {
@@ -195,7 +253,6 @@ export class GameLoop {
           totalLinVel += Math.sqrt(vSq);
           totalAngVel += Math.sqrt(wSq);
 
-          // Check if coin is candidate for sleep (low velocity)
           if (vSq < linThresholdSq && wSq < angThresholdSq) {
             lowVelActiveCoins++;
           }
@@ -208,14 +265,12 @@ export class GameLoop {
         activeCoins > 0 ? (totalAngVel / activeCoins).toFixed(3) : "0.000";
 
       console.log(
-        `📊 Stats: ${activeCoins} active (${lowVelActiveCoins} low-vel), ${sleepingCoins} sleeping, ${coinCount} total\n` +
-          `   Velocities (active): Lin: ${avgLinVel}, Ang: ${avgAngVel}\n` +
-          `   Net: ${connections} conns`
+        `   Sleep: ${activeCoins} active (${lowVelActiveCoins} low-vel), ${sleepingCoins} sleeping\n` +
+          `   Velocities (active): Lin: ${avgLinVel}, Ang: ${avgAngVel}`
       );
-
-      // Reset counters
-      this.tickCount = 0;
     }
+
+    this.tickCount = 0;
   }
 
   addCoin(coin: Coin): void {
