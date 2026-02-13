@@ -1,0 +1,388 @@
+package mid
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
+	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+)
+
+// ---------------------------------------------------------------------------
+// Context helpers
+// ---------------------------------------------------------------------------
+
+func TestCorrelationIDContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	if got := GetCorrelationID(ctx); got != "" {
+		t.Errorf("empty ctx should return empty string, got %q", got)
+	}
+
+	ctx = SetCorrelationID(ctx, "abc-123")
+	if got := GetCorrelationID(ctx); got != "abc-123" {
+		t.Errorf("GetCorrelationID = %q, want %q", got, "abc-123")
+	}
+}
+
+func TestClaimsContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, ok := GetClaims(ctx)
+	if ok {
+		t.Error("empty ctx should not have claims")
+	}
+
+	want := Claims{UserID: "u1", SUIAddress: "0xabc"}
+	ctx = SetClaims(ctx, want)
+
+	got, ok := GetClaims(ctx)
+	if !ok {
+		t.Fatal("GetClaims should return ok=true after SetClaims")
+	}
+	if got != want {
+		t.Errorf("claims = %+v, want %+v", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CorrelationID middleware
+// ---------------------------------------------------------------------------
+
+func TestCorrelationIDMiddleware(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		headerVal  string
+		wantCustom bool
+	}{
+		{
+			name:       "generates UUID when header missing",
+			headerVal:  "",
+			wantCustom: false,
+		},
+		{
+			name:       "passes through existing header",
+			headerVal:  "my-custom-id",
+			wantCustom: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var ctxID string
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctxID = GetCorrelationID(r.Context())
+			})
+
+			handler := CorrelationID()(inner)
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tc.headerVal != "" {
+				r.Header.Set("X-Correlation-ID", tc.headerVal)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, r)
+
+			respID := w.Header().Get("X-Correlation-ID")
+			if respID == "" {
+				t.Fatal("response should have X-Correlation-ID header")
+			}
+
+			if ctxID != respID {
+				t.Errorf("context ID %q != response header ID %q", ctxID, respID)
+			}
+
+			if tc.wantCustom && respID != tc.headerVal {
+				t.Errorf("should pass through custom ID, got %q want %q", respID, tc.headerVal)
+			}
+
+			if !tc.wantCustom {
+				if _, err := uuid.Parse(respID); err != nil {
+					t.Errorf("generated ID should be valid UUID, got %q", respID)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GameSecret middleware
+// ---------------------------------------------------------------------------
+
+func TestGameSecret(t *testing.T) {
+	t.Parallel()
+
+	const secret = "test-secret-key"
+
+	tests := []struct {
+		name       string
+		headerVal  string
+		wantStatus int
+	}{
+		{
+			name:       "missing secret",
+			headerVal:  "",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "wrong secret",
+			headerVal:  "wrong-key",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "correct secret",
+			headerVal:  secret,
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			handler := GameSecret(secret)(inner)
+
+			r := httptest.NewRequest(http.MethodPost, "/", nil)
+			if tc.headerVal != "" {
+				r.Header.Set("X-Game-Secret", tc.headerVal)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, r)
+
+			if w.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tc.wantStatus)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Authenticate middleware
+// ---------------------------------------------------------------------------
+
+func TestAuthenticate(t *testing.T) {
+	t.Parallel()
+
+	devAuth := auth.NewDevAuth("test-issuer")
+	userID := uuid.New()
+	suiAddr := "0xauth-test"
+
+	validToken, err := devAuth.GenerateToken(userID, suiAddr)
+	if err != nil {
+		t.Fatalf("generating test token: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		authHeader string
+		wantStatus int
+		wantClaims bool
+	}{
+		{
+			name:       "missing authorization header",
+			authHeader: "",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "invalid format - no bearer prefix",
+			authHeader: "Token " + validToken,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "invalid token",
+			authHeader: "Bearer invalid.token.here",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "valid token",
+			authHeader: "Bearer " + validToken,
+			wantStatus: http.StatusOK,
+			wantClaims: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotClaims Claims
+			var gotOK bool
+
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotClaims, gotOK = GetClaims(r.Context())
+				w.WriteHeader(http.StatusOK)
+			})
+
+			handler := Authenticate(devAuth)(inner)
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tc.authHeader != "" {
+				r.Header.Set("Authorization", tc.authHeader)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, r)
+
+			if w.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tc.wantStatus)
+			}
+
+			if tc.wantClaims {
+				if !gotOK {
+					t.Fatal("claims should be set in context")
+				}
+				if gotClaims.UserID != userID.String() {
+					t.Errorf("claims.UserID = %q, want %q", gotClaims.UserID, userID.String())
+				}
+				if gotClaims.SUIAddress != suiAddr {
+					t.Errorf("claims.SUIAddress = %q, want %q", gotClaims.SUIAddress, suiAddr)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Errors middleware
+// ---------------------------------------------------------------------------
+
+func TestErrors(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+
+	tests := []struct {
+		name       string
+		handler    v1.Handler
+		wantStatus int
+		wantError  string
+	}{
+		{
+			name: "no error passes through",
+			handler: func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+				return v1.Respond(w, http.StatusOK, map[string]string{"ok": "true"})
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "RequestError maps to its status",
+			handler: func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+				return v1.NewRequestError(errors.New("bad input"), http.StatusBadRequest)
+			},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "bad input",
+		},
+		{
+			name: "sentinel not found error",
+			handler: func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+				return v1.NewNotFoundError()
+			},
+			wantStatus: http.StatusNotFound,
+			wantError:  "not found",
+		},
+		{
+			name: "non-RequestError becomes 500",
+			handler: func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+				return errors.New("unexpected failure")
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Internal Server Error",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := Errors(log, tc.handler)
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			w := httptest.NewRecorder()
+
+			h.ServeHTTP(w, r)
+
+			if w.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tc.wantStatus)
+			}
+
+			if tc.wantError != "" {
+				var resp v1.ErrorResponse
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("decoding response: %v", err)
+				}
+				if resp.Error != tc.wantError {
+					t.Errorf("error = %q, want %q", resp.Error, tc.wantError)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Panics middleware
+// ---------------------------------------------------------------------------
+
+func TestPanics(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+
+	handler := Panics(log)(inner)
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Logger middleware
+// ---------------------------------------------------------------------------
+
+func TestLogger(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+
+	handler := Logger(log)(inner)
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+}
