@@ -13,3 +13,16 @@ build_local:
 
 rtp_sim:
 	docker compose -f docker-compose.dev.yml run --rm game pnpm dlx tsx game/src/rtp_sim.ts
+
+# Backend targets
+backend-run:
+	cd backend && go run ./app/services/api
+
+backend-test:
+	cd backend && go test -v -race -count=1 ./...
+
+backend-migrate:
+	cd backend && go run ./app/tooling/admin migrate
+
+backend-seed:
+	cd backend && go run ./app/tooling/admin seed

@@ -1,0 +1,43 @@
+// Package accounting provides ledger and accounting domain logic.
+package accounting
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+)
+
+// Action types for accounting log entries.
+const (
+	ActionDeposit    = "DEPOSIT"
+	ActionWithdraw   = "WITHDRAW"
+	ActionGameInsert = "GAME_INSERT"
+	ActionGameReward = "GAME_REWARD"
+)
+
+// Currency types.
+const (
+	CurrencyUSDC = "USDC"
+	CurrencyCoin = "COIN"
+)
+
+// AccountingLog represents a single ledger entry.
+type AccountingLog struct {
+	LogID       uuid.UUID       `db:"log_id" json:"log_id"`
+	UserID      uuid.UUID       `db:"user_id" json:"user_id"`
+	ActionType  string          `db:"action_type" json:"action_type"`
+	Amount      decimal.Decimal `db:"amount" json:"amount"`
+	Currency    string          `db:"currency" json:"currency"`
+	ReferenceID string          `db:"reference_id" json:"reference_id"`
+	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
+}
+
+// NewLog contains information needed to create a new accounting entry.
+type NewLog struct {
+	UserID      uuid.UUID
+	ActionType  string
+	Amount      decimal.Decimal
+	Currency    string
+	ReferenceID string
+}
