@@ -9,24 +9,23 @@ WORKDIR /app
 
 # Copy package files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY shared/package.json ./shared/
-COPY game/package.json ./game/
+COPY game/shared/package.json ./game/shared/
+COPY game/server/package.json ./game/server/
 
 # Install all dependencies (including dev)
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
-COPY shared/src ./shared/src
-COPY game/src ./game/src
-COPY shared/tsconfig.json ./shared/
-COPY game/tsconfig.json ./game/
+COPY game/shared/src ./game/shared/src
+COPY game/server/src ./game/server/src
+COPY game/shared/tsconfig.json ./game/shared/
+COPY game/server/tsconfig.json ./game/server/
 
 # Build shared package
-RUN cd shared && pnpm build
+RUN cd game/shared && pnpm build
 
 # Expose port
 EXPOSE 3000
 
 # Default command (can be overridden in docker-compose)
 CMD ["pnpm", "--filter", "@coin-pusher/game", "dev"]
-

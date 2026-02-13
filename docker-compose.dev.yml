@@ -29,10 +29,10 @@ services:
       - PORT=3000
     volumes:
       # Mount source code for hot reload
-      - ./game/src:/app/game/src:ro
-      - ./shared/src:/app/shared/src:ro
+      - ./game/server/src:/app/game/server/src:ro
+      - ./game/shared/src:/app/game/shared/src:ro
       # Mount shared dist for access to compiled files
-      - ./shared/dist:/app/shared/dist:ro
+      - ./game/shared/dist:/app/game/shared/dist:ro
     networks:
       - coin-pusher-network
     depends_on:

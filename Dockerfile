@@ -14,17 +14,17 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 # Stage 1: Build shared package
 # ===========================
 FROM base AS shared-builder
-COPY shared ./shared
-RUN cd shared && pnpm install --frozen-lockfile && pnpm build
+COPY game/shared ./game/shared
+RUN cd game/shared && pnpm install --frozen-lockfile && pnpm build
 
 # ===========================
 # Stage 2: Build game server
 # ===========================
 FROM base AS game-builder
-COPY shared ./shared
-COPY --from=shared-builder /app/shared/dist ./shared/dist
-COPY game ./game
-RUN cd game && pnpm install --frozen-lockfile && pnpm build
+COPY game/shared ./game/shared
+COPY --from=shared-builder /app/game/shared/dist ./game/shared/dist
+COPY game/server ./game/server
+RUN cd game/server && pnpm install --frozen-lockfile && pnpm build
 
 # ===========================
 # Stage 3: Production
@@ -40,12 +40,12 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 
 # Copy shared package
-COPY shared/package.json ./shared/
-COPY --from=shared-builder /app/shared/dist ./shared/dist
+COPY game/shared/package.json ./game/shared/
+COPY --from=shared-builder /app/game/shared/dist ./game/shared/dist
 
 # Copy game server package
-COPY game/package.json ./game/
-COPY --from=game-builder /app/game/dist ./game/dist
+COPY game/server/package.json ./game/server/
+COPY --from=game-builder /app/game/server/dist ./game/server/dist
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
@@ -58,5 +58,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "require('net').connect(3000, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
 
 # Start game server
-CMD ["node", "game/dist/index.js"]
-
+CMD ["node", "game/server/dist/index.js"]

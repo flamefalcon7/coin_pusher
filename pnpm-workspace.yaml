@@ -1,5 +1,5 @@
 packages:
-  - 'client'
-  - 'game'
-  - 'shared'
+  - 'game/client'
+  - 'game/server'
+  - 'game/shared'
 
