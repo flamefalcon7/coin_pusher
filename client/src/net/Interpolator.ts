@@ -23,9 +23,13 @@ export class Interpolator {
   private knownCoins: Map<number, InterpolatedCoin> = new Map();
 
   // Track despawned IDs so old buffered states don't re-add them.
-  // The interpolation buffer is ~100ms behind, so a despawn message arrives
-  // before the buffer catches up, and stale updates could re-insert the coin.
   private despawnedIds: Set<number> = new Set();
+
+  // Reusable lookup map for before-state, cleared & reused each frame
+  private lookupMap: Map<number, { id: number; pos: [number, number, number]; rot: [number, number, number, number] }> = new Map();
+
+  // Reusable result object to avoid allocation per frame
+  private resultState: InterpolatedState = { coins: [], pusherZ: 0 };
 
   constructor(stateBuffer: StateBuffer, clockSync: ClockSync) {
     this.stateBuffer = stateBuffer;
@@ -35,7 +39,6 @@ export class Interpolator {
   private getInterpolationDelay(): number {
     const rtt = this.clockSync.getRTT();
 
-    // Calculate adaptive delay: max(base, rtt * multiplier), clamped
     const adaptiveDelay = Math.max(
       NETWORK_CONFIG.INTERPOLATION_DELAY_BASE,
       rtt * NETWORK_CONFIG.INTERPOLATION_DELAY_MULTIPLIER
@@ -59,228 +62,246 @@ export class Interpolator {
     this.despawnedIds.clear();
   }
 
+  /** Build the coins array from knownCoins into the reusable result. */
+  private buildResult(pusherZ: number): InterpolatedState {
+    // Reuse the array: truncate and refill from map values
+    const coins = this.resultState.coins;
+    let i = 0;
+    for (const coin of this.knownCoins.values()) {
+      coins[i++] = coin;
+    }
+    coins.length = i;
+    this.resultState.pusherZ = pusherZ;
+    return this.resultState;
+  }
+
   getInterpolatedState(): InterpolatedState | null {
-    // Calculate target time (server time - interpolation delay)
     const serverTime = this.clockSync.getServerTime();
     const interpolationDelay = this.getInterpolationDelay();
     const targetTime = serverTime - interpolationDelay;
 
-    // Get states for interpolation
     const states = this.stateBuffer.getStatesForInterpolation(targetTime);
 
     if (!states) {
-      // Not enough data for interpolation, try extrapolation
       return this.getExtrapolatedState(targetTime);
     }
 
     const { before, after } = states;
 
-    // Calculate interpolation alpha
     const timeDiff = after.serverTime - before.serverTime;
     const alpha =
       timeDiff > 0 ? (targetTime - before.serverTime) / timeDiff : 0;
-
-    // Clamp alpha to [0, 1]
     const clampedAlpha = Math.max(0, Math.min(1, alpha));
 
-    // Build lookup map for O(1) access instead of O(n) .find()
-    const beforeMap = new Map<number, (typeof before.updates)[0]>();
-    for (const u of before.updates) {
+    // Reuse lookup map instead of allocating a new Map each frame
+    const beforeMap = this.lookupMap;
+    beforeMap.clear();
+    for (let i = 0, len = before.updates.length; i < len; i++) {
+      const u = before.updates[i];
       beforeMap.set(u.id, u);
     }
 
     // Update known coins with interpolated positions from this delta
-    for (const afterUpdate of after.updates) {
-      // Skip coins that have been despawned (old buffered state)
+    for (let i = 0, len = after.updates.length; i < len; i++) {
+      const afterUpdate = after.updates[i];
       if (this.despawnedIds.has(afterUpdate.id)) continue;
 
       const beforeUpdate = beforeMap.get(afterUpdate.id);
 
       if (!beforeUpdate) {
-        // New coin, just use the after state
-        this.knownCoins.set(afterUpdate.id, {
-          id: afterUpdate.id,
-          pos: afterUpdate.pos,
-          rot: afterUpdate.rot,
-        });
+        // New coin - reuse or create InterpolatedCoin object
+        let coin = this.knownCoins.get(afterUpdate.id);
+        if (coin) {
+          coin.pos[0] = afterUpdate.pos[0];
+          coin.pos[1] = afterUpdate.pos[1];
+          coin.pos[2] = afterUpdate.pos[2];
+          coin.rot[0] = afterUpdate.rot[0];
+          coin.rot[1] = afterUpdate.rot[1];
+          coin.rot[2] = afterUpdate.rot[2];
+          coin.rot[3] = afterUpdate.rot[3];
+        } else {
+          coin = {
+            id: afterUpdate.id,
+            pos: [afterUpdate.pos[0], afterUpdate.pos[1], afterUpdate.pos[2]],
+            rot: [afterUpdate.rot[0], afterUpdate.rot[1], afterUpdate.rot[2], afterUpdate.rot[3]],
+          };
+          this.knownCoins.set(afterUpdate.id, coin);
+        }
         continue;
       }
 
-      // Interpolate position (linear)
-      const pos: [number, number, number] = [
-        this.lerp(beforeUpdate.pos[0], afterUpdate.pos[0], clampedAlpha),
-        this.lerp(beforeUpdate.pos[1], afterUpdate.pos[1], clampedAlpha),
-        this.lerp(beforeUpdate.pos[2], afterUpdate.pos[2], clampedAlpha),
-      ];
+      // Reuse existing coin object to avoid allocation
+      let coin = this.knownCoins.get(afterUpdate.id);
+      if (!coin) {
+        coin = {
+          id: afterUpdate.id,
+          pos: [0, 0, 0],
+          rot: [0, 0, 0, 0],
+        };
+        this.knownCoins.set(afterUpdate.id, coin);
+      }
 
-      // Interpolate rotation (SLERP)
-      const rot = this.slerp(beforeUpdate.rot, afterUpdate.rot, clampedAlpha);
+      // Interpolate position (linear) - mutate in place
+      coin.pos[0] = beforeUpdate.pos[0] + (afterUpdate.pos[0] - beforeUpdate.pos[0]) * clampedAlpha;
+      coin.pos[1] = beforeUpdate.pos[1] + (afterUpdate.pos[1] - beforeUpdate.pos[1]) * clampedAlpha;
+      coin.pos[2] = beforeUpdate.pos[2] + (afterUpdate.pos[2] - beforeUpdate.pos[2]) * clampedAlpha;
 
-      this.knownCoins.set(afterUpdate.id, {
-        id: afterUpdate.id,
-        pos,
-        rot,
-      });
+      // Interpolate rotation (SLERP) - write directly into coin.rot
+      this.slerpInto(coin.rot, beforeUpdate.rot, afterUpdate.rot, clampedAlpha);
     }
 
-    // Interpolate pusher Z
-    const pusherZ = this.lerp(before.pusherZ, after.pusherZ, clampedAlpha);
+    const pusherZ = before.pusherZ + (after.pusherZ - before.pusherZ) * clampedAlpha;
 
-    // Return ALL known coins (including sleeping ones at their last position)
-    return { coins: Array.from(this.knownCoins.values()), pusherZ };
+    return this.buildResult(pusherZ);
   }
 
   private getExtrapolatedState(targetTime: number): InterpolatedState | null {
-    // Get the latest state we have
     const latestState = this.stateBuffer.getNewestState();
     if (!latestState) return null;
 
-    // Calculate how far we're extrapolating into the future
     const extrapolationTime = targetTime - latestState.serverTime;
-
-    // If we're extrapolating too far into the future, clamp it
     const clampedExtrapolationTime = Math.min(
       extrapolationTime,
       NETWORK_CONFIG.EXTRAPOLATION_MAX_TIME
     );
 
-    // If the latest state is too old, just return it as-is (no extrapolation)
     if (extrapolationTime < 0 || clampedExtrapolationTime <= 0) {
       this.mergeUpdates(latestState.updates);
-      return {
-        coins: Array.from(this.knownCoins.values()),
-        pusherZ: latestState.pusherZ,
-      };
+      return this.buildResult(latestState.pusherZ);
     }
 
-    // Get previous state to calculate velocities
     const previousState = this.stateBuffer.getPreviousState(latestState);
     if (!previousState) {
       this.mergeUpdates(latestState.updates);
-      return {
-        coins: Array.from(this.knownCoins.values()),
-        pusherZ: latestState.pusherZ,
-      };
+      return this.buildResult(latestState.pusherZ);
     }
 
-    // Calculate time delta between states
     const stateTimeDelta = latestState.serverTime - previousState.serverTime;
     if (stateTimeDelta <= 0) {
       this.mergeUpdates(latestState.updates);
-      return {
-        coins: Array.from(this.knownCoins.values()),
-        pusherZ: latestState.pusherZ,
-      };
+      return this.buildResult(latestState.pusherZ);
     }
 
-    // Build lookup map for O(1) access
-    const previousMap = new Map<number, (typeof previousState.updates)[0]>();
-    for (const u of previousState.updates) {
+    // Reuse lookup map
+    const previousMap = this.lookupMap;
+    previousMap.clear();
+    for (let i = 0, len = previousState.updates.length; i < len; i++) {
+      const u = previousState.updates[i];
       previousMap.set(u.id, u);
     }
 
-    for (const latestUpdate of latestState.updates) {
-      // Skip coins that have been despawned (old buffered state)
+    const invDelta = 1 / stateTimeDelta;
+
+    for (let i = 0, len = latestState.updates.length; i < len; i++) {
+      const latestUpdate = latestState.updates[i];
       if (this.despawnedIds.has(latestUpdate.id)) continue;
 
       const previousUpdate = previousMap.get(latestUpdate.id);
 
-      if (!previousUpdate) {
-        // New coin, just use latest position
-        this.knownCoins.set(latestUpdate.id, {
+      // Reuse or create coin object
+      let coin = this.knownCoins.get(latestUpdate.id);
+      if (!coin) {
+        coin = {
           id: latestUpdate.id,
-          pos: latestUpdate.pos,
-          rot: latestUpdate.rot,
-        });
+          pos: [0, 0, 0],
+          rot: [0, 0, 0, 0],
+        };
+        this.knownCoins.set(latestUpdate.id, coin);
+      }
+
+      if (!previousUpdate) {
+        coin.pos[0] = latestUpdate.pos[0];
+        coin.pos[1] = latestUpdate.pos[1];
+        coin.pos[2] = latestUpdate.pos[2];
+        coin.rot[0] = latestUpdate.rot[0];
+        coin.rot[1] = latestUpdate.rot[1];
+        coin.rot[2] = latestUpdate.rot[2];
+        coin.rot[3] = latestUpdate.rot[3];
         continue;
       }
 
-      // Calculate velocity (change per ms)
-      const vel: [number, number, number] = [
-        (latestUpdate.pos[0] - previousUpdate.pos[0]) / stateTimeDelta,
-        (latestUpdate.pos[1] - previousUpdate.pos[1]) / stateTimeDelta,
-        (latestUpdate.pos[2] - previousUpdate.pos[2]) / stateTimeDelta,
-      ];
+      // Extrapolate position: velocity * time, mutate in place
+      coin.pos[0] = latestUpdate.pos[0] + (latestUpdate.pos[0] - previousUpdate.pos[0]) * invDelta * clampedExtrapolationTime;
+      coin.pos[1] = latestUpdate.pos[1] + (latestUpdate.pos[1] - previousUpdate.pos[1]) * invDelta * clampedExtrapolationTime;
+      coin.pos[2] = latestUpdate.pos[2] + (latestUpdate.pos[2] - previousUpdate.pos[2]) * invDelta * clampedExtrapolationTime;
 
-      // Extrapolate position
-      const pos: [number, number, number] = [
-        latestUpdate.pos[0] + vel[0] * clampedExtrapolationTime,
-        latestUpdate.pos[1] + vel[1] * clampedExtrapolationTime,
-        latestUpdate.pos[2] + vel[2] * clampedExtrapolationTime,
-      ];
-
-      this.knownCoins.set(latestUpdate.id, {
-        id: latestUpdate.id,
-        pos,
-        rot: latestUpdate.rot,
-      });
+      coin.rot[0] = latestUpdate.rot[0];
+      coin.rot[1] = latestUpdate.rot[1];
+      coin.rot[2] = latestUpdate.rot[2];
+      coin.rot[3] = latestUpdate.rot[3];
     }
 
-    // Extrapolate pusher Z
     const pusherVel =
-      (latestState.pusherZ - previousState.pusherZ) / stateTimeDelta;
+      (latestState.pusherZ - previousState.pusherZ) * invDelta;
     const pusherZ = latestState.pusherZ + pusherVel * clampedExtrapolationTime;
 
-    return { coins: Array.from(this.knownCoins.values()), pusherZ };
+    return this.buildResult(pusherZ);
   }
 
   /** Merge state updates into knownCoins, skipping despawned IDs. */
   private mergeUpdates(
     updates: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[]
   ): void {
-    for (const update of updates) {
+    for (let i = 0, len = updates.length; i < len; i++) {
+      const update = updates[i];
       if (this.despawnedIds.has(update.id)) continue;
-      this.knownCoins.set(update.id, {
-        id: update.id,
-        pos: update.pos,
-        rot: update.rot,
-      });
+      let coin = this.knownCoins.get(update.id);
+      if (coin) {
+        coin.pos[0] = update.pos[0];
+        coin.pos[1] = update.pos[1];
+        coin.pos[2] = update.pos[2];
+        coin.rot[0] = update.rot[0];
+        coin.rot[1] = update.rot[1];
+        coin.rot[2] = update.rot[2];
+        coin.rot[3] = update.rot[3];
+      } else {
+        this.knownCoins.set(update.id, {
+          id: update.id,
+          pos: [update.pos[0], update.pos[1], update.pos[2]],
+          rot: [update.rot[0], update.rot[1], update.rot[2], update.rot[3]],
+        });
+      }
     }
   }
 
-  private lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t;
-  }
-
-  private slerp(
+  /**
+   * SLERP that writes directly into an output array — zero allocations.
+   * Uses a pre-allocated q2Buf for the negation case.
+   */
+  private slerpInto(
+    out: [number, number, number, number],
     q1: [number, number, number, number],
     q2: [number, number, number, number],
     t: number
-  ): [number, number, number, number] {
-    // Calculate dot product
+  ): void {
     let dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];
 
-    // If dot product is negative, negate one quaternion to take shorter path
-    let q2Copy: [number, number, number, number] = [...q2];
+    // If dot is negative, negate q2 to take shorter path (use pre-allocated buffer)
+    let q2x = q2[0], q2y = q2[1], q2z = q2[2], q2w = q2[3];
     if (dot < 0) {
-      q2Copy = [-q2[0], -q2[1], -q2[2], -q2[3]];
+      q2x = -q2x; q2y = -q2y; q2z = -q2z; q2w = -q2w;
       dot = -dot;
     }
 
-    // Clamp dot to avoid numerical issues
-    dot = Math.max(-1, Math.min(1, dot));
+    if (dot > 1) dot = 1;
 
     // If quaternions are very close, use linear interpolation
     if (dot > 0.9995) {
-      return [
-        this.lerp(q1[0], q2Copy[0], t),
-        this.lerp(q1[1], q2Copy[1], t),
-        this.lerp(q1[2], q2Copy[2], t),
-        this.lerp(q1[3], q2Copy[3], t),
-      ];
+      out[0] = q1[0] + (q2x - q1[0]) * t;
+      out[1] = q1[1] + (q2y - q1[1]) * t;
+      out[2] = q1[2] + (q2z - q1[2]) * t;
+      out[3] = q1[3] + (q2w - q1[3]) * t;
+      return;
     }
 
-    // Calculate SLERP
     const theta = Math.acos(dot);
     const sinTheta = Math.sin(theta);
     const w1 = Math.sin((1 - t) * theta) / sinTheta;
     const w2 = Math.sin(t * theta) / sinTheta;
 
-    return [
-      w1 * q1[0] + w2 * q2Copy[0],
-      w1 * q1[1] + w2 * q2Copy[1],
-      w1 * q1[2] + w2 * q2Copy[2],
-      w1 * q1[3] + w2 * q2Copy[3],
-    ];
+    out[0] = w1 * q1[0] + w2 * q2x;
+    out[1] = w1 * q1[1] + w2 * q2y;
+    out[2] = w1 * q1[2] + w2 * q2z;
+    out[3] = w1 * q1[3] + w2 * q2w;
   }
 }

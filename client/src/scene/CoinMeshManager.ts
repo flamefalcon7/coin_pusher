@@ -23,8 +23,8 @@ export class CoinMeshManager {
   // Maps for swap-and-pop management
   // coinId -> buffer index
   private idToIndex: Map<number, number> = new Map();
-  // buffer index -> coinId
-  private indexToId: Map<number, number> = new Map();
+  // buffer index -> coinId (flat array is faster than Map for integer keys)
+  private indexToId: Int32Array;
 
   // Reusable temporary objects to avoid GC per coin per frame
   private static tmpVector = new Vector3();
@@ -34,8 +34,9 @@ export class CoinMeshManager {
 
   constructor(scene: Scene) {
     this.scene = scene;
-    // Initialize buffer with default capacity
+    // Initialize buffers with default capacity
     this.matrixBuffer = new Float32Array(this.capacity * 16);
+    this.indexToId = new Int32Array(this.capacity);
     this.createPrototype();
   }
 
@@ -86,9 +87,9 @@ export class CoinMeshManager {
     const index = this.activeCoins;
     this.activeCoins++;
 
-    // Update maps
+    // Update mappings
     this.idToIndex.set(id, index);
-    this.indexToId.set(index, id);
+    this.indexToId[index] = id;
 
     // Write transform to buffer
     this.writeMatrixToBuffer(index, pos, rot);
@@ -122,7 +123,7 @@ export class CoinMeshManager {
 
     if (index !== lastIndex) {
       // If we're not removing the last coin, move the last coin to this slot
-      const lastCoinId = this.indexToId.get(lastIndex)!;
+      const lastCoinId = this.indexToId[lastIndex];
 
       // Copy matrix data: from lastIndex to index
       // copyWithin(targetStart, sourceStart, sourceEnd)
@@ -132,14 +133,13 @@ export class CoinMeshManager {
         (lastIndex + 1) * 16
       );
 
-      // Update maps for the moved coin
+      // Update mappings for the moved coin
       this.idToIndex.set(lastCoinId, index);
-      this.indexToId.set(index, lastCoinId);
+      this.indexToId[index] = lastCoinId;
     }
 
-    // Remove the deleted coin from maps
+    // Remove the deleted coin from id map
     this.idToIndex.delete(id);
-    this.indexToId.delete(lastIndex);
 
     this.activeCoins--;
   }
@@ -186,9 +186,14 @@ export class CoinMeshManager {
       `📈 Resizing coin buffer: ${this.capacity} -> ${newCapacity} coins`
     );
 
-    const newBuffer = new Float32Array(newCapacity * 16);
-    newBuffer.set(this.matrixBuffer);
-    this.matrixBuffer = newBuffer;
+    const newMatrixBuffer = new Float32Array(newCapacity * 16);
+    newMatrixBuffer.set(this.matrixBuffer);
+    this.matrixBuffer = newMatrixBuffer;
+
+    const newIndexToId = new Int32Array(newCapacity);
+    newIndexToId.set(this.indexToId);
+    this.indexToId = newIndexToId;
+
     this.capacity = newCapacity;
   }
 
@@ -198,7 +203,7 @@ export class CoinMeshManager {
 
   clear(): void {
     this.idToIndex.clear();
-    this.indexToId.clear();
+    // No need to zero indexToId — entries beyond activeCoins are never read
     this.activeCoins = 0;
     this.updateInstances();
   }

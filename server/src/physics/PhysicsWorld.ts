@@ -6,11 +6,19 @@ export class PhysicsWorld {
   private initialized: boolean = false;
   private eventQueue: RAPIER.EventQueue;
   private pinColliders: Set<number> = new Set();
+  private substeps: number = PHYSICS_PARAMS.SUBSTEPS;
+
+  // Bound collision handler to avoid creating a new closure every substep
+  private collisionHandler: (handle1: number, handle2: number, started: boolean) => void;
 
   constructor() {
     // World will be initialized asynchronously
     this.world = null as any; // Temporary until init
     this.eventQueue = null as any;
+    this.collisionHandler = (handle1: number, handle2: number, started: boolean) => {
+      if (!started) return;
+      this.handleCollisions(handle1, handle2);
+    };
   }
 
   async init(): Promise<void> {
@@ -24,6 +32,9 @@ export class PhysicsWorld {
     this.world.maxVelocityIterations = PHYSICS_PARAMS.VELOCITY_ITERATIONS;
     this.world.maxStabilizationIterations = PHYSICS_PARAMS.POSITION_ITERATIONS;
     this.eventQueue = new RAPIER.EventQueue(true);
+
+    // Set timestep once (constant across all steps)
+    this.world.timestep = PHYSICS_PARAMS.DELTA_TIME / this.substeps;
 
     console.log("⚙️  Rapier physics world initialized");
     console.log(
@@ -42,27 +53,12 @@ export class PhysicsWorld {
       throw new Error("PhysicsWorld not initialized");
     }
 
-    const start = performance.now();
-
     // Step the physics simulation
-    const substeps = PHYSICS_PARAMS.SUBSTEPS;
-    const dt = PHYSICS_PARAMS.DELTA_TIME / substeps;
-    this.world.timestep = dt;
-
-    for (let i = 0; i < substeps; i++) {
+    for (let i = 0; i < this.substeps; i++) {
       this.world.step(this.eventQueue);
 
       // Handle collision events within substep
-      this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-        if (!started) return;
-        this.handleCollisions(handle1, handle2);
-      });
-    }
-
-    const end = performance.now();
-    // 如果超過 16ms (60fps) 或 33ms (30fps)，說明 CPU 吃不消了
-    if (end - start > 16) {
-      console.log(`Physics step took ${end - start}ms`);
+      this.eventQueue.drainCollisionEvents(this.collisionHandler);
     }
   }
 

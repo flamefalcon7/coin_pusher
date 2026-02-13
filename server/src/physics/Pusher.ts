@@ -7,12 +7,30 @@ export class Pusher {
   private startTime: number;
   private currentZ: number = 0;
 
+  // Pre-computed constants to avoid recalculating every tick
+  private readonly omega: number;
+  private readonly amplitude: number;
+  private readonly initialPhase: number;
+  private readonly zOffset: number;
+  private readonly baseX: number;
+  private readonly baseY: number;
+  private readonly baseZ: number;
+
   constructor(physicsWorld: PhysicsWorld) {
     const world = physicsWorld.getWorld();
     this.startTime = Date.now();
 
     const { WIDTH, HEIGHT, DEPTH, POSITION, FRICTION, RESTITUTION } =
       SCENE_CONFIG.PUSHER;
+
+    // Cache constants
+    this.omega = 2 * Math.PI * PUSHER_CONFIG.FREQUENCY;
+    this.amplitude = PUSHER_CONFIG.AMPLITUDE;
+    this.initialPhase = PUSHER_CONFIG.INITIAL_PHASE;
+    this.zOffset = PUSHER_CONFIG.Z_OFFSET;
+    this.baseX = POSITION.x;
+    this.baseY = POSITION.y;
+    this.baseZ = POSITION.z;
 
     // Create kinematic rigid body
     const bodyDesc =
@@ -44,36 +62,30 @@ export class Pusher {
   update(): void {
     const elapsedTime = (Date.now() - this.startTime) / 1000;
 
-    // 計算相位
-    const omega = 2 * Math.PI * PUSHER_CONFIG.FREQUENCY;
-    const phase = omega * elapsedTime + PUSHER_CONFIG.INITIAL_PHASE;
+    const phase = this.omega * elapsedTime + this.initialPhase;
 
-    // 計算位置 (用於同步給客戶端)
+    // Position (synced to client)
     this.currentZ =
-      PUSHER_CONFIG.AMPLITUDE * Math.sin(phase) + PUSHER_CONFIG.Z_OFFSET;
+      this.amplitude * Math.sin(phase) + this.zOffset;
 
-    // 修改 2: 計算並設定速度 (v = dz/dt = A * omega * cos(phase))
-    const velocityZ = PUSHER_CONFIG.AMPLITUDE * omega * Math.cos(phase);
+    // Velocity (v = dz/dt = A * omega * cos(phase))
+    const velocityZ = this.amplitude * this.omega * Math.cos(phase);
 
-    // 設定剛體速度
     this.rigidBody.setLinvel({ x: 0, y: 0, z: velocityZ }, true);
 
-    // 設定剛體位置 (為了修正飄移，最好還是同時設定位置)
-    const { POSITION } = SCENE_CONFIG.PUSHER;
+    // Set position to correct drift
     this.rigidBody.setTranslation(
       {
-        x: POSITION.x,
-        y: POSITION.y,
-        z: POSITION.z + this.currentZ,
+        x: this.baseX,
+        y: this.baseY,
+        z: this.baseZ + this.currentZ,
       },
       true
     );
   }
 
   getCurrentZ(): number {
-    // Return absolute z position (base position + offset)
-    const { POSITION } = SCENE_CONFIG.PUSHER;
-    return POSITION.z + this.currentZ;
+    return this.baseZ + this.currentZ;
   }
 
   getRigidBody(): RAPIER.RigidBody {
