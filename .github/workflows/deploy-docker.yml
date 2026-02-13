@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'game/**'
-      - 'shared/**'
+      - 'game/server/**'
+      - 'game/shared/**'
       - 'Dockerfile'
       - 'docker-compose.yml'
       - '.github/workflows/deploy-docker.yml'

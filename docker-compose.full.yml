@@ -38,7 +38,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx-docker.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./client/dist:/var/www/html:ro
+      - ./game/client/dist:/var/www/html:ro
       # Uncomment if using SSL certificates
       # - ./certs:/etc/nginx/certs:ro
     depends_on:

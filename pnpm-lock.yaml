@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  client:
+  game/client:
     dependencies:
       '@babylonjs/core':
         specifier: ^6.38.1
@@ -42,7 +42,7 @@ importers:
         specifier: ^5.0.10
         version: 5.4.21
 
-  game:
+  game/server:
     dependencies:
       '@coin-pusher/shared':
         specifier: workspace:*
@@ -70,7 +70,7 @@ importers:
         specifier: ^5.3.3
         version: 5.9.3
 
-  shared:
+  game/shared:
     devDependencies:
       typescript:
         specifier: ^5.3.3

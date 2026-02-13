@@ -10,9 +10,9 @@
 
 ## Project Structure
 
-- `game/src/` - Game server (physics, game loop, WebSocket)
-- `client/src/` - Game client (rendering, interpolation, UI)
-- `shared/src/` - Shared TypeScript protocol types and config
+- `game/server/src/` - Game server (physics, game loop, WebSocket)
+- `game/client/src/` - Game client (rendering, interpolation, UI)
+- `game/shared/src/` - Shared TypeScript protocol types and config
 - `backend/` - Go backend service (Ardan Labs layout)
   - `app/services/api/` - Main API server entry point & HTTP handlers
   - `app/tooling/admin/` - CLI for DB migration/seeding
