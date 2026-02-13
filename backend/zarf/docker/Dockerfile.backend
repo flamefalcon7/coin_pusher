@@ -1,0 +1,26 @@
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+RUN apk add --no-cache git
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/api ./app/services/api
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/admin ./app/tooling/admin
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+COPY --from=builder /bin/api /bin/api
+COPY --from=builder /bin/admin /bin/admin
+COPY --from=builder /app/zarf /app/zarf
+
+EXPOSE 4000 4010
+
+CMD ["/bin/api"]

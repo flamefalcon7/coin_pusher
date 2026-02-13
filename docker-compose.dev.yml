@@ -59,6 +59,54 @@ services:
       - shared
     command: sh -c "npm install -g pnpm && pnpm install && pnpm --filter @coin-pusher/client dev --host"
 
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: coin-pusher-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=coinpusher
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - coin-pusher-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Go backend API server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: zarf/docker/Dockerfile.backend
+    container_name: coin-pusher-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+      - "4010:4010"
+    environment:
+      - BACKEND_DB_HOST=postgres:5432
+      - BACKEND_DB_USER=postgres
+      - BACKEND_DB_PASSWORD=postgres
+      - BACKEND_DB_NAME=coinpusher
+      - BACKEND_DB_DISABLE_TLS=true
+      - BACKEND_AUTH_DEV_MODE=true
+      - BACKEND_GAME_API_KEY=dev-secret
+    networks:
+      - coin-pusher-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+
 networks:
   coin-pusher-network:
     driver: bridge
