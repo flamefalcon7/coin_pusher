@@ -1,5 +1,5 @@
 {
-  "name": "@coin-pusher/server",
+  "name": "@coin-pusher/game",
   "version": "0.1.0",
   "description": "Authoritative game server with physics simulation",
   "type": "module",

@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'server/**'
+      - 'game/**'
       - 'shared/**'
       - 'Dockerfile'
       - 'docker-compose.yml'
@@ -42,7 +42,7 @@ jobs:
             
             # Build new image (no cache for clean build)
             echo "🔨 Building new Docker image..."
-            docker-compose build --no-cache server
+            docker-compose build --no-cache game
             
             # Start containers
             echo "▶️  Starting containers..."
@@ -53,11 +53,11 @@ jobs:
             sleep 10
             
             # Verify containers are running
-            if docker ps | grep -q "coin-pusher-server"; then
-              echo "✅ Server is running"
+            if docker ps | grep -q "coin-pusher-game"; then
+              echo "✅ Game server is running"
               docker-compose ps
             else
-              echo "❌ Server failed to start"
+              echo "❌ Game server failed to start"
               docker-compose logs --tail 50
               exit 1
             fi

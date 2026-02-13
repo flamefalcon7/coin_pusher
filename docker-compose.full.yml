@@ -3,11 +3,11 @@
 
 services:
   # Game Server
-  server:
+  game:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: coin-pusher-server
+    container_name: coin-pusher-game
     restart: unless-stopped
     expose:
       - "3000"
@@ -42,7 +42,7 @@ services:
       # Uncomment if using SSL certificates
       # - ./certs:/etc/nginx/certs:ro
     depends_on:
-      - server
+      - game
     networks:
       - coin-pusher-network
     logging:

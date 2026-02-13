@@ -2,16 +2,26 @@
 
 ## Tech Stack
 
-- Server: TypeScript, Rapier 3D physics (WASM), WebSocket + MessagePack
+- Game Server: TypeScript, Rapier 3D physics (WASM), WebSocket + MessagePack
 - Client: TypeScript, BabylonJS, Vite
 - Shared: TypeScript protocol types and config
-- Monorepo: pnpm workspace
+- Backend: Go 1.22+, PostgreSQL, chi router, Zap logger (Ardan Labs layout)
+- Monorepo: pnpm workspace (TS) + Go module (backend)
 
 ## Project Structure
 
-- `server/src/` - Game server (physics, game loop, WebSocket)
+- `game/src/` - Game server (physics, game loop, WebSocket)
 - `client/src/` - Game client (rendering, interpolation, UI)
-- `shared/src/` - Shared types and config
+- `shared/src/` - Shared TypeScript protocol types and config
+- `backend/` - Go backend service (Ardan Labs layout)
+  - `app/services/api/` - Main API server entry point & HTTP handlers
+  - `app/tooling/admin/` - CLI for DB migration/seeding
+  - `app/tooling/indexer/` - SUI chain event listener
+  - `business/core/user/` - User domain (auth, login, balance)
+  - `business/core/accounting/` - Ledger domain (deposit, withdraw, game events)
+  - `business/web/` - Web framework (auth, middleware, response helpers)
+  - `foundation/` - Reusable libs (database, logger, keystore, SUI SDK wrapper)
+  - `zarf/` - Config & deploy (Docker, K8s)
 - `docker-compose*.yml` - Deployment configs
 
 ## Skills
