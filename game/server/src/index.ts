@@ -1,4 +1,4 @@
-import { WebSocketServer } from "./ws/WebSocketServer.js";
+import { NATSClient, type CoinInsertCommand, type SpawnStackCommand } from "./nats/NATSClient.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
@@ -7,127 +7,121 @@ import { StackSpawner } from "./game/StackSpawner.js";
 import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
 import { GameLoop } from "./game/GameLoop.js";
-import type { Connection } from "./ws/Connection.js";
-import type { StackType } from "@coin-pusher/shared";
+import type { StackType, WorldSnapshotMessage } from "@coin-pusher/shared";
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const NATS_URL = process.env.NATS_URL || "nats://localhost:4222";
 
-console.log("🎮 Starting Coin Pusher Server...");
-console.log(`📡 Port: ${PORT}`);
+console.log("Starting Coin Pusher Game Server (NATS worker)...");
+console.log(`NATS URL: ${NATS_URL}`);
 
 // Initialize game components
 const physicsWorld = new PhysicsWorld();
 const gameState = new GameState();
 const coinManager = new CoinManager(gameState);
-const wsServer = new WebSocketServer(PORT);
+const natsClient = new NATSClient("main");
 
 let pusher: Pusher;
 let gameLoop: GameLoop;
+let snapshotInterval: NodeJS.Timeout;
 
-// Async initialization
 async function initialize() {
-  // Initialize physics world
+  // Initialize physics
   await physicsWorld.init();
 
-  // Build static scene
   const sceneBuilder = new SceneBuilder(physicsWorld);
   sceneBuilder.buildStaticScene();
 
-  // Create pusher
   pusher = new Pusher(physicsWorld);
 
-  // Create game loop
+  // Connect to NATS
+  await natsClient.connect(NATS_URL);
+
+  // Create game loop (now uses NATSClient instead of WebSocketServer)
   gameLoop = new GameLoop(
     physicsWorld,
     pusher,
     gameState,
     coinManager,
-    wsServer
+    natsClient
   );
 
-  // Set message handlers
-  wsServer.setMessageHandlers({
-    onCoinInsert: (
-      _connection: Connection,
-      x: number,
-      y: number,
-      z: number
-    ) => {
-      const coinId = coinManager.spawnCoin(x, y, z);
-      if (coinId !== null) {
-        const coin = new Coin(physicsWorld, coinId, x, y, z);
-        gameLoop.addCoin(coin);
-      }
-    },
-    onStackSpawn: (
-      _connection: Connection,
-      type: StackType,
-      x: number,
-      y: number,
-      z: number
-    ) => {
-      const coins = StackSpawner.getStackCoins(type, x, y, z);
-      coins.forEach((coinData) => {
-        // Convert rotation object to tuple
-        const rot: [number, number, number, number] = [
-          coinData.rotation.x,
-          coinData.rotation.y,
-          coinData.rotation.z,
-          coinData.rotation.w,
-        ];
+  // Subscribe to coin_insert commands from Go backend
+  natsClient.subscribeCoinInsert((cmd: CoinInsertCommand) => {
+    const coinId = coinManager.spawnCoin(cmd.x, cmd.y, cmd.z);
+    if (coinId !== null) {
+      const coin = new Coin(physicsWorld, coinId, cmd.x, cmd.y, cmd.z);
+      gameLoop.addCoin(coin);
+    }
+  });
 
-        const coinId = coinManager.spawnCoin(
+  // Subscribe to spawn_stack commands from Go backend
+  natsClient.subscribeSpawnStack((cmd: SpawnStackCommand) => {
+    const coins = StackSpawner.getStackCoins(cmd.type as StackType, cmd.x, cmd.y, cmd.z);
+    coins.forEach((coinData) => {
+      const rot: [number, number, number, number] = [
+        coinData.rotation.x,
+        coinData.rotation.y,
+        coinData.rotation.z,
+        coinData.rotation.w,
+      ];
+
+      const coinId = coinManager.spawnCoin(
+        coinData.x,
+        coinData.y,
+        coinData.z,
+        rot
+      );
+
+      if (coinId !== null) {
+        const coin = new Coin(
+          physicsWorld,
+          coinId,
           coinData.x,
           coinData.y,
           coinData.z,
-          rot
+          coinData.rotation
         );
-
-        if (coinId !== null) {
-          const coin = new Coin(
-            physicsWorld,
-            coinId,
-            coinData.x,
-            coinData.y,
-            coinData.z,
-            coinData.rotation
-          );
-          gameLoop.addCoin(coin);
-        }
-      });
-      console.log(`Spawned ${type} stack with ${coins.length} coins`);
-    },
-    onPing: (_connection: Connection, _clientTime: number) => {
-      // Handled by MessageHandler
-    },
+        gameLoop.addCoin(coin);
+      }
+    });
+    console.log(`Spawned ${cmd.type} stack with ${coins.length} coins`);
   });
 
-  // Send world snapshot to new connections
-  wsServer.onNewConnection((connection: Connection) => {
+  // Subscribe to snapshot requests (request/reply for new clients)
+  natsClient.subscribeSnapshotRequest(() => {
     const worldState = gameState.getWorldSnapshot();
-    const snapshot = {
+    return {
       op: "world_snapshot" as const,
       ...worldState,
     };
-    connection.send(snapshot);
-    console.log(
-      `📸 Sent world snapshot to new connection (${snapshot.bodies.length} bodies)`
-    );
   });
+
+  // Publish snapshot periodically for hub caching (every 10s)
+  snapshotInterval = setInterval(() => {
+    const worldState = gameState.getWorldSnapshot();
+    const snapshot: WorldSnapshotMessage = {
+      op: "world_snapshot",
+      ...worldState,
+    };
+    natsClient.publishSnapshot(snapshot);
+  }, 10000);
 
   // Start game loop
   gameLoop.start();
 
-  console.log("✅ Server ready!");
+  console.log("Server ready! (NATS worker mode)");
 }
 
 // Graceful shutdown
-const shutdown = () => {
-  console.log("\n🛑 Shutting down server...");
+const shutdown = async () => {
+  console.log("\nShutting down server...");
+  if (snapshotInterval) {
+    clearInterval(snapshotInterval);
+  }
   if (gameLoop) {
     gameLoop.stop();
   }
-  wsServer.close();
+  await natsClient.close();
   process.exit(0);
 };
 
@@ -136,6 +130,6 @@ process.on("SIGTERM", shutdown);
 
 // Start initialization
 initialize().catch((error) => {
-  console.error("❌ Failed to initialize server:", error);
+  console.error("Failed to initialize server:", error);
   process.exit(1);
 });

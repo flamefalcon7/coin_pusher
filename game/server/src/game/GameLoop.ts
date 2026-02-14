@@ -3,7 +3,7 @@ import type { Pusher } from "../physics/Pusher.js";
 import type { Coin } from "../physics/Coin.js";
 import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
-import type { WebSocketServer } from "../ws/WebSocketServer.js";
+import type { NATSClient } from "../nats/NATSClient.js";
 import type {
   StateDeltaMessage,
   DespawnMessage,
@@ -17,7 +17,7 @@ export class GameLoop {
   private pusher: Pusher;
   private gameState: GameState;
   private coinManager: CoinManager;
-  private wsServer: WebSocketServer;
+  private natsClient: NATSClient;
   private coins: Map<number, Coin> = new Map();
   private running: boolean = false;
   private intervalId?: NodeJS.Timeout;
@@ -40,13 +40,13 @@ export class GameLoop {
     pusher: Pusher,
     gameState: GameState,
     coinManager: CoinManager,
-    wsServer: WebSocketServer
+    natsClient: NATSClient
   ) {
     this.physicsWorld = physicsWorld;
     this.pusher = pusher;
     this.gameState = gameState;
     this.coinManager = coinManager;
-    this.wsServer = wsServer;
+    this.natsClient = natsClient;
   }
 
   start(): void {
@@ -159,7 +159,7 @@ export class GameLoop {
         ids: despawnIds,
       };
 
-      this.wsServer.broadcast(despawnMessage);
+      this.natsClient.publishDespawn(despawnMessage);
     }
 
     // 6. Update pusher z in game state
@@ -177,7 +177,7 @@ export class GameLoop {
 
     this.tickCount++;
 
-    this.wsServer.broadcast(stateDelta);
+    this.natsClient.publishStateDelta(stateDelta);
 
     // 8. Record tick timing
     const tickMs = performance.now() - tickStart;
@@ -201,7 +201,6 @@ export class GameLoop {
   }
 
   private logStats(): void {
-    const connections = this.wsServer.getConnections().size;
     const coinCount = this.coins.size;
 
     // Tick timing stats (always log)
@@ -224,7 +223,7 @@ export class GameLoop {
     }
 
     console.log(
-      `   Coins: ${coinCount} total, Connections: ${connections}`
+      `   Coins: ${coinCount} total`
     );
 
     // Detailed sleep stats (when DEBUG_SLEEP enabled)

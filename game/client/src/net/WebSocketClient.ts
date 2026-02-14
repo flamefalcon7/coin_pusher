@@ -6,13 +6,15 @@ export type MessageCallback = (message: ServerMessage) => void;
 export class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
+  private token?: string;
   private messageCallback?: MessageCallback;
   private onOpenCallback?: () => void;
   private onCloseCallback?: () => void;
   private onErrorCallback?: (error: Event) => void;
 
-  constructor(url: string) {
+  constructor(url: string, token?: string) {
     this.url = url;
+    this.token = token;
   }
 
   connect(): void {
@@ -21,8 +23,9 @@ export class WebSocketClient {
       return;
     }
 
-    console.log(`📡 Connecting to ${this.url}...`);
-    this.ws = new WebSocket(this.url);
+    const wsUrl = this.token ? `${this.url}?token=${this.token}` : this.url;
+    console.log(`📡 Connecting to ${wsUrl}...`);
+    this.ws = new WebSocket(wsUrl);
     
     // Set binary type to arraybuffer for MessagePack
     this.ws.binaryType = 'arraybuffer';

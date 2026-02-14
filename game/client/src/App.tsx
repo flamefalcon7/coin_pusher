@@ -7,7 +7,7 @@ import { SceneManager } from "./scene/SceneManager";
 import { GameClient } from "./net/GameClient";
 import { SLOT_CONFIG } from "@coin-pusher/shared";
 
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3000";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:4000/ws";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

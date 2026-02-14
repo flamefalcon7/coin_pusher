@@ -25,9 +25,11 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
+	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/keystore"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/logger"
+	foundnats "github.com/flamefalcon/coin-pusher/backend/foundation/nats"
 )
 
 func main() {
@@ -63,6 +65,11 @@ type config struct {
 	}
 	Game struct {
 		APIKey string `conf:"default:dev-secret,mask"`
+	}
+	NATS struct {
+		URL           string        `conf:"default:nats://localhost:4222"`
+		ReconnectWait time.Duration `conf:"default:2s"`
+		MaxReconnects int           `conf:"default:60"`
 	}
 }
 
@@ -119,8 +126,30 @@ func run() error {
 	gameCore := game.NewCore(userCore, acctCore)
 
 	// -------------------------------------------------------------------------
+	// NATS
+	nc, err := foundnats.Connect(foundnats.Config{
+		URL:           cfg.NATS.URL,
+		ReconnectWait: cfg.NATS.ReconnectWait,
+		MaxReconnects: cfg.NATS.MaxReconnects,
+	}, log)
+	if err != nil {
+		return fmt.Errorf("connecting to nats: %w", err)
+	}
+	defer nc.Drain()
+
+	// -------------------------------------------------------------------------
+	// WebSocket Hub, Relay, Handler
+	hub := ws.NewHub()
+	relay := ws.NewRelay(log, nc, hub, "main")
+	if err := relay.Start(); err != nil {
+		return fmt.Errorf("starting nats relay: %w", err)
+	}
+
+	wsHandler := ws.NewHandler(log, hub, nc, a)
+
+	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, userCore, acctCore, gameCore)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, userCore, acctCore, gameCore, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -164,6 +193,9 @@ func run() error {
 	case sig := <-shutdown:
 		log.Infow("shutdown started", "signal", sig)
 
+		// Stop NATS relay first.
+		relay.Stop()
+
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
 		defer cancel()
 
@@ -202,6 +234,7 @@ func buildAPIMux(
 	userCore *user.Core,
 	acctCore *accounting.Core,
 	gameCore *game.Core,
+	wsHandler *ws.Handler,
 ) *chi.Mux {
 	mux := chi.NewRouter()
 
@@ -212,6 +245,9 @@ func buildAPIMux(
 
 	// Debug routes (also on the API mux for convenience).
 	debug.Routes(mux, db)
+
+	// WebSocket route (no auth middleware -- auth happens during WS upgrade).
+	mux.Get("/ws", wsHandler.ServeHTTP)
 
 	// V1 routes.
 	userGrp := usergrp.New(userCore, a)
