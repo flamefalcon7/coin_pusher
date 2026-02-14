@@ -1,4 +1,4 @@
-import { Engine, Scene } from "@babylonjs/core";
+import { Engine, Scene, Color3, ArcRotateCamera, StandardMaterial } from "@babylonjs/core";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
@@ -115,6 +115,54 @@ export class SceneManager {
     this.scene.dispose();
     this.engine.dispose();
     console.log("🗑️  Scene disposed");
+  }
+
+  playShockEffect(): void {
+    // 1. Camera shake
+    const camera = this.scene.activeCamera as ArcRotateCamera | null;
+    if (camera) {
+      const origTarget = camera.target.clone();
+      const shakeIntensity = 0.03;
+      const shakeDuration = 300; // ms
+      const shakeInterval = 30; // ms per frame
+      let elapsed = 0;
+
+      const shakeTimer = setInterval(() => {
+        elapsed += shakeInterval;
+        if (elapsed >= shakeDuration) {
+          camera.target.copyFrom(origTarget);
+          clearInterval(shakeTimer);
+          return;
+        }
+        // Decay shake over time
+        const t = 1 - elapsed / shakeDuration;
+        camera.target.x = origTarget.x + (Math.random() - 0.5) * shakeIntensity * t;
+        camera.target.y = origTarget.y + (Math.random() - 0.5) * shakeIntensity * t;
+      }, shakeInterval);
+    }
+
+    // 2. Pin material flash (orange glow → fade back)
+    const pinMat = this.scene.getMaterialByName("pinMat") as StandardMaterial | null;
+    if (pinMat) {
+      const origEmissive = pinMat.emissiveColor.clone();
+      const flashColor = new Color3(1.0, 0.5, 0.0); // orange
+      pinMat.emissiveColor = flashColor;
+
+      const fadeDuration = 400; // ms
+      const fadeInterval = 30;
+      let fadeElapsed = 0;
+
+      const fadeTimer = setInterval(() => {
+        fadeElapsed += fadeInterval;
+        if (fadeElapsed >= fadeDuration) {
+          pinMat.emissiveColor = origEmissive;
+          clearInterval(fadeTimer);
+          return;
+        }
+        const t = fadeElapsed / fadeDuration;
+        pinMat.emissiveColor = Color3.Lerp(flashColor, origEmissive, t);
+      }, fadeInterval);
+    }
   }
 
   getScene(): Scene {

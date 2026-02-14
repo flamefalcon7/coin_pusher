@@ -9,7 +9,7 @@ import type {
   DespawnMessage,
   StateUpdate,
 } from "@coin-pusher/shared";
-import { PHYSICS_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_CONFIG, SCENE_CONFIG } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
 
 export class GameLoop {
@@ -274,5 +274,37 @@ export class GameLoop {
 
   addCoin(coin: Coin): void {
     this.coins.set(coin.getId(), coin);
+  }
+
+  shockPins(): void {
+    // Pin zone bounds: coins stuck around the pins near the back wall
+    const pinYMin = SCENE_CONFIG.PLATFORM.POSITION.y + SCENE_CONFIG.PINS.START_Y;
+    const pinYMax = pinYMin + (SCENE_CONFIG.PINS.ROWS - 1) * SCENE_CONFIG.PINS.VERTICAL_SPACING + SCENE_CONFIG.PINS.Y_OFFSET;
+    const backWallZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
+    const zThreshold = 0.25; // coins within 25cm of back wall
+
+    let shocked = 0;
+    this.coins.forEach((coin) => {
+      const pos = coin.getPosition();
+
+      // Check if coin is in the pin zone (near back wall, in pin Y range)
+      if (pos.y >= pinYMin && pos.y <= pinYMax && pos.z < backWallZ + zThreshold) {
+        const body = coin.getRigidBody();
+        // Wake up sleeping coins
+        body.wakeUp();
+        // Apply random impulse: forward (positive Z), slight downward, random lateral
+        const impulse = {
+          x: (Math.random() - 0.5) * 0.005,
+          y: -0.002,
+          z: 0.005 + Math.random() * 0.005,
+        };
+        body.applyImpulse(impulse, true);
+        shocked++;
+      }
+    });
+
+    if (shocked > 0) {
+      console.log(`Shocked ${shocked} coins in pin zone`);
+    }
   }
 }

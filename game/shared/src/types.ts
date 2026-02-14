@@ -53,6 +53,11 @@ export type StackSpawnMessage = {
   x: number;
 };
 
+// Client → Server: Shock pins to dislodge stuck coins
+export type ShockMessage = {
+  op: "shock";
+};
+
 // Client → Server: Ping for clock sync
 export type PingMessage = {
   op: "ping";
@@ -91,7 +96,11 @@ export type PongMessage = {
 };
 
 // Union of all client-to-server messages
-export type ClientMessage = CoinInsertMessage | StackSpawnMessage | PingMessage;
+export type ClientMessage =
+  | CoinInsertMessage
+  | StackSpawnMessage
+  | ShockMessage
+  | PingMessage;
 
 // Union of all server-to-client messages
 export type ServerMessage =
@@ -156,6 +165,7 @@ export const NETWORK_CONFIG = {
 // Rate limiting
 export const RATE_LIMIT_CONFIG = {
   COIN_INSERT_COOLDOWN: 50, // ms between coin inserts per connection
+  SHOCK_COOLDOWN: 2000, // ms between shock activations per connection
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
 
@@ -175,8 +185,10 @@ export const SLOT_CONFIG = {
 // Scene geometry configuration (shared between server physics and client rendering)
 export const SCENE_CONFIG = {
   PLATFORM: {
-    WIDTH: 1.2, // meters
+    WIDTH: 1.2, // meters (back edge width, constant up to FLARE_Z)
     DEPTH: 1, // meters
+    FLARE_Z: 0, // z where outward flare begins (0 = midpoint of platform)
+    FLARE_ANGLE: 30, // degrees outward from each side wall
     THICKNESS: 0.05, // meters
     POSITION: { x: 0, y: 0.25, z: 0 },
     TILT_ANGLE: 0, // degrees (no tilt)
@@ -189,21 +201,21 @@ export const SCENE_CONFIG = {
     THICKNESS: 0.05, // meters
     POSITION: { x: 0, y: 0.5, z: -0.4 },
     TILT_ANGLE: -5, // degrees (backward tilt)
-    FRICTION: 0.3,
-    RESTITUTION: 0.1,
+    FRICTION: 0.1, // low friction so coins slide down
+    RESTITUTION: 0.3, // bouncier so coins don't settle against wall
   },
   PINS: {
-    RADIUS: 0.01, // meters
+    RADIUS: 0.006, // meters (thinner pins)
     HEIGHT: 0.12, // meters
     ROWS: 5,
-    ODD_ROW_COUNT: 5, // pins per odd row
-    EVEN_ROW_COUNT: 6, // pins per even row
+    ODD_ROW_COUNT: 5, // pins at x: -0.4, -0.2, 0.0, 0.2, 0.4 (aligned with slots)
+    EVEN_ROW_COUNT: 6, // pins at x: -0.5, -0.3, -0.1, 0.1, 0.3, 0.5 (staggered)
     HORIZONTAL_SPACING: 0.2, // meters
-    VERTICAL_SPACING: 0.15, // meters
+    VERTICAL_SPACING: 0.18, // meters (> coin diameter 0.1m to prevent wedging)
     START_Y: 0.3, // meters from bottom of back wall
     Y_OFFSET: 0.8, // meters (adjust vertical position of all pins)
     FRICTION: 0.0,
-    RESTITUTION: 0.7,
+    RESTITUTION: 0.8, // high bounce to push coins away from pins
   },
   SIDE_WALLS: {
     DEPTH: 1, // meters
@@ -225,9 +237,9 @@ export const SCENE_CONFIG = {
   },
   // Client-only visual elements
   DROP_ZONE: {
-    WIDTH: 1.0, // meters
+    WIDTH: 1.8, // meters (matches flared front edge)
     HEIGHT: 0.05, // meters
     DEPTH: 0.3, // meters
-    POSITION: { x: 0, y: 0.15, z: 0.45 },
+    POSITION: { x: 0, y: 0.15, z: 0.55 },
   },
 } as const;

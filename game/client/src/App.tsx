@@ -5,7 +5,7 @@ import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { SceneManager } from "./scene/SceneManager";
 import { GameClient } from "./net/GameClient";
-import { SLOT_CONFIG } from "@coin-pusher/shared";
+import { SLOT_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:4000/ws";
 
@@ -21,6 +21,7 @@ function App() {
     "connecting" | "connected" | "disconnected"
   >("disconnected");
   const [buttonDisabled, setButtonDisabled] = useState(false);
+  const [shockCooldown, setShockCooldown] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
@@ -194,6 +195,16 @@ function App() {
     setTimeout(() => setButtonDisabled(false), 100);
   };
 
+  const handleShock = () => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected() || shockCooldown) {
+      return;
+    }
+    gameClientRef.current.shock();
+    sceneManagerRef.current?.playShockEffect();
+    setShockCooldown(true);
+    setTimeout(() => setShockCooldown(false), RATE_LIMIT_CONFIG.SHOCK_COOLDOWN);
+  };
+
   const handleTestLoop = () => {
     if (isTesting || !gameClientRef.current?.isConnected()) return;
 
@@ -232,8 +243,17 @@ function App() {
           top: "10px",
           right: "10px",
           zIndex: 100,
+          display: "flex",
+          gap: "8px",
         }}
       >
+        <button
+          onClick={handleShock}
+          disabled={shockCooldown || connectionStatus !== "connected"}
+          className="shock-button"
+        >
+          {shockCooldown ? "Shocking..." : "Shock Pins"}
+        </button>
         <button
           onClick={handleTestLoop}
           disabled={isTesting || connectionStatus !== "connected"}

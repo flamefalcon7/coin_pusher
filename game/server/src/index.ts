@@ -1,4 +1,4 @@
-import { NATSClient, type CoinInsertCommand, type SpawnStackCommand } from "./nats/NATSClient.js";
+import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand } from "./nats/NATSClient.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
@@ -85,6 +85,11 @@ async function initialize() {
       }
     });
     console.log(`Spawned ${cmd.type} stack with ${coins.length} coins`);
+  });
+
+  // Subscribe to shock commands from Go backend
+  natsClient.subscribeShock((_cmd: ShockCommand) => {
+    gameLoop.shockPins();
   });
 
   // Subscribe to snapshot requests (request/reply for new clients)

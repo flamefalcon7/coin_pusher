@@ -17,6 +17,11 @@ type NATSSpawnStackCmd struct {
 	Z      float64 `json:"z"`
 }
 
+// NATSShockCmd is published to game.{room}.cmd.shock.
+type NATSShockCmd struct {
+	UserID string `json:"user_id"`
+}
+
 // NATSRewardEvent is received from game.{room}.reward.
 type NATSRewardEvent struct {
 	CoinCount int    `json:"coin_count"`

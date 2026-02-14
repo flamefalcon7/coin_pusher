@@ -155,6 +155,13 @@ export class GameClient {
     this.wsClient.send(message);
   }
 
+  shock(): void {
+    const message: ClientMessage = {
+      op: "shock",
+    };
+    this.wsClient.send(message);
+  }
+
   getInterpolatedState(): InterpolatedState | null {
     return this.interpolator.getInterpolatedState();
   }

@@ -22,6 +22,7 @@ type Connection struct {
 	hub            *Hub
 	userID         string
 	lastCoinInsert time.Time
+	lastShock      time.Time
 	mu             sync.Mutex
 	closed         bool
 }
@@ -100,6 +101,19 @@ func (c *Connection) CanInsertCoin() bool {
 		return false
 	}
 	c.lastCoinInsert = now
+	return true
+}
+
+// CanShock checks rate limit (2s cooldown).
+func (c *Connection) CanShock() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastShock) < 2*time.Second {
+		return false
+	}
+	c.lastShock = now
 	return true
 }
 

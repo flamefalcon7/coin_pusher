@@ -19,6 +19,10 @@ export type SpawnStackCommand = {
   z: number;
 };
 
+export type ShockCommand = {
+  user_id: string;
+};
+
 export type RewardEvent = {
   coin_count: number;
   user_id?: string;
@@ -57,6 +61,18 @@ export class NATSClient {
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as SpawnStackCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to shock commands (JSON encoded)
+  subscribeShock(handler: (cmd: ShockCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.shock`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as ShockCommand;
         handler(cmd);
       }
     })();
