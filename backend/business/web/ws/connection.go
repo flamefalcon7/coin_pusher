@@ -96,7 +96,7 @@ func (c *Connection) CanInsertCoin() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if now.Sub(c.lastCoinInsert) < 100*time.Millisecond {
+	if now.Sub(c.lastCoinInsert) < 50*time.Millisecond {
 		return false
 	}
 	c.lastCoinInsert = now

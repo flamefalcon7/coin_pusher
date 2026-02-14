@@ -155,7 +155,7 @@ export const NETWORK_CONFIG = {
 
 // Rate limiting
 export const RATE_LIMIT_CONFIG = {
-  COIN_INSERT_COOLDOWN: 100, // ms between coin inserts per connection
+  COIN_INSERT_COOLDOWN: 50, // ms between coin inserts per connection
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
 

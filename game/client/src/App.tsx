@@ -200,7 +200,7 @@ function App() {
     setIsTesting(true);
     let count = 0;
     const maxCoins = 200;
-    const intervalTime = 50; // 0.05 seconds
+    const intervalTime = 60; // ms — must be above COIN_INSERT_COOLDOWN (50ms)
 
     const interval = setInterval(() => {
       if (count >= maxCoins) {
