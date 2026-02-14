@@ -1,9 +1,11 @@
 import {
   Scene,
+  Mesh,
   MeshBuilder,
   StandardMaterial,
   Color3,
   Vector3,
+  VertexData,
   TransformNode,
 } from "@babylonjs/core";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
@@ -23,59 +25,14 @@ export class StaticMeshes {
     const platformMat = this.createPlatformMaterial();
     const wallMat = this.createWallMaterial();
 
-    // Main platform
-    const { WIDTH, DEPTH, THICKNESS, POSITION } = SCENE_CONFIG.PLATFORM;
-    const platform = MeshBuilder.CreateBox(
-      "platform",
-      { width: WIDTH, height: THICKNESS, depth: DEPTH },
-      this.scene
-    );
-    platform.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
-    // No rotation - flat platform
-    platform.material = platformMat;
+    // Main platform (trapezoid)
+    this.createTrapezoidPlatform(platformMat);
 
     // Back wall with pins
     this.createBackWallWithPins(wallMat);
 
-    // Side walls
-    const {
-      THICKNESS: WALL_THICKNESS,
-      HEIGHT: WALL_HEIGHT,
-      DEPTH: WALL_DEPTH,
-      LEFT_POSITION,
-      RIGHT_POSITION,
-      INNER_TILT_ANGLE,
-    } = SCENE_CONFIG.SIDE_WALLS;
-
-    // Left wall
-    const leftWall = MeshBuilder.CreateBox(
-      "leftWall",
-      { width: WALL_THICKNESS, height: WALL_HEIGHT, depth: WALL_DEPTH },
-      this.scene
-    );
-    leftWall.position = new Vector3(
-      LEFT_POSITION.x,
-      LEFT_POSITION.y,
-      LEFT_POSITION.z
-    );
-    // Inner tilt
-    leftWall.rotation.z = -INNER_TILT_ANGLE * (Math.PI / 180);
-    leftWall.material = wallMat;
-
-    // Right wall
-    const rightWall = MeshBuilder.CreateBox(
-      "rightWall",
-      { width: WALL_THICKNESS, height: WALL_HEIGHT, depth: WALL_DEPTH },
-      this.scene
-    );
-    rightWall.position = new Vector3(
-      RIGHT_POSITION.x,
-      RIGHT_POSITION.y,
-      RIGHT_POSITION.z
-    );
-    // Inner tilt
-    rightWall.rotation.z = INNER_TILT_ANGLE * (Math.PI / 180);
-    rightWall.material = wallMat;
+    // Angled side walls
+    this.createAngledSideWalls(wallMat);
 
     // Drop zone indicator (subtle visual)
     const {
@@ -110,6 +67,132 @@ export class StaticMeshes {
     mat.diffuseColor = new Color3(0.5, 0.5, 0.6);
     mat.specularColor = new Color3(0.1, 0.1, 0.1);
     return mat;
+  }
+
+  /** Compute the platform's front half-width from the flare config. */
+  private static getFrontHalfWidth(): number {
+    const { WIDTH, DEPTH, FLARE_Z, FLARE_ANGLE, POSITION } = SCENE_CONFIG.PLATFORM;
+    const hw = WIDTH / 2;
+    const frontZ = POSITION.z + DEPTH / 2;
+    const flareDepth = frontZ - FLARE_Z;
+    const flareOffset = Math.tan(FLARE_ANGLE * Math.PI / 180) * flareDepth;
+    return hw + flareOffset;
+  }
+
+  private createTrapezoidPlatform(material: StandardMaterial): void {
+    const { WIDTH, DEPTH, FLARE_Z, THICKNESS, POSITION } = SCENE_CONFIG.PLATFORM;
+    const hw = WIDTH / 2;
+    const fhw = StaticMeshes.getFrontHalfWidth();
+    const hd = DEPTH / 2;
+    const ht = THICKNESS / 2;
+    const flareZLocal = FLARE_Z - POSITION.z; // flare z relative to mesh center
+
+    // Pentagon prism: 6 top vertices + 6 bottom vertices
+    // Top view (looking down):
+    //   0---1          back edge (width = WIDTH)
+    //   |   |
+    //   5   2          flare start (same width)
+    //  /     \
+    // 4-------3        front edge (width = fhw*2)
+    const positions = [
+      // Top face (y = +ht)
+      -hw,  ht, -hd,         // 0: back-left
+       hw,  ht, -hd,         // 1: back-right
+       hw,  ht,  flareZLocal, // 2: mid-right
+       fhw, ht,  hd,         // 3: front-right
+      -fhw, ht,  hd,         // 4: front-left
+      -hw,  ht,  flareZLocal, // 5: mid-left
+      // Bottom face (y = -ht)
+      -hw,  -ht, -hd,        // 6
+       hw,  -ht, -hd,        // 7
+       hw,  -ht,  flareZLocal,// 8
+       fhw, -ht,  hd,        // 9
+      -fhw, -ht,  hd,        // 10
+      -hw,  -ht,  flareZLocal,// 11
+    ];
+
+    const indices = [
+      // Top face (4 triangles)
+      0, 1, 2,   0, 2, 5,   5, 2, 3,   5, 3, 4,
+      // Bottom face (4 triangles, wound opposite)
+      6, 8, 7,   6, 11, 8,  11, 9, 8,  11, 10, 9,
+      // Back side
+      0, 7, 1,   0, 6, 7,
+      // Right-back side
+      1, 7, 8,   1, 8, 2,
+      // Right-front side (angled)
+      2, 8, 9,   2, 9, 3,
+      // Front side
+      3, 9, 10,  3, 10, 4,
+      // Left-front side (angled)
+      4, 10, 11, 4, 11, 5,
+      // Left-back side
+      5, 11, 6,  5, 6, 0,
+    ];
+
+    const normals: number[] = [];
+    VertexData.ComputeNormals(positions, indices, normals);
+
+    const mesh = new Mesh("platform", this.scene);
+    const vertexData = new VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh);
+
+    mesh.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
+    mesh.material = material;
+  }
+
+  private createAngledSideWalls(material: StandardMaterial): void {
+    const { HEIGHT, THICKNESS, INNER_TILT_ANGLE } = SCENE_CONFIG.SIDE_WALLS;
+    const { WIDTH, DEPTH, FLARE_Z, POSITION } = SCENE_CONFIG.PLATFORM;
+
+    const hw = WIDTH / 2;
+    const fhw = StaticMeshes.getFrontHalfWidth();
+    const backZ = POSITION.z - DEPTH / 2;
+    const frontZ = POSITION.z + DEPTH / 2;
+    const centerY = SCENE_CONFIG.SIDE_WALLS.LEFT_POSITION.y;
+    const tiltRad = INNER_TILT_ANGLE * (Math.PI / 180);
+
+    // Back segments: straight walls from backZ to FLARE_Z
+    const backDepth = FLARE_Z - backZ;
+    const backCenterZ = (backZ + FLARE_Z) / 2;
+
+    const leftBack = MeshBuilder.CreateBox("leftWallBack",
+      { width: THICKNESS, height: HEIGHT, depth: backDepth }, this.scene);
+    leftBack.position = new Vector3(-hw, centerY, backCenterZ);
+    leftBack.rotation.z = -tiltRad;
+    leftBack.material = material;
+
+    const rightBack = MeshBuilder.CreateBox("rightWallBack",
+      { width: THICKNESS, height: HEIGHT, depth: backDepth }, this.scene);
+    rightBack.position = new Vector3(hw, centerY, backCenterZ);
+    rightBack.rotation.z = tiltRad;
+    rightBack.material = material;
+
+    // Front segments: angled outward from FLARE_Z to frontZ
+    const flareDepth = frontZ - FLARE_Z;
+    const dx = fhw - hw; // outward offset
+    const frontLen = Math.sqrt(dx * dx + flareDepth * flareDepth);
+    const yAngle = Math.atan2(dx, flareDepth);
+
+    const frontCenterZ = (FLARE_Z + frontZ) / 2;
+    const frontCenterXOff = (hw + fhw) / 2;
+
+    const leftFront = MeshBuilder.CreateBox("leftWallFront",
+      { width: THICKNESS, height: HEIGHT, depth: frontLen }, this.scene);
+    leftFront.position = new Vector3(-frontCenterXOff, centerY, frontCenterZ);
+    leftFront.rotation.y = -yAngle;
+    leftFront.rotation.z = -tiltRad;
+    leftFront.material = material;
+
+    const rightFront = MeshBuilder.CreateBox("rightWallFront",
+      { width: THICKNESS, height: HEIGHT, depth: frontLen }, this.scene);
+    rightFront.position = new Vector3(frontCenterXOff, centerY, frontCenterZ);
+    rightFront.rotation.y = yAngle;
+    rightFront.rotation.z = tiltRad;
+    rightFront.material = material;
   }
 
   private createBackWallWithPins(wallMaterial: StandardMaterial): void {

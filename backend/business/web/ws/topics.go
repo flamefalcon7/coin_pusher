@@ -9,3 +9,4 @@ func TopicDespawn(room string) string     { return "game." + room + ".despawn" }
 func TopicReward(room string) string      { return "game." + room + ".reward" }
 func TopicSnapshot(room string) string    { return "game." + room + ".snapshot" }
 func TopicSnapshotReq(room string) string { return "game." + room + ".snapshot.request" }
+func TopicShock(room string) string       { return "game." + room + ".cmd.shock" }

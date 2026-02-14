@@ -101,3 +101,23 @@
   color: white;
 }
 
+.shock-button {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #f97316 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: opacity 0.2s;
+}
+
+.shock-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.shock-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

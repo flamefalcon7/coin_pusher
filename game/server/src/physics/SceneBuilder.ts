@@ -27,30 +27,51 @@ export class SceneBuilder {
     console.log("✅ Static scene built");
   }
 
+  /** Compute the platform's front half-width from the flare config. */
+  private static getFrontHalfWidth(): number {
+    const { WIDTH, DEPTH, FLARE_Z, FLARE_ANGLE, POSITION } = SCENE_CONFIG.PLATFORM;
+    const hw = WIDTH / 2;
+    const frontZ = POSITION.z + DEPTH / 2; // world z of front edge
+    const flareDepth = frontZ - FLARE_Z;   // how far the flare extends
+    const flareOffset = Math.tan(FLARE_ANGLE * Math.PI / 180) * flareDepth;
+    return hw + flareOffset;
+  }
+
   private createPlatform(): void {
     const { WIDTH, DEPTH, THICKNESS, POSITION, FRICTION, RESTITUTION } =
       SCENE_CONFIG.PLATFORM;
-    // Create rigid body descriptor (no rotation - flat platform)
+
     const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
       POSITION.x,
       POSITION.y,
       POSITION.z
     );
-
     const body = this.world.createRigidBody(bodyDesc);
 
-    // Create collider
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(
-      WIDTH / 2,
-      THICKNESS / 2,
-      DEPTH / 2
-    )
+    const hw = WIDTH / 2;
+    const fhw = SceneBuilder.getFrontHalfWidth();
+    const hd = DEPTH / 2;
+    const ht = THICKNESS / 2;
+
+    // Pentagon prism: back rect + front flare (convex hull = outer trapezoid)
+    // Since convex hull ignores the concave midpoint, we use the full trapezoid.
+    // The side walls enforce the actual straight-then-angled boundary.
+    const vertices = new Float32Array([
+      // Top face
+      -hw,   ht, -hd,         hw,  ht, -hd,
+      -fhw,  ht,  hd,         fhw, ht,  hd,
+      // Bottom face
+      -hw,  -ht, -hd,         hw, -ht, -hd,
+      -fhw, -ht,  hd,         fhw,-ht,  hd,
+    ]);
+
+    const colliderDesc = RAPIER.ColliderDesc.convexHull(vertices)!
       .setFriction(FRICTION)
       .setRestitution(RESTITUTION);
 
     this.world.createCollider(colliderDesc, body);
 
-    console.log("  ✓ Main platform created");
+    console.log(`  ✓ Platform created (back=${WIDTH}m, front=${(fhw * 2).toFixed(1)}m)`);
   }
 
   private createBackWall(): void {
@@ -156,51 +177,106 @@ export class SceneBuilder {
 
   private createSideWalls(): void {
     const {
-      DEPTH,
       HEIGHT,
       THICKNESS,
-      LEFT_POSITION,
-      RIGHT_POSITION,
       INNER_TILT_ANGLE,
       FRICTION,
       RESTITUTION,
     } = SCENE_CONFIG.SIDE_WALLS;
-    const innerTiltAngle = INNER_TILT_ANGLE * (Math.PI / 180);
 
-    // Left wall
-    const leftBodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(LEFT_POSITION.x, LEFT_POSITION.y, LEFT_POSITION.z)
-      .setRotation({ x: 0, y: 0, z: -innerTiltAngle, w: 1 }); // Tilt inward
+    const { WIDTH, DEPTH, FLARE_Z, POSITION } = SCENE_CONFIG.PLATFORM;
+    const hw = WIDTH / 2;
+    const fhw = SceneBuilder.getFrontHalfWidth();
+    const backZ = POSITION.z - DEPTH / 2; // z=-0.5
+    const frontZ = POSITION.z + DEPTH / 2; // z=+0.5
+    const centerY = SCENE_CONFIG.SIDE_WALLS.LEFT_POSITION.y;
+    const innerTilt = INNER_TILT_ANGLE * (Math.PI / 180);
 
-    const leftBody = this.world.createRigidBody(leftBodyDesc);
+    // --- Back segments: straight walls from backZ to FLARE_Z ---
+    const backDepth = FLARE_Z - backZ;
+    const backCenterZ = (backZ + FLARE_Z) / 2;
 
-    const leftColliderDesc = RAPIER.ColliderDesc.cuboid(
-      THICKNESS / 2,
-      HEIGHT / 2,
-      DEPTH / 2
-    )
-      .setFriction(FRICTION)
-      .setRestitution(RESTITUTION);
+    // Left back
+    this.createWall(
+      -hw, centerY, backCenterZ,
+      THICKNESS / 2, HEIGHT / 2, backDepth / 2,
+      this.quatFromAxisAngle(0, 0, 1, -innerTilt),
+      FRICTION, RESTITUTION
+    );
+    // Right back
+    this.createWall(
+      hw, centerY, backCenterZ,
+      THICKNESS / 2, HEIGHT / 2, backDepth / 2,
+      this.quatFromAxisAngle(0, 0, 1, innerTilt),
+      FRICTION, RESTITUTION
+    );
 
-    this.world.createCollider(leftColliderDesc, leftBody);
+    // --- Front segments: angled outward from FLARE_Z to frontZ ---
+    const flareDepth = frontZ - FLARE_Z;
+    const dx = fhw - hw; // outward offset
+    const frontLen = Math.sqrt(dx * dx + flareDepth * flareDepth);
+    const yAngle = Math.atan2(dx, flareDepth); // outward angle around Y
 
-    // Right wall
-    const rightBodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(RIGHT_POSITION.x, RIGHT_POSITION.y, RIGHT_POSITION.z)
-      .setRotation({ x: 0, y: 0, z: innerTiltAngle, w: 1 }); // Tilt inward
+    const frontCenterZ = (FLARE_Z + frontZ) / 2;
+    const frontCenterXOffset = (hw + fhw) / 2;
 
-    const rightBody = this.world.createRigidBody(rightBodyDesc);
+    // Left front (flares outward = negative X direction)
+    const leftFrontQ = this.quatMultiply(
+      this.quatFromAxisAngle(0, 1, 0, -yAngle),
+      this.quatFromAxisAngle(0, 0, 1, -innerTilt)
+    );
+    this.createWall(
+      -frontCenterXOffset, centerY, frontCenterZ,
+      THICKNESS / 2, HEIGHT / 2, frontLen / 2,
+      leftFrontQ,
+      FRICTION, RESTITUTION
+    );
 
-    const rightColliderDesc = RAPIER.ColliderDesc.cuboid(
-      THICKNESS / 2,
-      HEIGHT / 2,
-      DEPTH / 2
-    )
-      .setFriction(FRICTION)
-      .setRestitution(RESTITUTION);
+    // Right front (flares outward = positive X direction)
+    const rightFrontQ = this.quatMultiply(
+      this.quatFromAxisAngle(0, 1, 0, yAngle),
+      this.quatFromAxisAngle(0, 0, 1, innerTilt)
+    );
+    this.createWall(
+      frontCenterXOffset, centerY, frontCenterZ,
+      THICKNESS / 2, HEIGHT / 2, frontLen / 2,
+      rightFrontQ,
+      FRICTION, RESTITUTION
+    );
 
-    this.world.createCollider(rightColliderDesc, rightBody);
+    console.log("  ✓ Side walls created (straight back + flared front)");
+  }
 
-    console.log("  ✓ Side walls created");
+  private createWall(
+    x: number, y: number, z: number,
+    hx: number, hy: number, hz: number,
+    rotation: { x: number; y: number; z: number; w: number },
+    friction: number, restitution: number
+  ): void {
+    const body = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z).setRotation(rotation)
+    );
+    const collider = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+      .setFriction(friction)
+      .setRestitution(restitution);
+    this.world.createCollider(collider, body);
+  }
+
+  private quatFromAxisAngle(ax: number, ay: number, az: number, angle: number) {
+    const half = angle / 2;
+    const s = Math.sin(half);
+    return { x: ax * s, y: ay * s, z: az * s, w: Math.cos(half) };
+  }
+
+  private quatMultiply(
+    a: { x: number; y: number; z: number; w: number },
+    b: { x: number; y: number; z: number; w: number }
+  ) {
+    return {
+      x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+      w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    };
   }
 }

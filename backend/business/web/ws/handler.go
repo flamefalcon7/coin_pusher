@@ -135,6 +135,8 @@ func (h *Handler) readPump(c *Connection) {
 			h.handleCoinInsert(c, msg)
 		case "spawn_stack":
 			h.handleSpawnStack(c, msg)
+		case "shock":
+			h.handleShock(c)
 		case "ping":
 			h.handlePing(c)
 		}
@@ -205,6 +207,24 @@ func (h *Handler) handleSpawnStack(c *Connection, msg ClientMessage) {
 	}
 
 	h.nc.Publish(TopicSpawnStack(h.room), data)
+}
+
+func (h *Handler) handleShock(c *Connection) {
+	if !c.CanShock() {
+		return
+	}
+
+	cmd := NATSShockCmd{
+		UserID: c.userID,
+	}
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal shock", "error", err)
+		return
+	}
+
+	h.nc.Publish(TopicShock(h.room), data)
 }
 
 func (h *Handler) handlePing(c *Connection) {
