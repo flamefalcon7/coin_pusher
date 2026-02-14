@@ -1,22 +1,22 @@
-name: Deploy with Docker
+name: Deploy Backend
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
+      - 'backend/**'
       - 'game/server/**'
       - 'game/shared/**'
       - 'Dockerfile'
-      - 'docker-compose.yml'
+      - 'docker-compose.prod.yml'
       - '.github/workflows/deploy-docker.yml'
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to Digital Ocean with Docker
+    name: Deploy to Digital Ocean
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
@@ -26,53 +26,10 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
             set -e
-            
-            echo "🚀 Starting Docker deployment..."
-            
-            # Navigate to app directory
-            cd /var/www/coin_pusher
-            
-            # Pull latest code
-            echo "📥 Pulling latest code..."
+            cd /opt/coinpusher
             git pull origin main
-            
-            # Stop current containers
-            echo "⏸️  Stopping current containers..."
-            docker-compose down
-            
-            # Build new image (no cache for clean build)
-            echo "🔨 Building new Docker image..."
-            docker-compose build --no-cache game
-            
-            # Start containers
-            echo "▶️  Starting containers..."
-            docker-compose up -d
-            
-            # Wait for health check
-            echo "🏥 Waiting for health check..."
+            docker compose -f docker-compose.prod.yml build --no-cache backend game
+            docker compose -f docker-compose.prod.yml up -d
             sleep 10
-            
-            # Verify containers are running
-            if docker ps | grep -q "coin-pusher-game"; then
-              echo "✅ Game server is running"
-              docker-compose ps
-            else
-              echo "❌ Game server failed to start"
-              docker-compose logs --tail 50
-              exit 1
-            fi
-            
-            # Clean up old images
-            echo "🧹 Cleaning up old images..."
+            docker compose -f docker-compose.prod.yml ps
             docker image prune -f
-            
-            echo "✅ Deployment completed successfully!"
-
-      - name: Notify success
-        if: success()
-        run: echo "::notice::Deployment successful!"
-
-      - name: Notify failure
-        if: failure()
-        run: echo "::error::Deployment failed!"
-

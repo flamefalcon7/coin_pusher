@@ -50,12 +50,5 @@ COPY --from=game-builder /app/game/server/dist ./game/server/dist
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
-# Expose port
-EXPOSE 3000
-
-# Health check (check if WebSocket port is listening)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "require('net').connect(3000, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
-
-# Start game server
+# Start game server (NATS worker, no exposed ports)
 CMD ["node", "game/server/dist/index.js"]

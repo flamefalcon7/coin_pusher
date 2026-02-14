@@ -1,0 +1,68 @@
+services:
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["--http_port", "8222"]
+    networks: [app]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: zarf/docker/Dockerfile.backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      BACKEND_DB_HOST: postgres:5432
+      BACKEND_DB_USER: ${DB_USER}
+      BACKEND_DB_PASSWORD: ${DB_PASSWORD}
+      BACKEND_DB_NAME: ${DB_NAME}
+      BACKEND_DB_DISABLE_TLS: "true"
+      BACKEND_NATS_URL: nats://nats:4222
+      BACKEND_AUTH_DEV_MODE: "false"
+      BACKEND_AUTH_KEYS_FOLDER: /app/zarf/keys
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NATS_URL: nats://nats:4222
+    depends_on:
+      nats: { condition: service_started }
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
+
+networks:
+  app:
+    driver: bridge
