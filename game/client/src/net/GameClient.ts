@@ -23,8 +23,8 @@ export class GameClient {
   private pingCallback?: PingCallback;
   private pendingPingTime: number = 0;
 
-  constructor(url: string) {
-    this.wsClient = new WebSocketClient(url);
+  constructor(url: string, token?: string) {
+    this.wsClient = new WebSocketClient(url, token);
     this.clockSync = new ClockSync();
     this.stateBuffer = new StateBuffer();
     this.interpolator = new Interpolator(this.stateBuffer, this.clockSync);

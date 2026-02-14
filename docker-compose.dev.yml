@@ -14,6 +14,18 @@ services:
       - coin-pusher-network
     command: sh -c "npm install -g pnpm && (pnpm install || true) && pnpm --filter @coin-pusher/shared build && pnpm --filter @coin-pusher/shared dev"
 
+  # NATS message queue
+  nats:
+    image: nats:2.10-alpine
+    container_name: coin-pusher-nats
+    restart: unless-stopped
+    ports:
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # HTTP monitoring
+    command: ["--http_port", "8222"]
+    networks:
+      - coin-pusher-network
+
   # Development Game Server with hot reload
   game:
     build:
@@ -22,11 +34,10 @@ services:
     container_name: coin-pusher-game-dev
     stop_grace_period: 0s
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
       - NODE_ENV=development
       - PORT=3000
+      - NATS_URL=nats://nats:4222
     volumes:
       # Mount source code for hot reload
       - ./game/server/src:/app/game/server/src:ro
@@ -37,6 +48,7 @@ services:
       - coin-pusher-network
     depends_on:
       - shared
+      - nats
     command: pnpm --filter @coin-pusher/game dev
 
   # Client Dev Server (Vite)
@@ -49,7 +61,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_WS_URL=ws://localhost:3000
+      - VITE_WS_URL=ws://localhost:4000/ws
     volumes:
       - ./:/app
       - /app/node_modules
@@ -98,11 +110,14 @@ services:
       - BACKEND_DB_DISABLE_TLS=true
       - BACKEND_AUTH_DEV_MODE=true
       - BACKEND_GAME_API_KEY=dev-secret
+      - BACKEND_NATS_URL=nats://nats:4222
     networks:
       - coin-pusher-network
     depends_on:
       postgres:
         condition: service_healthy
+      nats:
+        condition: service_started
 
 volumes:
   pgdata:
