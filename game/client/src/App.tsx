@@ -98,6 +98,7 @@ function App() {
               // New coin
               sceneManager.addCoin(coin.id, coin.pos, coin.rot);
               knownCoins.add(coin.id);
+              sceneManager.getSoundManager().playCoinLand();
             } else {
               // Update existing coin
               sceneManager.updateCoin(coin.id, coin.pos, coin.rot);
@@ -106,11 +107,16 @@ function App() {
 
           // Remove despawned coins (coins no longer in interpolated state
           // have been removed by the Interpolator via despawn messages)
+          let despawnCount = 0;
           for (const id of knownCoins) {
             if (!currentCoinIds.has(id)) {
               sceneManager.removeCoin(id);
               knownCoins.delete(id);
+              despawnCount++;
             }
+          }
+          if (despawnCount > 0) {
+            sceneManager.getSoundManager().playCoinDespawn(despawnCount);
           }
 
           // Batch update coin instances to GPU
@@ -189,6 +195,7 @@ function App() {
 
     // Send to server
     gameClientRef.current.insertCoin(x);
+    sceneManagerRef.current?.getSoundManager().playCoinInsert();
 
     // Visual feedback
     setButtonDisabled(true);
@@ -201,6 +208,7 @@ function App() {
     }
     gameClientRef.current.shock();
     sceneManagerRef.current?.playShockEffect();
+    sceneManagerRef.current?.getSoundManager().playShock();
     setShockCooldown(true);
     setTimeout(() => setShockCooldown(false), RATE_LIMIT_CONFIG.SHOCK_COOLDOWN);
   };
