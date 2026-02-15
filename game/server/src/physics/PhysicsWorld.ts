@@ -8,11 +8,6 @@ export class PhysicsWorld {
   private pinColliders: Set<number> = new Set();
   private substeps: number = PHYSICS_PARAMS.SUBSTEPS;
 
-  // Frozen coin tracking: collider handle → coin ID
-  private frozenColliders: Map<number, number> = new Map();
-  // Coin IDs to unfreeze after step (deferred to avoid modifying world mid-step)
-  private unfreezeQueue: number[] = [];
-
   // Bound collision handler to avoid creating a new closure every substep
   private collisionHandler: (handle1: number, handle2: number, started: boolean) => void;
 
@@ -58,9 +53,6 @@ export class PhysicsWorld {
       throw new Error("PhysicsWorld not initialized");
     }
 
-    // Clear unfreeze queue before stepping
-    this.unfreezeQueue.length = 0;
-
     // Step the physics simulation
     for (let i = 0; i < this.substeps; i++) {
       this.world.step(this.eventQueue);
@@ -71,20 +63,7 @@ export class PhysicsWorld {
   }
 
   private handleCollisions(handle1: number, handle2: number) {
-    // Check if a frozen coin was hit by a dynamic body
-    const frozen1 = this.frozenColliders.get(handle1);
-    const frozen2 = this.frozenColliders.get(handle2);
-
-    if (frozen1 !== undefined && frozen2 === undefined) {
-      // handle1 is frozen, handle2 is dynamic → unfreeze handle1
-      this.unfreezeQueue.push(frozen1);
-    } else if (frozen2 !== undefined && frozen1 === undefined) {
-      // handle2 is frozen, handle1 is dynamic → unfreeze handle2
-      this.unfreezeQueue.push(frozen2);
-    }
-    // If both frozen: don't unfreeze either (no dynamic force to transmit)
-
-    // Existing pin collision logic
+    // Pin collision logic
     let coinBody: RAPIER.RigidBody | null = null;
 
     if (this.pinColliders.has(handle1)) {
@@ -100,22 +79,6 @@ export class PhysicsWorld {
       const strength = 0.002 + Math.random() * 0.003;
       coinBody.applyImpulse({ x: direction * strength, y: 0, z: 0 }, true);
     }
-  }
-
-  /** Get coin IDs that need unfreezing (call after step()) */
-  drainUnfreezeQueue(): number[] {
-    // Return a copy and clear
-    const queue = this.unfreezeQueue.slice();
-    this.unfreezeQueue.length = 0;
-    return queue;
-  }
-
-  registerFrozenCollider(handle: number, coinId: number) {
-    this.frozenColliders.set(handle, coinId);
-  }
-
-  unregisterFrozenCollider(handle: number) {
-    this.frozenColliders.delete(handle);
   }
 
   registerPinCollider(handle: number) {

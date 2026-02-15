@@ -8,8 +8,6 @@ export class Coin {
   private id: number;
   private ccdEnabled: boolean = false;
   private sleepTimer: number = 0;
-  private frozen: boolean = false;
-  private freezeTimer: number = 0;
 
   // Pre-computed constants (avoid recomputing every update())
   private static readonly LIN_THRESHOLD_SQ =
@@ -18,10 +16,6 @@ export class Coin {
     PHYSICS_PARAMS.SLEEP_ANGULAR_THRESHOLD ** 2;
   private static readonly CCD_DISABLE_VEL_SQ =
     COIN_CONFIG.CCD_DISABLE_VELOCITY ** 2;
-  private static readonly FREEZE_LIN_SQ =
-    PHYSICS_PARAMS.FREEZE_LINEAR_THRESHOLD ** 2;
-  private static readonly FREEZE_ANG_SQ =
-    PHYSICS_PARAMS.FREEZE_ANGULAR_THRESHOLD ** 2;
 
   constructor(
     physicsWorld: PhysicsWorld,
@@ -71,9 +65,6 @@ export class Coin {
   }
 
   update(): void {
-    // Frozen coins are Fixed bodies — skip all checks
-    if (this.frozen) return;
-
     // Optimization: If body is already sleeping, we don't need to check anything
     if (this.rigidBody.isSleeping()) {
       this.sleepTimer = 0;
@@ -107,13 +98,6 @@ export class Coin {
       this.sleepTimer = 0;
     }
 
-    // Freeze timer (accumulates independently of sleep)
-    if (vSq < Coin.FREEZE_LIN_SQ && wSq < Coin.FREEZE_ANG_SQ) {
-      this.freezeTimer += PHYSICS_PARAMS.DELTA_TIME;
-    } else {
-      this.freezeTimer = 0;
-    }
-
     // Only fetch position when CCD is still enabled and we need to check height
     if (this.ccdEnabled && vSq < Coin.CCD_DISABLE_VEL_SQ) {
       const position = this.rigidBody.translation();
@@ -122,41 +106,6 @@ export class Coin {
         this.ccdEnabled = false;
       }
     }
-  }
-
-  /** Returns true if the coin has been slow long enough to freeze */
-  shouldFreeze(): boolean {
-    return !this.frozen && this.freezeTimer >= PHYSICS_PARAMS.FREEZE_TIME;
-  }
-
-  /** Convert to Fixed body — zero solver cost, still acts as static obstacle */
-  freeze(physicsWorld: PhysicsWorld): void {
-    if (this.frozen) return;
-    this.rigidBody.setBodyType(RAPIER.RigidBodyType.Fixed, true);
-    this.frozen = true;
-    this.freezeTimer = 0;
-    this.sleepTimer = 0;
-
-    // Enable collision events so we detect when a Dynamic coin hits us
-    const collider = this.rigidBody.collider(0);
-    collider.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-    physicsWorld.registerFrozenCollider(collider.handle, this.id);
-  }
-
-  /** Convert back to Dynamic body — rejoins the solver */
-  unfreeze(physicsWorld: PhysicsWorld): void {
-    if (!this.frozen) return;
-    this.rigidBody.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-    this.frozen = false;
-    this.freezeTimer = 0;
-    this.sleepTimer = 0;
-
-    // Disable collision events (not needed while dynamic)
-    const collider = this.rigidBody.collider(0);
-    collider.setActiveEvents(0 as RAPIER.ActiveEvents);
-    physicsWorld.unregisterFrozenCollider(collider.handle);
-
-    this.rigidBody.wakeUp();
   }
 
   getId(): number {
@@ -175,10 +124,6 @@ export class Coin {
     return this.rigidBody.isSleeping();
   }
 
-  isFrozen(): boolean {
-    return this.frozen;
-  }
-
   getRigidBody(): RAPIER.RigidBody {
     return this.rigidBody;
   }
@@ -189,12 +134,6 @@ export class Coin {
   }
 
   destroy(physicsWorld: PhysicsWorld): void {
-    // Clean up frozen state if needed
-    if (this.frozen) {
-      const collider = this.rigidBody.collider(0);
-      physicsWorld.unregisterFrozenCollider(collider.handle);
-    }
-
     const world = physicsWorld.getWorld();
     world.removeRigidBody(this.rigidBody);
     this.rigidBody = null as any;
