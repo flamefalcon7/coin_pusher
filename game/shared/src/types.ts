@@ -120,9 +120,9 @@ export type CoinSpawnParams = {
 export const PHYSICS_CONFIG = {
   TICK_RATE: 30, // Hz
   TICK_INTERVAL: 1000 / 30, // ~33.333ms
-  SUBSTEPS: 4, // 4 substeps sufficient for coin pusher
-  SOLVER_VELOCITY_ITERATIONS: 6,
-  SOLVER_POSITION_ITERATIONS: 6,
+  SUBSTEPS: 2, // 2 substeps (reduced from 4 to halve physics cost)
+  SOLVER_VELOCITY_ITERATIONS: 4,
+  SOLVER_POSITION_ITERATIONS: 4,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
   QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places
 } as const;
@@ -140,7 +140,7 @@ export const COIN_CONFIG = {
   RADIUS: 0.05, // meters
   THICKNESS: 0.015, // meters
   MASS: 0.01, // kg
-  FRICTION: 1,
+  FRICTION: 0.5,
   RESTITUTION: 0.0,
   SPAWN_HEIGHT: 1.5, // meters
   DESPAWN_Y: -0.1, // meters (below this = remove)
