@@ -39,13 +39,11 @@ export class GameLoop {
   private profilePusher: number[] = [];
   private profileCoinUpdate: number[] = [];
   private profilePhysics: number[] = [];
-  private profileFreeze: number[] = [];
   private profileStateCollect: number[] = [];
   private profileDespawn: number[] = [];
   private profilePublish: number[] = [];
   private profileActiveCounts: number[] = [];
   private profileSleepingCounts: number[] = [];
-  private profileFrozenCounts: number[] = [];
 
   constructor(
     physicsWorld: PhysicsWorld,
@@ -106,28 +104,6 @@ export class GameLoop {
     this.physicsWorld.step();
     const tAfterPhysics = performance.now();
 
-    // 3b. Process freeze/unfreeze
-    //     Unfreeze coins that were hit by dynamic bodies (collision-event driven)
-    const toUnfreeze = this.physicsWorld.drainUnfreezeQueue();
-    for (let i = 0; i < toUnfreeze.length; i++) {
-      const coin = this.coins.get(toUnfreeze[i]);
-      if (coin && coin.isFrozen()) {
-        coin.unfreeze(this.physicsWorld);
-      }
-    }
-
-    //     Freeze coins that have been slow long enough
-    let frozenCount = 0;
-    this.coins.forEach((coin) => {
-      if (coin.isFrozen()) {
-        frozenCount++;
-      } else if (coin.shouldFreeze()) {
-        coin.freeze(this.physicsWorld);
-        frozenCount++;
-      }
-    });
-    const tAfterFreeze = performance.now();
-
     // 4. Single pass: collect body states and check for despawns
     //    Reuse arrays — clear length instead of allocating new arrays each tick
     const updates = this.updates;
@@ -143,8 +119,8 @@ export class GameLoop {
         return;
       }
 
-      // Skip frozen and sleeping coins — their position hasn't changed
-      if (coin.isFrozen() || coin.isSleeping()) {
+      // Skip sleeping coins — their position hasn't changed
+      if (coin.isSleeping()) {
         sleepingCount++;
         return;
       }
@@ -221,8 +197,7 @@ export class GameLoop {
     const pusherMs = tAfterPusher - tickStart;
     const coinUpdateMs = tAfterCoinUpdate - tAfterPusher;
     const physicsMs = tAfterPhysics - tAfterCoinUpdate;
-    const freezeMs = tAfterFreeze - tAfterPhysics;
-    const stateCollectMs = tAfterStateCollect - tAfterFreeze;
+    const stateCollectMs = tAfterStateCollect - tAfterPhysics;
     const despawnMs = tAfterDespawn - tAfterStateCollect;
     const publishMs = tAfterPublish - tAfterDespawn;
     const tickMs = tAfterPublish - tickStart;
@@ -231,26 +206,22 @@ export class GameLoop {
     this.profilePusher.push(pusherMs);
     this.profileCoinUpdate.push(coinUpdateMs);
     this.profilePhysics.push(physicsMs);
-    this.profileFreeze.push(freezeMs);
     this.profileStateCollect.push(stateCollectMs);
     this.profileDespawn.push(despawnMs);
     this.profilePublish.push(publishMs);
     this.profileActiveCounts.push(updates.length);
     this.profileSleepingCounts.push(sleepingCount);
-    this.profileFrozenCounts.push(frozenCount);
 
     if (this.tickTimings.length > GameLoop.TIMING_WINDOW) {
       this.tickTimings.shift();
       this.profilePusher.shift();
       this.profileCoinUpdate.shift();
       this.profilePhysics.shift();
-      this.profileFreeze.shift();
       this.profileStateCollect.shift();
       this.profileDespawn.shift();
       this.profilePublish.shift();
       this.profileActiveCounts.shift();
       this.profileSleepingCounts.shift();
-      this.profileFrozenCounts.shift();
     }
 
     // Warn if tick exceeds budget (33.3ms at 30Hz)
@@ -260,7 +231,7 @@ export class GameLoop {
           `(budget: ${PHYSICS_CONFIG.TICK_INTERVAL.toFixed(1)}ms) ` +
           `[physics: ${physicsMs.toFixed(1)}ms, coinUpdate: ${coinUpdateMs.toFixed(1)}ms, ` +
           `stateCollect: ${stateCollectMs.toFixed(1)}ms, publish: ${publishMs.toFixed(1)}ms, ` +
-          `coins: ${this.coins.size}, active: ${updates.length}, sleeping: ${sleepingCount}, frozen: ${frozenCount}]`
+          `coins: ${this.coins.size}, active: ${updates.length}, sleeping: ${sleepingCount}]`
       );
     }
 
@@ -297,7 +268,6 @@ export class GameLoop {
     const total = GameLoop.percentiles(this.tickTimings);
     const physics = GameLoop.percentiles(this.profilePhysics);
     const coinUpd = GameLoop.percentiles(this.profileCoinUpdate);
-    const frz = GameLoop.percentiles(this.profileFreeze);
     const stateCol = GameLoop.percentiles(this.profileStateCollect);
     const desp = GameLoop.percentiles(this.profileDespawn);
     const pub = GameLoop.percentiles(this.profilePublish);
@@ -309,23 +279,19 @@ export class GameLoop {
     const avgSleeping = this.profileSleepingCounts.length > 0
       ? Math.round(this.profileSleepingCounts.reduce((s, v) => s + v, 0) / this.profileSleepingCounts.length)
       : 0;
-    const avgFrozen = this.profileFrozenCounts.length > 0
-      ? Math.round(this.profileFrozenCounts.reduce((s, v) => s + v, 0) / this.profileFrozenCounts.length)
-      : 0;
     const overruns = this.tickTimings.filter((t) => t > PHYSICS_CONFIG.TICK_INTERVAL).length;
 
     // Calculate what % of total tick each phase takes (based on avg)
     const pctOf = (phase: number) => total.avg > 0 ? ((phase / total.avg) * 100).toFixed(0) : "0";
 
     console.log(
-      `\n📊 PROFILING REPORT (${n} ticks, ${coinCount} coins: ${avgActive} active, ${avgSleeping} sleeping, ${avgFrozen} frozen)\n` +
+      `\n📊 PROFILING REPORT (${n} ticks, ${coinCount} coins: ${avgActive} active, ${avgSleeping} sleeping)\n` +
       `   Budget: ${fmt(PHYSICS_CONFIG.TICK_INTERVAL)}ms | Overruns: ${overruns}/${n}\n` +
       `   ─────────────────────────────────────────────────────────────\n` +
       `   Phase            │  avg      p50      p95      p99      max   │ % of tick\n` +
       `   ─────────────────┼──────────────────────────────────────────────┼──────────\n` +
       `   Total            │ ${fmt(total.avg).padStart(6)}  ${fmt(total.p50).padStart(6)}  ${fmt(total.p95).padStart(6)}  ${fmt(total.p99).padStart(6)}  ${fmt(total.max).padStart(6)}  │   100%\n` +
       `   Physics (Rapier) │ ${fmt(physics.avg).padStart(6)}  ${fmt(physics.p50).padStart(6)}  ${fmt(physics.p95).padStart(6)}  ${fmt(physics.p99).padStart(6)}  ${fmt(physics.max).padStart(6)}  │  ${pctOf(physics.avg).padStart(4)}%\n` +
-      `   Freeze/unfreeze  │ ${fmt(frz.avg).padStart(6)}  ${fmt(frz.p50).padStart(6)}  ${fmt(frz.p95).padStart(6)}  ${fmt(frz.p99).padStart(6)}  ${fmt(frz.max).padStart(6)}  │  ${pctOf(frz.avg).padStart(4)}%\n` +
       `   Coin update      │ ${fmt(coinUpd.avg).padStart(6)}  ${fmt(coinUpd.p50).padStart(6)}  ${fmt(coinUpd.p95).padStart(6)}  ${fmt(coinUpd.p99).padStart(6)}  ${fmt(coinUpd.max).padStart(6)}  │  ${pctOf(coinUpd.avg).padStart(4)}%\n` +
       `   State collect    │ ${fmt(stateCol.avg).padStart(6)}  ${fmt(stateCol.p50).padStart(6)}  ${fmt(stateCol.p95).padStart(6)}  ${fmt(stateCol.p99).padStart(6)}  ${fmt(stateCol.max).padStart(6)}  │  ${pctOf(stateCol.avg).padStart(4)}%\n` +
       `   Despawn          │ ${fmt(desp.avg).padStart(6)}  ${fmt(desp.p50).padStart(6)}  ${fmt(desp.p95).padStart(6)}  ${fmt(desp.p99).padStart(6)}  ${fmt(desp.max).padStart(6)}  │  ${pctOf(desp.avg).padStart(4)}%\n` +
@@ -397,12 +363,7 @@ export class GameLoop {
 
       // Check if coin is in the pin zone (near back wall, in pin Y range)
       if (pos.y >= pinYMin && pos.y <= pinYMax && pos.z < backWallZ + zThreshold) {
-        // Unfreeze frozen coins before applying impulse
-        if (coin.isFrozen()) {
-          coin.unfreeze(this.physicsWorld);
-        }
         const body = coin.getRigidBody();
-        // Wake up sleeping coins
         body.wakeUp();
         // Apply random impulse: forward (positive Z), slight downward, random lateral
         const impulse = {

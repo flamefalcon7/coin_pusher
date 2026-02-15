@@ -19,11 +19,6 @@ export const PHYSICS_PARAMS = {
   SLEEP_ANGULAR_THRESHOLD: 0.1, // rad/s
   SLEEP_TIME_UNTIL_SLEEP: 0.5, // seconds
 
-  // Freeze configuration (converts slow coins to Fixed bodies — zero solver cost)
-  FREEZE_LINEAR_THRESHOLD: 0.15, // m/s (slightly higher than sleep)
-  FREEZE_ANGULAR_THRESHOLD: 0.15, // rad/s
-  FREEZE_TIME: 1.5, // seconds of low velocity before freezing
-
   // Debug flags
   DEBUG_SLEEP: false,
 } as const;
