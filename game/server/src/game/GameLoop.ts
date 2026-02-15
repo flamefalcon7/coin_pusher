@@ -35,6 +35,18 @@ export class GameLoop {
   private tickTimings: number[] = [];
   private static readonly TIMING_WINDOW = 300; // samples (~10s at 30Hz)
 
+  // Per-phase profiling accumulators (reset every TIMING_WINDOW)
+  private profilePusher: number[] = [];
+  private profileCoinUpdate: number[] = [];
+  private profilePhysics: number[] = [];
+  private profileFreeze: number[] = [];
+  private profileStateCollect: number[] = [];
+  private profileDespawn: number[] = [];
+  private profilePublish: number[] = [];
+  private profileActiveCounts: number[] = [];
+  private profileSleepingCounts: number[] = [];
+  private profileFrozenCounts: number[] = [];
+
   constructor(
     physicsWorld: PhysicsWorld,
     pusher: Pusher,
@@ -84,16 +96,37 @@ export class GameLoop {
 
     // 1. Update pusher position
     this.pusher.update();
+    const tAfterPusher = performance.now();
 
     // 2. Pre-sleep check for coins (CCD management) BEFORE physics step
-    const t1 = performance.now();
     this.coins.forEach((coin) => coin.update());
-    const coinUpdateMs = performance.now() - t1;
+    const tAfterCoinUpdate = performance.now();
 
     // 3. Step physics simulation
-    const t2 = performance.now();
     this.physicsWorld.step();
-    const physicsMs = performance.now() - t2;
+    const tAfterPhysics = performance.now();
+
+    // 3b. Process freeze/unfreeze
+    //     Unfreeze coins that were hit by dynamic bodies (collision-event driven)
+    const toUnfreeze = this.physicsWorld.drainUnfreezeQueue();
+    for (let i = 0; i < toUnfreeze.length; i++) {
+      const coin = this.coins.get(toUnfreeze[i]);
+      if (coin && coin.isFrozen()) {
+        coin.unfreeze(this.physicsWorld);
+      }
+    }
+
+    //     Freeze coins that have been slow long enough
+    let frozenCount = 0;
+    this.coins.forEach((coin) => {
+      if (coin.isFrozen()) {
+        frozenCount++;
+      } else if (coin.shouldFreeze()) {
+        coin.freeze(this.physicsWorld);
+        frozenCount++;
+      }
+    });
+    const tAfterFreeze = performance.now();
 
     // 4. Single pass: collect body states and check for despawns
     //    Reuse arrays — clear length instead of allocating new arrays each tick
@@ -102,6 +135,7 @@ export class GameLoop {
     updates.length = 0;
     despawnIds.length = 0;
     const f = GameLoop.Q_FACTOR;
+    let sleepingCount = 0;
 
     this.coins.forEach((coin, id) => {
       if (coin.shouldDespawn()) {
@@ -109,8 +143,9 @@ export class GameLoop {
         return;
       }
 
-      // Skip sleeping coins — their position hasn't changed
-      if (coin.isSleeping()) {
+      // Skip frozen and sleeping coins — their position hasn't changed
+      if (coin.isFrozen() || coin.isSleeping()) {
+        sleepingCount++;
         return;
       }
 
@@ -140,6 +175,7 @@ export class GameLoop {
         ],
       });
     });
+    const tAfterStateCollect = performance.now();
 
     // 5. Handle despawns
     if (despawnIds.length > 0) {
@@ -161,6 +197,7 @@ export class GameLoop {
 
       this.natsClient.publishDespawn(despawnMessage);
     }
+    const tAfterDespawn = performance.now();
 
     // 6. Update pusher z in game state
     const pusherZ = Math.round(this.pusher.getCurrentZ() * f) / f;
@@ -178,12 +215,42 @@ export class GameLoop {
     this.tickCount++;
 
     this.natsClient.publishStateDelta(stateDelta);
+    const tAfterPublish = performance.now();
 
-    // 8. Record tick timing
-    const tickMs = performance.now() - tickStart;
+    // 8. Record per-phase timings
+    const pusherMs = tAfterPusher - tickStart;
+    const coinUpdateMs = tAfterCoinUpdate - tAfterPusher;
+    const physicsMs = tAfterPhysics - tAfterCoinUpdate;
+    const freezeMs = tAfterFreeze - tAfterPhysics;
+    const stateCollectMs = tAfterStateCollect - tAfterFreeze;
+    const despawnMs = tAfterDespawn - tAfterStateCollect;
+    const publishMs = tAfterPublish - tAfterDespawn;
+    const tickMs = tAfterPublish - tickStart;
+
     this.tickTimings.push(tickMs);
+    this.profilePusher.push(pusherMs);
+    this.profileCoinUpdate.push(coinUpdateMs);
+    this.profilePhysics.push(physicsMs);
+    this.profileFreeze.push(freezeMs);
+    this.profileStateCollect.push(stateCollectMs);
+    this.profileDespawn.push(despawnMs);
+    this.profilePublish.push(publishMs);
+    this.profileActiveCounts.push(updates.length);
+    this.profileSleepingCounts.push(sleepingCount);
+    this.profileFrozenCounts.push(frozenCount);
+
     if (this.tickTimings.length > GameLoop.TIMING_WINDOW) {
       this.tickTimings.shift();
+      this.profilePusher.shift();
+      this.profileCoinUpdate.shift();
+      this.profilePhysics.shift();
+      this.profileFreeze.shift();
+      this.profileStateCollect.shift();
+      this.profileDespawn.shift();
+      this.profilePublish.shift();
+      this.profileActiveCounts.shift();
+      this.profileSleepingCounts.shift();
+      this.profileFrozenCounts.shift();
     }
 
     // Warn if tick exceeds budget (33.3ms at 30Hz)
@@ -192,7 +259,8 @@ export class GameLoop {
         `⚠️  Tick ${this.tickCount} overran: ${tickMs.toFixed(1)}ms ` +
           `(budget: ${PHYSICS_CONFIG.TICK_INTERVAL.toFixed(1)}ms) ` +
           `[physics: ${physicsMs.toFixed(1)}ms, coinUpdate: ${coinUpdateMs.toFixed(1)}ms, ` +
-          `coins: ${this.coins.size}, active: ${updates.length}]`
+          `stateCollect: ${stateCollectMs.toFixed(1)}ms, publish: ${publishMs.toFixed(1)}ms, ` +
+          `coins: ${this.coins.size}, active: ${updates.length}, sleeping: ${sleepingCount}, frozen: ${frozenCount}]`
       );
     }
 
@@ -200,30 +268,70 @@ export class GameLoop {
     this.gameState.incrementTick();
   }
 
+  private static percentiles(arr: number[]): { avg: number; p50: number; p95: number; p99: number; max: number } {
+    if (arr.length === 0) return { avg: 0, p50: 0, p95: 0, p99: 0, max: 0 };
+    const sorted = arr.slice().sort((a, b) => a - b);
+    const avg = arr.reduce((s, v) => s + v, 0) / arr.length;
+    return {
+      avg,
+      p50: sorted[Math.floor(sorted.length * 0.5)],
+      p95: sorted[Math.floor(sorted.length * 0.95)],
+      p99: sorted[Math.floor(sorted.length * 0.99)],
+      max: sorted[sorted.length - 1],
+    };
+  }
+
+  private static fmtMs(v: number): string {
+    return v.toFixed(2);
+  }
+
   private logStats(): void {
     const coinCount = this.coins.size;
-
-    // Tick timing stats (always log)
-    const timings = this.tickTimings;
-    if (timings.length > 0) {
-      const sorted = timings.slice().sort((a, b) => a - b);
-      const avg = timings.reduce((s, v) => s + v, 0) / timings.length;
-      const p50 = sorted[Math.floor(sorted.length * 0.5)];
-      const p95 = sorted[Math.floor(sorted.length * 0.95)];
-      const p99 = sorted[Math.floor(sorted.length * 0.99)];
-      const max = sorted[sorted.length - 1];
-      const overruns = timings.filter((t) => t > PHYSICS_CONFIG.TICK_INTERVAL).length;
-
-      console.log(
-        `📊 Tick timing (${timings.length} samples): ` +
-          `avg=${avg.toFixed(1)}ms, p50=${p50.toFixed(1)}ms, p95=${p95.toFixed(1)}ms, ` +
-          `p99=${p99.toFixed(1)}ms, max=${max.toFixed(1)}ms, ` +
-          `overruns=${overruns}/${timings.length}`
-      );
+    const n = this.tickTimings.length;
+    if (n === 0) {
+      this.tickCount = 0;
+      return;
     }
 
+    const fmt = GameLoop.fmtMs;
+    const total = GameLoop.percentiles(this.tickTimings);
+    const physics = GameLoop.percentiles(this.profilePhysics);
+    const coinUpd = GameLoop.percentiles(this.profileCoinUpdate);
+    const frz = GameLoop.percentiles(this.profileFreeze);
+    const stateCol = GameLoop.percentiles(this.profileStateCollect);
+    const desp = GameLoop.percentiles(this.profileDespawn);
+    const pub = GameLoop.percentiles(this.profilePublish);
+    const push = GameLoop.percentiles(this.profilePusher);
+
+    const avgActive = this.profileActiveCounts.length > 0
+      ? Math.round(this.profileActiveCounts.reduce((s, v) => s + v, 0) / this.profileActiveCounts.length)
+      : 0;
+    const avgSleeping = this.profileSleepingCounts.length > 0
+      ? Math.round(this.profileSleepingCounts.reduce((s, v) => s + v, 0) / this.profileSleepingCounts.length)
+      : 0;
+    const avgFrozen = this.profileFrozenCounts.length > 0
+      ? Math.round(this.profileFrozenCounts.reduce((s, v) => s + v, 0) / this.profileFrozenCounts.length)
+      : 0;
+    const overruns = this.tickTimings.filter((t) => t > PHYSICS_CONFIG.TICK_INTERVAL).length;
+
+    // Calculate what % of total tick each phase takes (based on avg)
+    const pctOf = (phase: number) => total.avg > 0 ? ((phase / total.avg) * 100).toFixed(0) : "0";
+
     console.log(
-      `   Coins: ${coinCount} total`
+      `\n📊 PROFILING REPORT (${n} ticks, ${coinCount} coins: ${avgActive} active, ${avgSleeping} sleeping, ${avgFrozen} frozen)\n` +
+      `   Budget: ${fmt(PHYSICS_CONFIG.TICK_INTERVAL)}ms | Overruns: ${overruns}/${n}\n` +
+      `   ─────────────────────────────────────────────────────────────\n` +
+      `   Phase            │  avg      p50      p95      p99      max   │ % of tick\n` +
+      `   ─────────────────┼──────────────────────────────────────────────┼──────────\n` +
+      `   Total            │ ${fmt(total.avg).padStart(6)}  ${fmt(total.p50).padStart(6)}  ${fmt(total.p95).padStart(6)}  ${fmt(total.p99).padStart(6)}  ${fmt(total.max).padStart(6)}  │   100%\n` +
+      `   Physics (Rapier) │ ${fmt(physics.avg).padStart(6)}  ${fmt(physics.p50).padStart(6)}  ${fmt(physics.p95).padStart(6)}  ${fmt(physics.p99).padStart(6)}  ${fmt(physics.max).padStart(6)}  │  ${pctOf(physics.avg).padStart(4)}%\n` +
+      `   Freeze/unfreeze  │ ${fmt(frz.avg).padStart(6)}  ${fmt(frz.p50).padStart(6)}  ${fmt(frz.p95).padStart(6)}  ${fmt(frz.p99).padStart(6)}  ${fmt(frz.max).padStart(6)}  │  ${pctOf(frz.avg).padStart(4)}%\n` +
+      `   Coin update      │ ${fmt(coinUpd.avg).padStart(6)}  ${fmt(coinUpd.p50).padStart(6)}  ${fmt(coinUpd.p95).padStart(6)}  ${fmt(coinUpd.p99).padStart(6)}  ${fmt(coinUpd.max).padStart(6)}  │  ${pctOf(coinUpd.avg).padStart(4)}%\n` +
+      `   State collect    │ ${fmt(stateCol.avg).padStart(6)}  ${fmt(stateCol.p50).padStart(6)}  ${fmt(stateCol.p95).padStart(6)}  ${fmt(stateCol.p99).padStart(6)}  ${fmt(stateCol.max).padStart(6)}  │  ${pctOf(stateCol.avg).padStart(4)}%\n` +
+      `   Despawn          │ ${fmt(desp.avg).padStart(6)}  ${fmt(desp.p50).padStart(6)}  ${fmt(desp.p95).padStart(6)}  ${fmt(desp.p99).padStart(6)}  ${fmt(desp.max).padStart(6)}  │  ${pctOf(desp.avg).padStart(4)}%\n` +
+      `   NATS publish     │ ${fmt(pub.avg).padStart(6)}  ${fmt(pub.p50).padStart(6)}  ${fmt(pub.p95).padStart(6)}  ${fmt(pub.p99).padStart(6)}  ${fmt(pub.max).padStart(6)}  │  ${pctOf(pub.avg).padStart(4)}%\n` +
+      `   Pusher           │ ${fmt(push.avg).padStart(6)}  ${fmt(push.p50).padStart(6)}  ${fmt(push.p95).padStart(6)}  ${fmt(push.p99).padStart(6)}  ${fmt(push.max).padStart(6)}  │  ${pctOf(push.avg).padStart(4)}%\n` +
+      `   ─────────────────────────────────────────────────────────────`
     );
 
     // Detailed sleep stats (when DEBUG_SLEEP enabled)
@@ -289,6 +397,10 @@ export class GameLoop {
 
       // Check if coin is in the pin zone (near back wall, in pin Y range)
       if (pos.y >= pinYMin && pos.y <= pinYMax && pos.z < backWallZ + zThreshold) {
+        // Unfreeze frozen coins before applying impulse
+        if (coin.isFrozen()) {
+          coin.unfreeze(this.physicsWorld);
+        }
         const body = coin.getRigidBody();
         // Wake up sleeping coins
         body.wakeUp();
