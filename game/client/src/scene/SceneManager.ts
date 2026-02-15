@@ -4,12 +4,14 @@ import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
 import { PusherMesh } from "./PusherMesh";
 import { CoinMeshManager } from "./CoinMeshManager";
+import { SoundManager } from "./SoundManager";
 
 export class SceneManager {
   private engine: Engine;
   private scene: Scene;
   private pusherMesh: PusherMesh;
   private coinManager: CoinMeshManager;
+  private soundManager: SoundManager;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
 
@@ -36,6 +38,7 @@ export class SceneManager {
     new StaticMeshes(this.scene);
     this.pusherMesh = new PusherMesh(this.scene);
     this.coinManager = new CoinMeshManager(this.scene);
+    this.soundManager = new SoundManager();
 
     console.log("✅ Scene initialized successfully");
 
@@ -110,8 +113,13 @@ export class SceneManager {
     this.fpsCallback = callback;
   }
 
+  getSoundManager(): SoundManager {
+    return this.soundManager;
+  }
+
   dispose(): void {
     this.stopRenderLoop();
+    this.soundManager.dispose();
     this.scene.dispose();
     this.engine.dispose();
     console.log("🗑️  Scene disposed");
