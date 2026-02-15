@@ -34,6 +34,12 @@ This project has skills in `.agents/skills/`. When working on tasks, auto-detect
 | microservices-architect | `.agents/skills/microservices-architect/SKILL.md` | distributed systems, service mesh, observability, event sourcing | Server architecture, scaling, observability, deployment patterns |
 | frontend-design | `.agents/skills/frontend-design/SKILL.md` | web UI, components, styling, layout | Client UI design, HUD, visual polish |
 | golang-pro | `.agents/skills/golang-pro/SKILL.md` | Go, goroutines, channels, gRPC | Go language tasks (if applicable) |
+| architecture-designer | `.agents/skills/architecture-designer/SKILL.md` | architecture, system design, design pattern, scalability, ADR | System architecture design, architectural decisions, ADRs, scalability planning |
+| senior-backend | `.agents/skills/senior-backend/SKILL.md` | API design, database optimization, backend logic, auth | API scaffolding, database optimization, security, backend performance tuning |
+| devops-engineer | `.agents/skills/devops-engineer/SKILL.md` | DevOps, CI/CD, Docker, Kubernetes, Terraform, GitHub Actions | CI/CD pipelines, containerization, infrastructure as code, deployment |
+| sound-effects | `.agents/skills/sound-effects/SKILL.md` | sound effects, audio, ambient sounds, UI sounds | Generating sound effects via ElevenLabs API |
+| game-artist | `.agents/skills/game-artist/SKILL.md` | game assets, sprites, icons, visual elements | Finding/managing game assets from Kenney collection |
+| visual-design-foundations | `.agents/skills/visual-design-foundations/SKILL.md` | typography, color theory, spacing, design tokens, theming | Design tokens, style guides, visual hierarchy, dark mode |
 
 ### How to use skills
 
