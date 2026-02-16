@@ -7,8 +7,17 @@ import {
   Vector3,
   VertexData,
   TransformNode,
+  Material,
 } from "@babylonjs/core";
+import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
+
+function createCellMat(name: string, color: Color3, scene: Scene): CellMaterial {
+  const mat = new CellMaterial(name, scene);
+  mat.diffuseColor = color;
+  mat.computeHighLevel = true;
+  return mat;
+}
 
 export class StaticMeshes {
   private scene: Scene;
@@ -21,9 +30,9 @@ export class StaticMeshes {
   private createStaticScene(): void {
     console.log("🏗️  Building client scene...");
 
-    // Create materials
-    const platformMat = this.createPlatformMaterial();
-    const wallMat = this.createWallMaterial();
+    // CellMaterial for platform, walls, pins — colors overridden by theme
+    const platformMat = createCellMat("platformMat", new Color3(0.12, 0.12, 0.18), this.scene);
+    const wallMat = createCellMat("wallMat", new Color3(0.12, 0.32, 1.0), this.scene);
 
     // Main platform (trapezoid)
     this.createTrapezoidPlatform(platformMat);
@@ -34,7 +43,7 @@ export class StaticMeshes {
     // Angled side walls
     this.createAngledSideWalls(wallMat);
 
-    // Drop zone indicator (subtle visual)
+    // Drop zone indicator (stays StandardMaterial — needs alpha)
     const {
       WIDTH: DROP_WIDTH,
       HEIGHT: DROP_HEIGHT,
@@ -55,20 +64,6 @@ export class StaticMeshes {
     console.log("  ✓ Static meshes created");
   }
 
-  private createPlatformMaterial(): StandardMaterial {
-    const mat = new StandardMaterial("platformMat", this.scene);
-    mat.diffuseColor = new Color3(0.6, 0.6, 0.6);
-    mat.specularColor = new Color3(0.2, 0.2, 0.2);
-    return mat;
-  }
-
-  private createWallMaterial(): StandardMaterial {
-    const mat = new StandardMaterial("wallMat", this.scene);
-    mat.diffuseColor = new Color3(0.5, 0.5, 0.6);
-    mat.specularColor = new Color3(0.1, 0.1, 0.1);
-    return mat;
-  }
-
   /** Compute the platform's front half-width from the flare config. */
   private static getFrontHalfWidth(): number {
     const { WIDTH, DEPTH, FLARE_Z, FLARE_ANGLE, POSITION } = SCENE_CONFIG.PLATFORM;
@@ -79,54 +74,37 @@ export class StaticMeshes {
     return hw + flareOffset;
   }
 
-  private createTrapezoidPlatform(material: StandardMaterial): void {
+  private createTrapezoidPlatform(material: Material): void {
     const { WIDTH, DEPTH, FLARE_Z, THICKNESS, POSITION } = SCENE_CONFIG.PLATFORM;
     const hw = WIDTH / 2;
     const fhw = StaticMeshes.getFrontHalfWidth();
     const hd = DEPTH / 2;
     const ht = THICKNESS / 2;
-    const flareZLocal = FLARE_Z - POSITION.z; // flare z relative to mesh center
+    const flareZLocal = FLARE_Z - POSITION.z;
 
-    // Pentagon prism: 6 top vertices + 6 bottom vertices
-    // Top view (looking down):
-    //   0---1          back edge (width = WIDTH)
-    //   |   |
-    //   5   2          flare start (same width)
-    //  /     \
-    // 4-------3        front edge (width = fhw*2)
     const positions = [
-      // Top face (y = +ht)
-      -hw,  ht, -hd,         // 0: back-left
-       hw,  ht, -hd,         // 1: back-right
-       hw,  ht,  flareZLocal, // 2: mid-right
-       fhw, ht,  hd,         // 3: front-right
-      -fhw, ht,  hd,         // 4: front-left
-      -hw,  ht,  flareZLocal, // 5: mid-left
-      // Bottom face (y = -ht)
-      -hw,  -ht, -hd,        // 6
-       hw,  -ht, -hd,        // 7
-       hw,  -ht,  flareZLocal,// 8
-       fhw, -ht,  hd,        // 9
-      -fhw, -ht,  hd,        // 10
-      -hw,  -ht,  flareZLocal,// 11
+      -hw,  ht, -hd,
+       hw,  ht, -hd,
+       hw,  ht,  flareZLocal,
+       fhw, ht,  hd,
+      -fhw, ht,  hd,
+      -hw,  ht,  flareZLocal,
+      -hw,  -ht, -hd,
+       hw,  -ht, -hd,
+       hw,  -ht,  flareZLocal,
+       fhw, -ht,  hd,
+      -fhw, -ht,  hd,
+      -hw,  -ht,  flareZLocal,
     ];
 
     const indices = [
-      // Top face (4 triangles)
       0, 1, 2,   0, 2, 5,   5, 2, 3,   5, 3, 4,
-      // Bottom face (4 triangles, wound opposite)
       6, 8, 7,   6, 11, 8,  11, 9, 8,  11, 10, 9,
-      // Back side
       0, 7, 1,   0, 6, 7,
-      // Right-back side
       1, 7, 8,   1, 8, 2,
-      // Right-front side (angled)
       2, 8, 9,   2, 9, 3,
-      // Front side
       3, 9, 10,  3, 10, 4,
-      // Left-front side (angled)
       4, 10, 11, 4, 11, 5,
-      // Left-back side
       5, 11, 6,  5, 6, 0,
     ];
 
@@ -144,7 +122,7 @@ export class StaticMeshes {
     mesh.material = material;
   }
 
-  private createAngledSideWalls(material: StandardMaterial): void {
+  private createAngledSideWalls(material: Material): void {
     const { HEIGHT, THICKNESS, INNER_TILT_ANGLE } = SCENE_CONFIG.SIDE_WALLS;
     const { WIDTH, DEPTH, FLARE_Z, POSITION } = SCENE_CONFIG.PLATFORM;
 
@@ -155,7 +133,6 @@ export class StaticMeshes {
     const centerY = SCENE_CONFIG.SIDE_WALLS.LEFT_POSITION.y;
     const tiltRad = INNER_TILT_ANGLE * (Math.PI / 180);
 
-    // Back segments: straight walls from backZ to FLARE_Z
     const backDepth = FLARE_Z - backZ;
     const backCenterZ = (backZ + FLARE_Z) / 2;
 
@@ -171,9 +148,8 @@ export class StaticMeshes {
     rightBack.rotation.z = tiltRad;
     rightBack.material = material;
 
-    // Front segments: angled outward from FLARE_Z to frontZ
     const flareDepth = frontZ - FLARE_Z;
-    const dx = fhw - hw; // outward offset
+    const dx = fhw - hw;
     const frontLen = Math.sqrt(dx * dx + flareDepth * flareDepth);
     const yAngle = Math.atan2(dx, flareDepth);
 
@@ -195,7 +171,7 @@ export class StaticMeshes {
     rightFront.material = material;
   }
 
-  private createBackWallWithPins(wallMaterial: StandardMaterial): void {
+  private createBackWallWithPins(wallMaterial: Material): void {
     const {
       WIDTH: BACK_WIDTH,
       HEIGHT: BACK_HEIGHT,
@@ -204,14 +180,10 @@ export class StaticMeshes {
       TILT_ANGLE,
     } = SCENE_CONFIG.BACK_WALL;
 
-    // Create parent transform node for grouping
     const backWallGroup = new TransformNode("backWallGroup", this.scene);
     backWallGroup.position = new Vector3(BACK_POS.x, BACK_POS.y, BACK_POS.z);
-
-    // Apply 5-degree backward tilt around X-axis
     backWallGroup.rotation.x = TILT_ANGLE * (Math.PI / 180);
 
-    // Create back wall mesh
     const backWall = MeshBuilder.CreateBox(
       "backWall",
       { width: BACK_WIDTH, height: BACK_HEIGHT, depth: BACK_THICKNESS },
@@ -220,10 +192,7 @@ export class StaticMeshes {
     backWall.material = wallMaterial;
     backWall.parent = backWallGroup;
 
-    // Create pins
     this.createPinMeshes(backWallGroup);
-
-    // Create coin slot indicators on back wall
     this.createSlotIndicators(backWallGroup);
 
     console.log("  ✓ Back wall with pins rendered");
@@ -244,34 +213,26 @@ export class StaticMeshes {
 
     const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
 
-    // Create pin material with slightly different color
-    const pinMat = new StandardMaterial("pinMat", this.scene);
-    pinMat.diffuseColor = new Color3(0.7, 0.7, 0.75);
-    pinMat.specularColor = new Color3(0.2, 0.2, 0.2);
+    // CellMaterial for pins
+    const pinMat = createCellMat("pinMat", new Color3(0.7, 0.7, 0.85), this.scene);
 
     let pinsCreated = 0;
 
     for (let row = 0; row < ROWS; row++) {
-      const isOddRow = row % 2 === 0; // Row 0, 2, 4 are "odd" rows (1st, 3rd, 5th)
+      const isOddRow = row % 2 === 0;
       const pinCount = isOddRow ? ODD_ROW_COUNT : EVEN_ROW_COUNT;
 
-      // Calculate starting X position
       const totalWidth = (pinCount - 1) * HORIZONTAL_SPACING;
       const startX = -totalWidth / 2;
 
-      // Calculate Y position relative to back wall center
-      // START_Y is offset from bottom of wall, Y_OFFSET for additional adjustment
       const relativeY =
         START_Y + row * VERTICAL_SPACING - WALL_HEIGHT / 2 + Y_OFFSET;
 
-      // Z position: just in front of the back wall (pin height is along Z when rotated)
-      // Embed pins slightly (0.01) into the wall to prevent gaps where coins can get stuck
       const relativeZ = THICKNESS / 2 + HEIGHT / 2 - 0.01;
 
       for (let col = 0; col < pinCount; col++) {
         const x = startX + col * HORIZONTAL_SPACING;
 
-        // Create cylinder pin
         const pin = MeshBuilder.CreateCylinder(
           `pin_${row}_${col}`,
           {
@@ -283,7 +244,6 @@ export class StaticMeshes {
         );
 
         pin.position = new Vector3(x, relativeY, relativeZ);
-        // Rotate 90 degrees around X-axis so pin points perpendicular to wall (along Z-axis)
         pin.rotation.x = Math.PI / 2;
         pin.material = pinMat;
         pin.parent = parentNode;
@@ -297,30 +257,23 @@ export class StaticMeshes {
   private createSlotIndicators(parentNode: TransformNode): void {
     const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
 
-    // Create material for slot indicators
     const slotMat = new StandardMaterial("slotMat", this.scene);
-    slotMat.diffuseColor = new Color3(1.0, 0.8, 0.2); // Golden/yellow color
-    slotMat.emissiveColor = new Color3(0.3, 0.2, 0.05); // Slight glow
-    slotMat.alpha = 0.7; // Semi-transparent
+    slotMat.diffuseColor = new Color3(1.0, 0.8, 0.2);
+    slotMat.emissiveColor = new Color3(0.3, 0.2, 0.05);
+    slotMat.alpha = 0.7;
 
-    // Create rectangular slot boxes at each position on the back wall
     SLOT_CONFIG.POSITIONS.forEach((x: number, index: number) => {
-      // Create a rectangular box as a slot
       const slot = MeshBuilder.CreateBox(
         `slotIndicator_${index}`,
         {
-          width: 0.1, // Width of slot opening
-          height: 0.12, // Height of slot opening
-          depth: 0.02, // Thin depth (barely protrudes from wall)
+          width: 0.1,
+          height: 0.12,
+          depth: 0.02,
         },
         this.scene
       );
 
-      // Position relative to back wall center
-      // Y: top of the wall (WALL_HEIGHT/2)
-      // Z: just in front of the wall surface
       slot.position = new Vector3(x, WALL_HEIGHT / 2, THICKNESS / 2 + 0.01);
-
       slot.material = slotMat;
       slot.parent = parentNode;
     });

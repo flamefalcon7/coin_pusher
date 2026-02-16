@@ -1,7 +1,6 @@
 import {
   Scene,
   MeshBuilder,
-  StandardMaterial,
   Color3,
   Vector3,
   Quaternion,
@@ -9,6 +8,7 @@ import {
   Matrix,
 } from "@babylonjs/core";
 import { COIN_CONFIG } from "@coin-pusher/shared";
+import { createToonMaterial } from "./ToonMaterial";
 
 export class CoinMeshManager {
   private scene: Scene;
@@ -53,11 +53,12 @@ export class CoinMeshManager {
       this.scene
     );
 
-    // Create gold-like material
-    const material = new StandardMaterial("coinMat", this.scene);
-    material.diffuseColor = new Color3(1, 0.84, 0); // Gold
-    material.specularColor = new Color3(0.8, 0.7, 0.3);
-    material.specularPower = 64;
+    // Toon material with thin instances — richer cartoon gold
+    const material = createToonMaterial(this.scene, {
+      name: "coinMat",
+      baseColor: new Color3(0.22, 1.0, 0.08), // Default — overridden by theme
+      thinInstances: true,
+    });
     this.prototypeMesh.material = material;
 
     // No rotation needed - both BabylonJS and Rapier use Y-up for cylinders
