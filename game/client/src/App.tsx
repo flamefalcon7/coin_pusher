@@ -23,6 +23,8 @@ function App() {
   const [buttonDisabled, setButtonDisabled] = useState(false);
   const [shockCooldown, setShockCooldown] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [themeName, setThemeName] = useState("Neon");
+  const [celShading, setCelShading] = useState(true);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -213,6 +215,16 @@ function App() {
     setTimeout(() => setShockCooldown(false), RATE_LIMIT_CONFIG.SHOCK_COOLDOWN);
   };
 
+  const handleCycleTheme = () => {
+    const label = sceneManagerRef.current?.cycleTheme();
+    if (label) setThemeName(label);
+  };
+
+  const handleToggleCel = () => {
+    const enabled = sceneManagerRef.current?.toggleCelShading();
+    if (enabled !== undefined) setCelShading(enabled);
+  };
+
   const handleTestLoop = () => {
     if (isTesting || !gameClientRef.current?.isConnected()) return;
 
@@ -255,6 +267,18 @@ function App() {
           gap: "8px",
         }}
       >
+        <button
+          onClick={handleToggleCel}
+          className="theme-button"
+        >
+          Cel: {celShading ? "ON" : "OFF"}
+        </button>
+        <button
+          onClick={handleCycleTheme}
+          className="theme-button"
+        >
+          Theme: {themeName}
+        </button>
         <button
           onClick={handleShock}
           disabled={shockCooldown || connectionStatus !== "connected"}

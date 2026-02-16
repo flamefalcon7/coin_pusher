@@ -1,11 +1,11 @@
 import {
   Scene,
   MeshBuilder,
-  StandardMaterial,
   Color3,
   Vector3,
   Mesh,
 } from "@babylonjs/core";
+import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class PusherMesh {
@@ -14,7 +14,6 @@ export class PusherMesh {
   constructor(scene: Scene) {
     const { WIDTH, HEIGHT, DEPTH, POSITION } = SCENE_CONFIG.PUSHER;
 
-    // Create pusher plate
     this.mesh = MeshBuilder.CreateBox(
       "pusher",
       { width: WIDTH, height: HEIGHT, depth: DEPTH },
@@ -23,10 +22,10 @@ export class PusherMesh {
 
     this.mesh.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
 
-    // Create material
-    const material = new StandardMaterial("pusherMat", scene);
-    material.diffuseColor = new Color3(0.3, 0.5, 0.8); // Blue-ish
-    material.specularColor = new Color3(0.5, 0.5, 0.5);
+    // CellMaterial — color overridden by theme
+    const material = new CellMaterial("pusherMat", scene);
+    material.diffuseColor = new Color3(1.0, 0.0, 0.5);
+    material.computeHighLevel = true;
     this.mesh.material = material;
 
     console.log("🔨 Pusher mesh created");
