@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import "./App.css";
 import { HUD } from "./ui/HUD";
 import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { SceneManager } from "./scene/SceneManager";
 import { GameClient } from "./net/GameClient";
-import { SLOT_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import { SLOT_CONFIG, RATE_LIMIT_CONFIG, type EditorObjectNet } from "@coin-pusher/shared";
+import { EditorManager, GizmoMode } from "./editor/EditorManager";
+import { EditorPanel } from "./editor/EditorPanel";
+import { EditorObjectData } from "./editor/EditorObject";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:4000/ws";
 
@@ -25,6 +28,13 @@ function App() {
   const [isTesting, setIsTesting] = useState(false);
   const [themeName, setThemeName] = useState("Neon");
   const [celShading, setCelShading] = useState(true);
+
+  // Editor state
+  const editorManagerRef = useRef<EditorManager | null>(null);
+  const [editorActive, setEditorActive] = useState(false);
+  const [editorObjects, setEditorObjects] = useState<EditorObjectData[]>([]);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [gizmoMode, setGizmoMode] = useState<GizmoMode>("position");
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -57,6 +67,25 @@ function App() {
 
     // Start render loop with interpolation
     sceneManager.startRenderLoop();
+
+    // Initialize editor manager
+    const editorManager = new EditorManager(sceneManager.getScene());
+    editorManagerRef.current = editorManager;
+    editorManager.setOnChange((objects, selectedId) => {
+      setEditorObjects([...objects]);
+      setSelectedObjectId(selectedId);
+      setGizmoMode(editorManager.getGizmoMode());
+
+      // Sync editor objects to game server for physics
+      const netObjects: EditorObjectNet[] = objects.map((obj) => ({
+        id: obj.id,
+        type: obj.type,
+        position: obj.position,
+        rotation: obj.rotation,
+        scale: obj.scale,
+      }));
+      gameClient.updateSceneObjects(netObjects);
+    });
 
     // Track known coin IDs
     const knownCoins = new Set<number>();
@@ -143,14 +172,39 @@ function App() {
     // Cleanup on unmount
     return () => {
       cancelAnimationFrame(animationFrameId);
+      editorManager.dispose();
       gameClient.disconnect();
       sceneManager.dispose();
     };
   }, []);
 
-  // Keyboard controls for stack spawning (Dev/Test feature)
+  // Toggle editor mode
+  const toggleEditor = useCallback(() => {
+    const mgr = editorManagerRef.current;
+    if (!mgr) return;
+    const next = !mgr.isActive();
+    mgr.setActive(next);
+    setEditorActive(next);
+  }, []);
+
+  // Keyboard controls for stack spawning (Dev/Test feature) and editor toggle
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't handle shortcuts when typing in an input
+      if ((event.target as HTMLElement).tagName === "INPUT") return;
+
+      // Editor toggle
+      if (event.key === "e" || event.key === "E") {
+        toggleEditor();
+        return;
+      }
+
+      // Delete selected editor object
+      if ((event.key === "Delete" || event.key === "Backspace") && editorManagerRef.current?.isActive()) {
+        editorManagerRef.current.removeSelected();
+        return;
+      }
+
       if (!gameClientRef.current || !gameClientRef.current.isConnected())
         return;
 
@@ -177,6 +231,18 @@ function App() {
           console.log("Spawning cylinder");
           gameClientRef.current.spawnStack("cylinder", x);
           break;
+        case "0":
+          console.log("Clearing all coins");
+          gameClientRef.current.clearAll();
+          break;
+        case "9":
+          console.log("Filling platform");
+          gameClientRef.current.fillPlatform();
+          break;
+        case "r":
+        case "R":
+          sceneManagerRef.current?.toggleRampDebug();
+          break;
       }
     };
 
@@ -184,7 +250,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [toggleEditor]);
 
   const handleInsertCoin = (slotIndex: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
@@ -250,10 +316,33 @@ function App() {
     }, intervalTime);
   };
 
+  const handleEditorObjectsChange = useCallback(() => {
+    const mgr = editorManagerRef.current;
+    if (!mgr) return;
+    setEditorObjects([...mgr.getObjects()]);
+    setSelectedObjectId(mgr.getSelectedId());
+    setGizmoMode(mgr.getGizmoMode());
+  }, []);
+
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
+      <button
+        className={`editor-toggle-btn ${editorActive ? "active" : ""}`}
+        onClick={toggleEditor}
+      >
+        Editor [E]
+      </button>
+      {editorActive && editorManagerRef.current && (
+        <EditorPanel
+          manager={editorManagerRef.current}
+          objects={editorObjects}
+          selectedId={selectedObjectId}
+          gizmoMode={gizmoMode}
+          onObjectsChange={handleEditorObjectsChange}
+        />
+      )}
       <div id="canvas-container">
         <canvas ref={canvasRef} id="babylon-canvas" />
       </div>
@@ -300,6 +389,20 @@ function App() {
           }}
         >
           {isTesting ? "Testing..." : "Test: Insert 200 Coins"}
+        </button>
+        <button
+          onClick={() => gameClientRef.current?.clearAll()}
+          disabled={connectionStatus !== "connected"}
+          className="shock-button"
+        >
+          Clear All [0]
+        </button>
+        <button
+          onClick={() => gameClientRef.current?.fillPlatform()}
+          disabled={connectionStatus !== "connected"}
+          className="shock-button"
+        >
+          Fill Platform [9]
         </button>
       </div>
       <CoinInsertButton
