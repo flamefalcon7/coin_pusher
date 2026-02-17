@@ -4,6 +4,18 @@ export const PROTOCOL_VERSION = 1;
 // Body types in the physics world
 export type BodyType = "coin" | "pusher";
 
+// Editor primitive types
+export type EditorPrimitiveType = "box" | "sphere" | "cylinder" | "prism";
+
+// Editor object for network transmission
+export type EditorObjectNet = {
+  id: string;
+  type: EditorPrimitiveType;
+  position: [number, number, number];
+  rotation: [number, number, number]; // euler radians
+  scale: [number, number, number];
+};
+
 // Body state representation for network transmission
 export type BodyState = {
   id: number;
@@ -64,6 +76,22 @@ export type PingMessage = {
   clientTime: number;
 };
 
+// Client → Server: Clear all coins (dev/test)
+export type ClearAllMessage = {
+  op: "clear_all";
+};
+
+// Client → Server: Fill platform with random coins (dev/test)
+export type FillPlatformMessage = {
+  op: "fill_platform";
+};
+
+// Client → Server: Update editor scene objects for physics
+export type UpdateSceneObjectsMessage = {
+  op: "update_scene_objects";
+  objects: EditorObjectNet[];
+};
+
 // Server → Client: World snapshot (initial state)
 export type WorldSnapshotMessage = {
   op: "world_snapshot";
@@ -100,7 +128,10 @@ export type ClientMessage =
   | CoinInsertMessage
   | StackSpawnMessage
   | ShockMessage
-  | PingMessage;
+  | PingMessage
+  | ClearAllMessage
+  | FillPlatformMessage
+  | UpdateSceneObjectsMessage;
 
 // Union of all server-to-client messages
 export type ServerMessage =
@@ -186,12 +217,12 @@ export const SLOT_CONFIG = {
 export const SCENE_CONFIG = {
   PLATFORM: {
     WIDTH: 1.2, // meters (back edge width, constant up to FLARE_Z)
-    DEPTH: 1, // meters
+    DEPTH: 1.2, // meters
     FLARE_Z: 0, // z where outward flare begins (0 = midpoint of platform)
     FLARE_ANGLE: 30, // degrees outward from each side wall
     THICKNESS: 0.05, // meters
-    POSITION: { x: 0, y: 0.25, z: 0 },
-    TILT_ANGLE: 0, // degrees (no tilt)
+    POSITION: { x: 0, y: 0.25, z: 0.1 },
+    TILT_ANGLE: 2, // degrees (forward tilt to help coins flow toward front)
     FRICTION: 0.35,
     RESTITUTION: 0.15,
   },
@@ -218,12 +249,15 @@ export const SCENE_CONFIG = {
     RESTITUTION: 0.8, // high bounce to push coins away from pins
   },
   SIDE_WALLS: {
-    DEPTH: 1, // meters
+    DEPTH: 1.2, // meters
     HEIGHT: 2, // meters
     THICKNESS: 0.05, // meters
-    LEFT_POSITION: { x: -0.6, y: 0.5, z: 0 },
-    RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0 },
+    LEFT_POSITION: { x: -0.6, y: 0.5, z: 0.1 },
+    RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0.1 },
     INNER_TILT_ANGLE: 1.5, // degrees (inward tilt)
+    FRONT_OPENING_SIZE: 0.25, // meters - square hole side length
+    FRONT_OPENING_CENTER: 0.5, // normalized position along flared wall (0=FLARE_Z end, 1=front end)
+    FRONT_OPENING_Y: 0.35, // world Y position of hole center
     FRICTION: 0.3,
     RESTITUTION: 0.1,
   },
@@ -237,9 +271,9 @@ export const SCENE_CONFIG = {
   },
   // Client-only visual elements
   DROP_ZONE: {
-    WIDTH: 1.8, // meters (matches flared front edge)
+    WIDTH: 2.1, // meters (matches flared front edge)
     HEIGHT: 0.05, // meters
     DEPTH: 0.3, // meters
-    POSITION: { x: 0, y: 0.15, z: 0.55 },
+    POSITION: { x: 0, y: 0.15, z: 0.75 },
   },
 } as const;

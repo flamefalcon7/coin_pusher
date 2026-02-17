@@ -2,6 +2,7 @@ import type {
   ServerMessage,
   ClientMessage,
   StackType,
+  EditorObjectNet,
 } from "@coin-pusher/shared";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
@@ -160,6 +161,18 @@ export class GameClient {
       op: "shock",
     };
     this.wsClient.send(message);
+  }
+
+  clearAll(): void {
+    this.wsClient.send({ op: "clear_all" } as ClientMessage);
+  }
+
+  fillPlatform(): void {
+    this.wsClient.send({ op: "fill_platform" } as ClientMessage);
+  }
+
+  updateSceneObjects(objects: EditorObjectNet[]): void {
+    this.wsClient.send({ op: "update_scene_objects", objects } as ClientMessage);
   }
 
   getInterpolatedState(): InterpolatedState | null {

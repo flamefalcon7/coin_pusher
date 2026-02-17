@@ -22,6 +22,22 @@ type NATSShockCmd struct {
 	UserID string `json:"user_id"`
 }
 
+// NATSClearAllCmd is published to game.{room}.cmd.clear_all.
+type NATSClearAllCmd struct {
+	UserID string `json:"user_id"`
+}
+
+// NATSFillPlatformCmd is published to game.{room}.cmd.fill_platform.
+type NATSFillPlatformCmd struct {
+	UserID string `json:"user_id"`
+}
+
+// NATSUpdateSceneObjectsCmd is published to game.{room}.cmd.update_scene_objects.
+type NATSUpdateSceneObjectsCmd struct {
+	UserID  string         `json:"user_id"`
+	Objects []EditorObject `json:"objects"`
+}
+
 // NATSRewardEvent is received from game.{room}.reward.
 type NATSRewardEvent struct {
 	CoinCount int    `json:"coin_count"`

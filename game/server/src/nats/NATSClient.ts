@@ -23,6 +23,25 @@ export type ShockCommand = {
   user_id: string;
 };
 
+export type ClearAllCommand = {
+  user_id: string;
+};
+
+export type FillPlatformCommand = {
+  user_id: string;
+};
+
+export type UpdateSceneObjectsCommand = {
+  user_id: string;
+  objects: {
+    id: string;
+    type: string;
+    position: [number, number, number];
+    rotation: [number, number, number];
+    scale: [number, number, number];
+  }[];
+};
+
 export type RewardEvent = {
   coin_count: number;
   user_id?: string;
@@ -73,6 +92,42 @@ export class NATSClient {
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as ShockCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to clear_all commands (JSON encoded)
+  subscribeClearAll(handler: (cmd: ClearAllCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.clear_all`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as ClearAllCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to fill_platform commands (JSON encoded)
+  subscribeFillPlatform(handler: (cmd: FillPlatformCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.fill_platform`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as FillPlatformCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to update_scene_objects commands (JSON encoded)
+  subscribeUpdateSceneObjects(handler: (cmd: UpdateSceneObjectsCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.update_scene_objects`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as UpdateSceneObjectsCommand;
         handler(cmd);
       }
     })();

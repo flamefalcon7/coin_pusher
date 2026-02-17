@@ -137,8 +137,14 @@ func (h *Handler) readPump(c *Connection) {
 			h.handleSpawnStack(c, msg)
 		case "shock":
 			h.handleShock(c)
+		case "clear_all":
+			h.handleClearAll(c)
+		case "fill_platform":
+			h.handleFillPlatform(c)
 		case "ping":
 			h.handlePing(c)
+		case "update_scene_objects":
+			h.handleUpdateSceneObjects(c, msg)
 		}
 	}
 }
@@ -225,6 +231,41 @@ func (h *Handler) handleShock(c *Connection) {
 	}
 
 	h.nc.Publish(TopicShock(h.room), data)
+}
+
+func (h *Handler) handleClearAll(c *Connection) {
+	cmd := NATSClearAllCmd{UserID: c.userID}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal clear_all", "error", err)
+		return
+	}
+	h.nc.Publish(TopicClearAll(h.room), data)
+}
+
+func (h *Handler) handleFillPlatform(c *Connection) {
+	cmd := NATSFillPlatformCmd{UserID: c.userID}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal fill_platform", "error", err)
+		return
+	}
+	h.nc.Publish(TopicFillPlatform(h.room), data)
+}
+
+func (h *Handler) handleUpdateSceneObjects(c *Connection, msg ClientMessage) {
+	cmd := NATSUpdateSceneObjectsCmd{
+		UserID:  c.userID,
+		Objects: msg.Objects,
+	}
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal update_scene_objects", "error", err)
+		return
+	}
+
+	h.nc.Publish(TopicUpdateSceneObjects(h.room), data)
 }
 
 func (h *Handler) handlePing(c *Connection) {

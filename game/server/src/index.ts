@@ -1,4 +1,4 @@
-import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand } from "./nats/NATSClient.js";
+import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
@@ -7,6 +7,7 @@ import { StackSpawner } from "./game/StackSpawner.js";
 import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
 import { GameLoop } from "./game/GameLoop.js";
+import { EditorPhysics } from "./physics/EditorPhysics.js";
 import type { StackType, WorldSnapshotMessage } from "@coin-pusher/shared";
 
 const NATS_URL = process.env.NATS_URL || "nats://localhost:4222";
@@ -30,6 +31,8 @@ async function initialize() {
 
   const sceneBuilder = new SceneBuilder(physicsWorld);
   sceneBuilder.buildStaticScene();
+
+  const editorPhysics = new EditorPhysics(physicsWorld);
 
   pusher = new Pusher(physicsWorld);
 
@@ -90,6 +93,21 @@ async function initialize() {
   // Subscribe to shock commands from Go backend
   natsClient.subscribeShock((_cmd: ShockCommand) => {
     gameLoop.shockPins();
+  });
+
+  // Subscribe to clear_all commands from Go backend
+  natsClient.subscribeClearAll((_cmd: ClearAllCommand) => {
+    gameLoop.clearAll();
+  });
+
+  // Subscribe to fill_platform commands from Go backend
+  natsClient.subscribeFillPlatform((_cmd: FillPlatformCommand) => {
+    gameLoop.fillPlatform();
+  });
+
+  // Subscribe to update_scene_objects commands from Go backend
+  natsClient.subscribeUpdateSceneObjects((cmd: UpdateSceneObjectsCommand) => {
+    editorPhysics.syncObjects(cmd.objects);
   });
 
   // Subscribe to snapshot requests (request/reply for new clients)
