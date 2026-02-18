@@ -33,9 +33,11 @@ export class StaticMeshes {
     // CellMaterial for platform, walls, pins — colors overridden by theme
     const platformMat = createCellMat("platformMat", new Color3(0.12, 0.12, 0.18), this.scene);
     const wallMat = createCellMat("wallMat", new Color3(0.12, 0.32, 1.0), this.scene);
+    const rampMat = createCellMat("rampMat", new Color3(0.45, 0.2, 0.1), this.scene);
+    rampMat.backFaceCulling = false;
 
-    // Main platform (trapezoid)
-    this.createTrapezoidPlatform(platformMat);
+    // Decomposed platform (center rect + flare pieces with depressed ramps)
+    this.createDecomposedPlatform(platformMat, rampMat);
 
     // Back wall with pins
     this.createBackWallWithPins(wallMat);
@@ -74,52 +76,133 @@ export class StaticMeshes {
     return hw + flareOffset;
   }
 
-  private createTrapezoidPlatform(material: Material): void {
+  private createDecomposedPlatform(platformMat: Material, rampMat: Material): void {
     const { WIDTH, DEPTH, FLARE_Z, THICKNESS, POSITION } = SCENE_CONFIG.PLATFORM;
+    const { DROP } = SCENE_CONFIG.SIDE_RAMP;
+    const { FRONT_OPENING_SIZE, FRONT_OPENING_CENTER } = SCENE_CONFIG.SIDE_WALLS;
+
     const hw = WIDTH / 2;
     const fhw = StaticMeshes.getFrontHalfWidth();
     const hd = DEPTH / 2;
     const ht = THICKNESS / 2;
     const flareZLocal = FLARE_Z - POSITION.z;
 
-    const positions = [
-      -hw,  ht, -hd,
-       hw,  ht, -hd,
-       hw,  ht,  flareZLocal,
-       fhw, ht,  hd,
-      -fhw, ht,  hd,
-      -hw,  ht,  flareZLocal,
-      -hw,  -ht, -hd,
-       hw,  -ht, -hd,
-       hw,  -ht,  flareZLocal,
-       fhw, -ht,  hd,
-      -fhw, -ht,  hd,
-      -hw,  -ht,  flareZLocal,
+    // Flared edge: from (hw, flareZLocal) to (fhw, hd) in x-z
+    const dx = fhw - hw;
+    const flareLen = hd - flareZLocal;
+    const edgeLen = Math.sqrt(dx * dx + flareLen * flareLen);
+
+    // Opening boundary t-values along flared edge
+    const tHalf = (FRONT_OPENING_SIZE / 2) / edgeLen;
+    const tStart = FRONT_OPENING_CENTER - tHalf;
+    const tEnd = FRONT_OPENING_CENTER + tHalf;
+
+    // Opening boundary points (positive x, use ± for left/right)
+    const p1x = hw + tStart * dx;
+    const p1z = flareZLocal + tStart * flareLen;
+    const p2x = hw + tEnd * dx;
+    const p2z = flareZLocal + tEnd * flareLen;
+
+    // Parent node
+    const group = new TransformNode("platformGroup", this.scene);
+    group.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
+
+    // 1. Central rectangle
+    const rect = MeshBuilder.CreateBox("platform_center",
+      { width: WIDTH, height: THICKNESS, depth: DEPTH }, this.scene);
+    rect.parent = group;
+    rect.material = platformMat;
+
+    // 2-3. Left and right flare pieces
+    // Left side top-face vertices (CCW from above for correct BabylonJS RH normals)
+    const leftBefore: [number, number, number][] = [
+      [-hw, ht, flareZLocal],
+      [-hw, ht, p1z],
+      [-p1x, ht, p1z],
+    ];
+    const leftRamp: [number, number, number][] = [
+      [-hw, ht, p1z],
+      [-hw, ht, p2z],
+      [-p2x, ht - DROP, p2z],
+      [-p1x, ht - DROP, p1z],
+    ];
+    const leftAfter: [number, number, number][] = [
+      [-hw, ht, p2z],
+      [-hw, ht, hd],
+      [-fhw, ht, hd],
+      [-p2x, ht, p2z],
     ];
 
-    const indices = [
-      0, 1, 2,   0, 2, 5,   5, 2, 3,   5, 3, 4,
-      6, 8, 7,   6, 11, 8,  11, 9, 8,  11, 10, 9,
-      0, 7, 1,   0, 6, 7,
-      1, 7, 8,   1, 8, 2,
-      2, 8, 9,   2, 9, 3,
-      3, 9, 10,  3, 10, 4,
-      4, 10, 11, 4, 11, 5,
-      5, 11, 6,  5, 6, 0,
-    ];
+    // Mirror: negate x + reverse order preserves CCW winding
+    const mirror = (v: [number, number, number][]): [number, number, number][] =>
+      v.map(([x, y, z]) => [-x, y, z] as [number, number, number]).reverse();
+
+    // Left side
+    this.createPrismMesh("platform_L_before", leftBefore, -ht, platformMat, group);
+    this.createPrismMesh("platform_L_ramp", leftRamp, -ht, rampMat, group);
+    this.createPrismMesh("platform_L_after", leftAfter, -ht, platformMat, group);
+
+    // Right side (mirrored)
+    this.createPrismMesh("platform_R_before", mirror(leftBefore), -ht, platformMat, group);
+    this.createPrismMesh("platform_R_ramp", mirror(leftRamp), -ht, rampMat, group);
+    this.createPrismMesh("platform_R_after", mirror(leftAfter), -ht, platformMat, group);
+
+    // 4. Front lip: wedge at front edge (back flush, front raised)
+    const { HEIGHT: LIP_H, DEPTH: LIP_D, BASE: LIP_BASE } = SCENE_CONFIG.FRONT_LIP;
+    const lipHd = LIP_D / 2;
+    const lipZ = hd - lipHd; // center Z in local space
+    // 8 vertices: 4 back (flush) + 4 front (raised), with embedded base
+    const lipMesh = this.createPrismMesh("frontLip", [
+      [-fhw, ht, -lipHd],
+      [ fhw, ht, -lipHd],
+      [ fhw, ht + LIP_H, lipHd],
+      [-fhw, ht + LIP_H, lipHd],
+    ], ht - LIP_BASE, rampMat, group);
+    lipMesh.position.z = lipZ;
+
+    console.log("  ✓ Decomposed platform created (center + 6 flare pieces + front lip)");
+  }
+
+  /** Create a prism mesh from top-face vertices extruded down to bottomY. */
+  private createPrismMesh(
+    name: string,
+    topVerts: [number, number, number][],
+    bottomY: number,
+    material: Material,
+    parent: TransformNode
+  ): Mesh {
+    const n = topVerts.length;
+    const positions: number[] = [];
+
+    for (const [x, y, z] of topVerts) positions.push(x, y, z);
+    for (const [x, , z] of topVerts) positions.push(x, bottomY, z);
+
+    const indices: number[] = [];
+
+    // Top face (fan)
+    for (let i = 1; i < n - 1; i++) indices.push(0, i, i + 1);
+    // Bottom face (fan, reversed winding)
+    for (let i = 1; i < n - 1; i++) indices.push(n, n + i + 1, n + i);
+    // Side faces
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      indices.push(i, j + n, j);
+      indices.push(i, i + n, j + n);
+    }
 
     const normals: number[] = [];
     VertexData.ComputeNormals(positions, indices, normals);
 
-    const mesh = new Mesh("platform", this.scene);
-    const vertexData = new VertexData();
-    vertexData.positions = positions;
-    vertexData.indices = indices;
-    vertexData.normals = normals;
-    vertexData.applyToMesh(mesh);
+    const mesh = new Mesh(name, this.scene);
+    const vd = new VertexData();
+    vd.positions = positions;
+    vd.indices = indices;
+    vd.normals = normals;
+    vd.applyToMesh(mesh);
 
-    mesh.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
     mesh.material = material;
+    mesh.parent = parent;
+    return mesh;
   }
 
   private createAngledSideWalls(material: Material): void {
@@ -156,19 +239,71 @@ export class StaticMeshes {
     const frontCenterZ = (FLARE_Z + frontZ) / 2;
     const frontCenterXOff = (hw + fhw) / 2;
 
-    const leftFront = MeshBuilder.CreateBox("leftWallFront",
-      { width: THICKNESS, height: HEIGHT, depth: frontLen }, this.scene);
-    leftFront.position = new Vector3(-frontCenterXOff, centerY, frontCenterZ);
-    leftFront.rotation.y = -yAngle;
-    leftFront.rotation.z = -tiltRad;
-    leftFront.material = material;
+    // Left front wall with square opening
+    this.createWallMeshWithOpening(
+      "leftWallFront", material,
+      -frontCenterXOff, centerY, frontCenterZ,
+      THICKNESS, HEIGHT, frontLen,
+      -yAngle, -tiltRad
+    );
 
-    const rightFront = MeshBuilder.CreateBox("rightWallFront",
-      { width: THICKNESS, height: HEIGHT, depth: frontLen }, this.scene);
-    rightFront.position = new Vector3(frontCenterXOff, centerY, frontCenterZ);
-    rightFront.rotation.y = yAngle;
-    rightFront.rotation.z = tiltRad;
-    rightFront.material = material;
+    // Right front wall with square opening
+    this.createWallMeshWithOpening(
+      "rightWallFront", material,
+      frontCenterXOff, centerY, frontCenterZ,
+      THICKNESS, HEIGHT, frontLen,
+      yAngle, tiltRad
+    );
+  }
+
+  /** Create a wall mesh with a square hole using a parent node + 4 child boxes. */
+  private createWallMeshWithOpening(
+    name: string, material: Material,
+    x: number, y: number, z: number,
+    width: number, height: number, depth: number,
+    yRot: number, zRot: number
+  ): void {
+    const { FRONT_OPENING_SIZE, FRONT_OPENING_CENTER, FRONT_OPENING_Y } =
+      SCENE_CONFIG.SIDE_WALLS;
+    const hs = FRONT_OPENING_SIZE / 2;
+    const hh = height / 2;
+    const hl = depth / 2;
+    const holeLocalY = FRONT_OPENING_Y - y;
+    const holeLocalZ = (FRONT_OPENING_CENTER - 0.5) * depth;
+
+    const parent = new TransformNode(name, this.scene);
+    parent.position = new Vector3(x, y, z);
+    parent.rotation.y = yRot;
+    parent.rotation.z = zRot;
+
+    const makeBox = (n: string, w: number, h: number, d: number,
+      lx: number, ly: number, lz: number) => {
+      if (h <= 0 || d <= 0) return;
+      const box = MeshBuilder.CreateBox(n, { width: w, height: h, depth: d }, this.scene);
+      box.position = new Vector3(lx, ly, lz);
+      box.material = material;
+      box.parent = parent;
+    };
+
+    // Bottom strip (full length, below hole)
+    const bottomH = (holeLocalY - hs) + hh;
+    makeBox(`${name}_bottom`, width, bottomH, depth,
+      0, -hh + bottomH / 2, 0);
+
+    // Top strip (full length, above hole)
+    const topH = hh - (holeLocalY + hs);
+    makeBox(`${name}_top`, width, topH, depth,
+      0, hh - topH / 2, 0);
+
+    // Left strip (hole height, before hole along Z)
+    const leftLen = (holeLocalZ - hs) + hl;
+    makeBox(`${name}_left`, width, FRONT_OPENING_SIZE, leftLen,
+      0, holeLocalY, -hl + leftLen / 2);
+
+    // Right strip (hole height, after hole along Z)
+    const rightLen = hl - (holeLocalZ + hs);
+    makeBox(`${name}_right`, width, FRONT_OPENING_SIZE, rightLen,
+      0, holeLocalY, hl - rightLen / 2);
   }
 
   private createBackWallWithPins(wallMaterial: Material): void {

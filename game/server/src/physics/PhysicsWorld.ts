@@ -29,8 +29,8 @@ export class PhysicsWorld {
 
     // Create world with gravity
     this.world = new RAPIER.World(PHYSICS_PARAMS.GRAVITY);
-    this.world.maxVelocityIterations = PHYSICS_PARAMS.VELOCITY_ITERATIONS;
-    this.world.maxStabilizationIterations = PHYSICS_PARAMS.POSITION_ITERATIONS;
+    this.world.numSolverIterations = PHYSICS_PARAMS.VELOCITY_ITERATIONS;
+    this.world.numInternalPgsIterations = PHYSICS_PARAMS.POSITION_ITERATIONS;
     this.eventQueue = new RAPIER.EventQueue(true);
 
     // Set timestep once (constant across all steps)
@@ -42,7 +42,7 @@ export class PhysicsWorld {
     );
     console.log(`   Substeps: ${PHYSICS_PARAMS.SUBSTEPS}`);
     console.log(
-      `   Solver iterations: vel=${this.world.maxVelocityIterations}, pos=${this.world.maxStabilizationIterations}`
+      `   Solver iterations: vel=${this.world.numSolverIterations}, pos=${this.world.numInternalPgsIterations}`
     );
 
     this.initialized = true;

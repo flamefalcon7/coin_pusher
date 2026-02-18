@@ -51,7 +51,7 @@ async function runSimulation() {
 
   // 平台邊界定義 (根據 SCENE_CONFIG)
   const PLATFORM_Z_EDGE =
-    SCENE_CONFIG.PLATFORM.POSITION.z + SCENE_CONFIG.PLATFORM.DEPTH / 2; // 約 0.5
+    SCENE_CONFIG.PLATFORM.POSITION.z + SCENE_CONFIG.PLATFORM.DEPTH / 2; // 約 0.7
   const PLATFORM_X_EDGE = SCENE_CONFIG.PLATFORM.WIDTH / 2; // 約 0.6
 
   console.log(

@@ -1,6 +1,6 @@
 import type { PhysicsWorld } from "../physics/PhysicsWorld.js";
 import type { Pusher } from "../physics/Pusher.js";
-import type { Coin } from "../physics/Coin.js";
+import { Coin } from "../physics/Coin.js";
 import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
@@ -9,7 +9,7 @@ import type {
   DespawnMessage,
   StateUpdate,
 } from "@coin-pusher/shared";
-import { PHYSICS_CONFIG, SCENE_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
 
 export class GameLoop {
@@ -348,6 +348,95 @@ export class GameLoop {
 
   addCoin(coin: Coin): void {
     this.coins.set(coin.getId(), coin);
+  }
+
+  clearAll(): void {
+    const ids: number[] = [];
+    this.coins.forEach((coin, id) => {
+      coin.destroy(this.physicsWorld);
+      this.coinManager.removeCoin(id);
+      ids.push(id);
+    });
+    this.coins.clear();
+
+    if (ids.length > 0) {
+      this.natsClient.publishDespawn({
+        op: "despawn",
+        tick: this.gameState.getTick(),
+        ids,
+      });
+    }
+    console.log(`Cleared all ${ids.length} coins`);
+  }
+
+  /** Fill the platform with hex-packed coins (1-2 layers, messy layout). */
+  fillPlatform(): Coin[] {
+    const { POSITION, DEPTH, WIDTH, FLARE_Z, FLARE_ANGLE, THICKNESS } = SCENE_CONFIG.PLATFORM;
+    const surfaceY = POSITION.y + THICKNESS / 2;
+    const frontZ = POSITION.z + DEPTH / 2;
+    const hw = WIDTH / 2;
+    const flareRad = FLARE_ANGLE * Math.PI / 180;
+
+    const coinD = COIN_CONFIG.RADIUS * 2;
+    const coinT = COIN_CONFIG.THICKNESS;
+    // Hex grid: row spacing = coinD * sqrt(3)/2, column spacing = coinD
+    const colSpacing = coinD;
+    const rowSpacing = coinD * Math.sqrt(3) / 2;
+
+    // Fill from just past pusher max reach to near front edge
+    const pusherMaxZ = SCENE_CONFIG.PUSHER.POSITION.z
+      + SCENE_CONFIG.PUSHER.DEPTH / 2
+      + PUSHER_CONFIG.Z_OFFSET + PUSHER_CONFIG.AMPLITUDE;
+    const zMin = pusherMaxZ + coinD;
+    const zMax = frontZ - 0.02;
+    const wallInset = 0.02;
+
+    const spawned: Coin[] = [];
+    let row = 0;
+
+    for (let z = zMin; z <= zMax; z += rowSpacing) {
+      // Platform half-width at this z
+      let halfW: number;
+      if (z < FLARE_Z) {
+        halfW = hw;
+      } else {
+        halfW = hw + Math.tan(flareRad) * (z - FLARE_Z);
+      }
+      halfW -= wallInset;
+
+      // Hex offset: odd rows shift by half a coin diameter
+      const xOffset = (row % 2 === 1) ? coinD / 2 : 0;
+
+      for (let x = -halfW + xOffset; x <= halfW; x += colSpacing) {
+        if (x < -halfW || x > halfW) continue;
+        // ~10% chance to skip this grid point for a messier look
+        if (Math.random() < 0.1) continue;
+        const layers = 1 + Math.floor(Math.random() * 2); // 1-2
+        for (let layer = 0; layer < layers; layer++) {
+          // Drop from above — stagger height by layer + random offset to avoid all spawning at once
+          const dropHeight = 0.3 + layer * coinT * 3 + Math.random() * 0.1;
+          const cy = surfaceY + dropHeight;
+          const rx = x + (Math.random() - 0.5) * 0.06;
+          const rz = z + (Math.random() - 0.5) * 0.06;
+
+          // Small random Y-axis rotation for variety
+          const angle = (Math.random() - 0.5) * Math.PI * 0.3;
+          const rot: [number, number, number, number] = [0, Math.sin(angle / 2), 0, Math.cos(angle / 2)];
+
+          const coinId = this.coinManager.spawnCoinUnchecked(rx, cy, rz, rot);
+          const coin = new Coin(
+            this.physicsWorld, coinId, rx, cy, rz,
+            { x: rot[0], y: rot[1], z: rot[2], w: rot[3] }
+          );
+          this.addCoin(coin);
+          spawned.push(coin);
+        }
+      }
+      row++;
+    }
+
+    console.log(`Filled platform with ${spawned.length} coins`);
+    return spawned;
   }
 
   shockPins(): void {

@@ -33,6 +33,22 @@ export class CoinManager {
     return id;
   }
 
+  /** Spawn a coin without x-range validation (for fill platform). */
+  spawnCoinUnchecked(
+    x: number,
+    y: number,
+    z: number,
+    rotation?: [number, number, number, number]
+  ): number {
+    const id = this.gameState.getNextBodyId();
+    const f = 1000;
+    const spawnX = Math.round(x * f) / f;
+
+    this.gameState.addCoin(id, spawnX, y, z, rotation);
+
+    return id;
+  }
+
   removeCoin(id: number): void {
     this.gameState.removeCoin(id);
   }
