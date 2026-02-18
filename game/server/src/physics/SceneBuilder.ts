@@ -14,14 +14,13 @@ export class SceneBuilder {
   buildStaticScene(): void {
     console.log("🏗️  Building static scene...");
 
-    // Main platform: 1.2m × 0.8m × 0.05m at (0, 0.25, 0)
-    // Slight front tilt (2-3 degrees) to help coin outflow
+    // Decomposed platform: center rect + 6 flare pieces (with depressed ramps) + front lip
     this.createPlatform();
 
     // Back wall at (0, 0.4, -0.4)
     this.createBackWall();
 
-    // Side walls with inner tilt
+    // Side walls with inner tilt and front openings
     this.createSideWalls();
 
     console.log("✅ Static scene built");
@@ -40,6 +39,8 @@ export class SceneBuilder {
   private createPlatform(): void {
     const { WIDTH, DEPTH, THICKNESS, POSITION, FRICTION, RESTITUTION } =
       SCENE_CONFIG.PLATFORM;
+    const { DROP, FRICTION: RAMP_FRICTION } = SCENE_CONFIG.SIDE_RAMP;
+    const { FRONT_OPENING_SIZE, FRONT_OPENING_CENTER } = SCENE_CONFIG.SIDE_WALLS;
 
     const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
       POSITION.x,
@@ -52,26 +53,103 @@ export class SceneBuilder {
     const fhw = SceneBuilder.getFrontHalfWidth();
     const hd = DEPTH / 2;
     const ht = THICKNESS / 2;
+    const flareZLocal = SCENE_CONFIG.PLATFORM.FLARE_Z - POSITION.z;
 
-    // Pentagon prism: back rect + front flare (convex hull = outer trapezoid)
-    // Since convex hull ignores the concave midpoint, we use the full trapezoid.
-    // The side walls enforce the actual straight-then-angled boundary.
-    const vertices = new Float32Array([
-      // Top face
-      -hw,   ht, -hd,         hw,  ht, -hd,
-      -fhw,  ht,  hd,         fhw, ht,  hd,
-      // Bottom face
-      -hw,  -ht, -hd,         hw, -ht, -hd,
-      -fhw, -ht,  hd,         fhw,-ht,  hd,
-    ]);
-
-    const colliderDesc = RAPIER.ColliderDesc.convexHull(vertices)!
+    // 1. Central rectangle collider
+    const centerDesc = RAPIER.ColliderDesc.cuboid(hw, ht, hd)
       .setFriction(FRICTION)
       .setRestitution(RESTITUTION);
+    this.world.createCollider(centerDesc, body);
 
-    this.world.createCollider(colliderDesc, body);
+    // Flared edge geometry: from (hw, flareZLocal) to (fhw, hd) in x-z
+    const dx = fhw - hw;
+    const flareLen = hd - flareZLocal;
+    const edgeLen = Math.sqrt(dx * dx + flareLen * flareLen);
 
-    console.log(`  ✓ Platform created (back=${WIDTH}m, front=${(fhw * 2).toFixed(1)}m)`);
+    // Opening boundary t-values along flared edge
+    const tHalf = (FRONT_OPENING_SIZE / 2) / edgeLen;
+    const tStart = FRONT_OPENING_CENTER - tHalf;
+    const tEnd = FRONT_OPENING_CENTER + tHalf;
+
+    const p1x = hw + tStart * dx;
+    const p1z = flareZLocal + tStart * flareLen;
+    const p2x = hw + tEnd * dx;
+    const p2z = flareZLocal + tEnd * flareLen;
+
+    // Helper: create convex hull collider from top-face vertices extruded to -ht
+    const addFlareCollider = (topVerts: [number, number, number][], friction: number) => {
+      const verts: number[] = [];
+      for (const [x, y, z] of topVerts) verts.push(x, y, z);
+      for (const [x, , z] of topVerts) verts.push(x, -ht, z);
+      const desc = RAPIER.ColliderDesc.convexHull(new Float32Array(verts));
+      if (desc) {
+        desc.setFriction(friction).setRestitution(RESTITUTION);
+        this.world.createCollider(desc, body);
+      }
+    };
+
+    // 2. Left flare pieces
+    // Before opening (triangle)
+    addFlareCollider([
+      [-hw, ht, flareZLocal],
+      [-hw, ht, p1z],
+      [-p1x, ht, p1z],
+    ], FRICTION);
+    // Ramp (trapezoid, outer edge depressed by DROP)
+    addFlareCollider([
+      [-hw, ht, p1z],
+      [-hw, ht, p2z],
+      [-p2x, ht - DROP, p2z],
+      [-p1x, ht - DROP, p1z],
+    ], RAMP_FRICTION);
+    // After opening (trapezoid)
+    addFlareCollider([
+      [-hw, ht, p2z],
+      [-hw, ht, hd],
+      [-fhw, ht, hd],
+      [-p2x, ht, p2z],
+    ], FRICTION);
+
+    // 3. Right flare pieces (mirror: negate x)
+    addFlareCollider([
+      [hw, ht, flareZLocal],
+      [hw, ht, p1z],
+      [p1x, ht, p1z],
+    ], FRICTION);
+    addFlareCollider([
+      [hw, ht, p1z],
+      [hw, ht, p2z],
+      [p2x, ht - DROP, p2z],
+      [p1x, ht - DROP, p1z],
+    ], RAMP_FRICTION);
+    addFlareCollider([
+      [hw, ht, p2z],
+      [hw, ht, hd],
+      [fhw, ht, hd],
+      [p2x, ht, p2z],
+    ], FRICTION);
+
+    // 4. Front lip: wedge collider (back flush, front raised)
+    const { HEIGHT: LIP_H, DEPTH: LIP_D, BASE: LIP_BASE } = SCENE_CONFIG.FRONT_LIP;
+    const lipHd = LIP_D / 2;
+    const lipZ = hd - lipHd;
+    const lipVerts = new Float32Array([
+      // Top back edge (flush with platform surface)
+      -fhw, ht, lipZ - lipHd,   fhw, ht, lipZ - lipHd,
+      // Top front edge (raised)
+       fhw, ht + LIP_H, lipZ + lipHd,  -fhw, ht + LIP_H, lipZ + lipHd,
+      // Bottom back
+      -fhw, ht - LIP_BASE, lipZ - lipHd,   fhw, ht - LIP_BASE, lipZ - lipHd,
+      // Bottom front
+       fhw, ht - LIP_BASE, lipZ + lipHd,  -fhw, ht - LIP_BASE, lipZ + lipHd,
+    ]);
+    const lipDesc = RAPIER.ColliderDesc.convexHull(lipVerts);
+    if (lipDesc) {
+      lipDesc.setFriction(FRICTION).setRestitution(RESTITUTION);
+      this.world.createCollider(lipDesc, body);
+    }
+
+    console.log(`  ✓ Platform created (decomposed: center + 6 flare + lip, back=${WIDTH}m, front=${(fhw * 2).toFixed(1)}m)`);
   }
 
   private createBackWall(): void {
@@ -188,11 +266,11 @@ export class SceneBuilder {
     const hw = WIDTH / 2;
     const fhw = SceneBuilder.getFrontHalfWidth();
     const backZ = POSITION.z - DEPTH / 2; // z=-0.5
-    const frontZ = POSITION.z + DEPTH / 2; // z=+0.5
+    const frontZ = POSITION.z + DEPTH / 2; // z=+0.7
     const centerY = SCENE_CONFIG.SIDE_WALLS.LEFT_POSITION.y;
     const innerTilt = INNER_TILT_ANGLE * (Math.PI / 180);
 
-    // --- Back segments: straight walls from backZ to FLARE_Z ---
+    // --- Back segments: straight walls from backZ to FLARE_Z (no openings) ---
     const backDepth = FLARE_Z - backZ;
     const backCenterZ = (backZ + FLARE_Z) / 2;
 
@@ -211,40 +289,38 @@ export class SceneBuilder {
       FRICTION, RESTITUTION
     );
 
-    // --- Front segments: angled outward from FLARE_Z to frontZ ---
+    // --- Front segments: angled outward with square openings ---
     const flareDepth = frontZ - FLARE_Z;
-    const dx = fhw - hw; // outward offset
+    const dx = fhw - hw;
     const frontLen = Math.sqrt(dx * dx + flareDepth * flareDepth);
-    const yAngle = Math.atan2(dx, flareDepth); // outward angle around Y
+    const yAngle = Math.atan2(dx, flareDepth);
 
     const frontCenterZ = (FLARE_Z + frontZ) / 2;
     const frontCenterXOffset = (hw + fhw) / 2;
 
-    // Left front (flares outward = negative X direction)
+    // Left front with opening
     const leftFrontQ = this.quatMultiply(
       this.quatFromAxisAngle(0, 1, 0, -yAngle),
       this.quatFromAxisAngle(0, 0, 1, -innerTilt)
     );
-    this.createWall(
+    this.createWallWithOpening(
       -frontCenterXOffset, centerY, frontCenterZ,
-      THICKNESS / 2, HEIGHT / 2, frontLen / 2,
-      leftFrontQ,
-      FRICTION, RESTITUTION
+      THICKNESS, HEIGHT, frontLen,
+      leftFrontQ, FRICTION, RESTITUTION
     );
 
-    // Right front (flares outward = positive X direction)
+    // Right front with opening
     const rightFrontQ = this.quatMultiply(
       this.quatFromAxisAngle(0, 1, 0, yAngle),
       this.quatFromAxisAngle(0, 0, 1, innerTilt)
     );
-    this.createWall(
+    this.createWallWithOpening(
       frontCenterXOffset, centerY, frontCenterZ,
-      THICKNESS / 2, HEIGHT / 2, frontLen / 2,
-      rightFrontQ,
-      FRICTION, RESTITUTION
+      THICKNESS, HEIGHT, frontLen,
+      rightFrontQ, FRICTION, RESTITUTION
     );
 
-    console.log("  ✓ Side walls created (straight back + flared front)");
+    console.log("  ✓ Side walls created (straight back + flared front with openings)");
   }
 
   private createWall(
@@ -260,6 +336,52 @@ export class SceneBuilder {
       .setFriction(friction)
       .setRestitution(restitution);
     this.world.createCollider(collider, body);
+  }
+
+  /** Create a wall with a square opening (4 cuboid colliders forming a frame). */
+  private createWallWithOpening(
+    x: number, y: number, z: number,
+    width: number, height: number, depth: number,
+    rotation: { x: number; y: number; z: number; w: number },
+    friction: number, restitution: number
+  ): void {
+    const { FRONT_OPENING_SIZE, FRONT_OPENING_CENTER, FRONT_OPENING_Y } =
+      SCENE_CONFIG.SIDE_WALLS;
+    const hs = FRONT_OPENING_SIZE / 2;
+    const hh = height / 2;
+    const hl = depth / 2;
+    const hw = width / 2;
+    const holeLocalY = FRONT_OPENING_Y - y;
+    const holeLocalZ = (FRONT_OPENING_CENTER - 0.5) * depth;
+
+    const body = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z).setRotation(rotation)
+    );
+
+    const addBox = (hx: number, hy: number, hz: number, lx: number, ly: number, lz: number) => {
+      if (hy <= 0 || hz <= 0) return;
+      const desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+        .setTranslation(lx, ly, lz)
+        .setFriction(friction)
+        .setRestitution(restitution);
+      this.world.createCollider(desc, body);
+    };
+
+    // Bottom strip (full length, below hole)
+    const bottomH = (holeLocalY - hs) + hh;
+    addBox(hw, bottomH / 2, hl, 0, -hh + bottomH / 2, 0);
+
+    // Top strip (full length, above hole)
+    const topH = hh - (holeLocalY + hs);
+    addBox(hw, topH / 2, hl, 0, hh - topH / 2, 0);
+
+    // Left strip (hole height, before hole along Z)
+    const leftLen = (holeLocalZ - hs) + hl;
+    addBox(hw, hs, leftLen / 2, 0, holeLocalY, -hl + leftLen / 2);
+
+    // Right strip (hole height, after hole along Z)
+    const rightLen = hl - (holeLocalZ + hs);
+    addBox(hw, hs, rightLen / 2, 0, holeLocalY, hl - rightLen / 2);
   }
 
   private quatFromAxisAngle(ax: number, ay: number, az: number, angle: number) {

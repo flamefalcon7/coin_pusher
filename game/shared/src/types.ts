@@ -261,6 +261,17 @@ export const SCENE_CONFIG = {
     FRICTION: 0.3,
     RESTITUTION: 0.1,
   },
+  // Side ramps: depressed surfaces near wall openings to guide coins through
+  SIDE_RAMP: {
+    DROP: 0.02,       // meters — how far the outer edge dips below platform surface
+    FRICTION: 0.1,    // low friction to help coins slide into openings
+  },
+  // Front lip: wedge at front edge to prevent coins from sliding off too easily
+  FRONT_LIP: {
+    HEIGHT: 0.035,    // meters — rise at front edge (~2.3× coin thickness)
+    DEPTH: 0.10,      // meters — extent in Z
+    BASE: 0.005,      // meters — embedded base thickness
+  },
   PUSHER: {
     WIDTH: 1.2, // meters
     HEIGHT: 0.2, // meters (thickness)

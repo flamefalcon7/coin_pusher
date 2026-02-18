@@ -11,5 +11,8 @@ export default defineConfig({
     target: 'esnext',
     sourcemap: true,
   },
+  optimizeDeps: {
+    exclude: ['@coin-pusher/shared'],
+  },
 });
 

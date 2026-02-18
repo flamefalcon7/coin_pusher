@@ -239,10 +239,6 @@ function App() {
           console.log("Filling platform");
           gameClientRef.current.fillPlatform();
           break;
-        case "r":
-        case "R":
-          sceneManagerRef.current?.toggleRampDebug();
-          break;
       }
     };
 
