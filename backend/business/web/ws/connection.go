@@ -23,6 +23,9 @@ type Connection struct {
 	userID         string
 	lastCoinInsert time.Time
 	lastShock      time.Time
+	lastTornado    time.Time
+	lastExplosion  time.Time
+	lastLightning  time.Time
 	mu             sync.Mutex
 	closed         bool
 }
@@ -114,6 +117,45 @@ func (c *Connection) CanShock() bool {
 		return false
 	}
 	c.lastShock = now
+	return true
+}
+
+// CanTornado checks rate limit (10s cooldown).
+func (c *Connection) CanTornado() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastTornado) < 10*time.Second {
+		return false
+	}
+	c.lastTornado = now
+	return true
+}
+
+// CanExplosion checks rate limit (8s cooldown).
+func (c *Connection) CanExplosion() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastExplosion) < 8*time.Second {
+		return false
+	}
+	c.lastExplosion = now
+	return true
+}
+
+// CanLightning checks rate limit (6s cooldown).
+func (c *Connection) CanLightning() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastLightning) < 6*time.Second {
+		return false
+	}
+	c.lastLightning = now
 	return true
 }
 

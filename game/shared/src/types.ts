@@ -70,6 +70,25 @@ export type ShockMessage = {
   op: "shock";
 };
 
+// Client → Server: Tornado at position
+export type TornadoMessage = {
+  op: "tornado";
+  x: number;
+  z: number;
+};
+
+// Client → Server: Explosion at position
+export type ExplosionMessage = {
+  op: "explosion";
+  x: number;
+  z: number;
+};
+
+// Client → Server: Lightning strike (random positions, no targeting)
+export type LightningMessage = {
+  op: "lightning";
+};
+
 // Client → Server: Ping for clock sync
 export type PingMessage = {
   op: "ping";
@@ -128,6 +147,9 @@ export type ClientMessage =
   | CoinInsertMessage
   | StackSpawnMessage
   | ShockMessage
+  | TornadoMessage
+  | ExplosionMessage
+  | LightningMessage
   | PingMessage
   | ClearAllMessage
   | FillPlatformMessage
@@ -161,17 +183,17 @@ export const PHYSICS_CONFIG = {
 // Pusher configuration
 export const PUSHER_CONFIG = {
   AMPLITUDE: 0.1, // meters
-  FREQUENCY: 0.25, // Hz
+  FREQUENCY: 0.5, // Hz
   INITIAL_PHASE: 0,
   Z_OFFSET: 0.1, // meters
 } as const;
 
 // Coin configuration
 export const COIN_CONFIG = {
-  RADIUS: 0.05, // meters
-  THICKNESS: 0.015, // meters
+  RADIUS: 0.06, // meters (was 0.05 — larger circumference)
+  THICKNESS: 0.012, // meters (was 0.015 — thinner)
   MASS: 0.01, // kg
-  FRICTION: 0.5,
+  FRICTION: 0.7, // (was 0.5 — higher friction helps coins grip edges)
   RESTITUTION: 0.0,
   SPAWN_HEIGHT: 1.5, // meters
   DESPAWN_Y: -0.1, // meters (below this = remove)
@@ -197,6 +219,10 @@ export const NETWORK_CONFIG = {
 export const RATE_LIMIT_CONFIG = {
   COIN_INSERT_COOLDOWN: 50, // ms between coin inserts per connection
   SHOCK_COOLDOWN: 2000, // ms between shock activations per connection
+  TORNADO_COOLDOWN: 10000, // ms between tornado activations per connection
+  TORNADO_DURATION: 4000, // ms tornado is active
+  EXPLOSION_COOLDOWN: 8000, // ms between explosion activations per connection
+  LIGHTNING_COOLDOWN: 6000, // ms between lightning activations per connection
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
 
@@ -242,7 +268,7 @@ export const SCENE_CONFIG = {
     ODD_ROW_COUNT: 5, // pins at x: -0.4, -0.2, 0.0, 0.2, 0.4 (aligned with slots)
     EVEN_ROW_COUNT: 6, // pins at x: -0.5, -0.3, -0.1, 0.1, 0.3, 0.5 (staggered)
     HORIZONTAL_SPACING: 0.2, // meters
-    VERTICAL_SPACING: 0.18, // meters (> coin diameter 0.1m to prevent wedging)
+    VERTICAL_SPACING: 0.18, // meters (> coin diameter 0.12m to prevent wedging)
     START_Y: 0.3, // meters from bottom of back wall
     Y_OFFSET: 0.8, // meters (adjust vertical position of all pins)
     FRICTION: 0.0,
@@ -251,7 +277,7 @@ export const SCENE_CONFIG = {
   SIDE_WALLS: {
     DEPTH: 1.2, // meters
     HEIGHT: 2, // meters
-    THICKNESS: 0.05, // meters
+    THICKNESS: 0.10, // meters
     LEFT_POSITION: { x: -0.6, y: 0.5, z: 0.1 },
     RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0.1 },
     INNER_TILT_ANGLE: 1.5, // degrees (inward tilt)
@@ -268,7 +294,7 @@ export const SCENE_CONFIG = {
   },
   // Front lip: wedge at front edge to prevent coins from sliding off too easily
   FRONT_LIP: {
-    HEIGHT: 0.035,    // meters — rise at front edge (~2.3× coin thickness)
+    HEIGHT: 0.035,    // meters — rise at front edge (~2.9× coin thickness)
     DEPTH: 0.10,      // meters — extent in Z
     BASE: 0.005,      // meters — embedded base thickness
   },

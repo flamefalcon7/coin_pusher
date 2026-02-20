@@ -6,9 +6,16 @@ import {
   Quaternion,
   Mesh,
   Matrix,
+  DynamicTexture,
+  ShaderMaterial,
 } from "@babylonjs/core";
 import { COIN_CONFIG } from "@coin-pusher/shared";
 import { createToonMaterial } from "./ToonMaterial";
+
+const COIN_SYMBOLS = [
+  "₿", "Ξ", "Ð", "¤", "◈", "★", "✦", "⚡",
+  "☀", "Ψ", "Ω", "♠", "⚜", "◉", "⬡", "⊛",
+];
 
 export class CoinMeshManager {
   private scene: Scene;
@@ -17,6 +24,8 @@ export class CoinMeshManager {
   // Optimized storage: pre-allocated buffer for instance matrices
   // 16 floats per instance (4x4 matrix)
   private matrixBuffer: Float32Array;
+  // Per-instance vec2: (symbolIndex, glowFlag)
+  private coinDataBuffer: Float32Array;
   private activeCoins: number = 0;
   private capacity: number = 2000;
 
@@ -31,11 +40,13 @@ export class CoinMeshManager {
   private static tmpQuaternion = new Quaternion();
   private static tmpMatrix = new Matrix();
   private static tmpScale = new Vector3(1, 1, 1);
+  private singleSymbolTexture!: DynamicTexture;
 
   constructor(scene: Scene) {
     this.scene = scene;
     // Initialize buffers with default capacity
     this.matrixBuffer = new Float32Array(this.capacity * 16);
+    this.coinDataBuffer = new Float32Array(this.capacity * 2);
     this.indexToId = new Int32Array(this.capacity);
     this.createPrototype();
   }
@@ -47,26 +58,61 @@ export class CoinMeshManager {
       "coinPrototype",
       {
         height: THICKNESS,
-        diameter: RADIUS * 2, // radius * 2
+        diameter: RADIUS * 2,
         tessellation: 32,
       },
       this.scene
     );
 
-    // Toon material with thin instances — richer cartoon gold
+    // Create textures: atlas for toon shader, single ₿ for standard fallback
+    const atlasTexture = this.createCoinAtlas();
+    this.singleSymbolTexture = this.createSingleSymbolTexture();
+
+    // Toon material with thin instances
     const material = createToonMaterial(this.scene, {
       name: "coinMat",
       baseColor: new Color3(0.22, 1.0, 0.08), // Default — overridden by theme
       thinInstances: true,
+      texture: atlasTexture,
     });
     this.prototypeMesh.material = material;
 
-    // No rotation needed - both BabylonJS and Rapier use Y-up for cylinders
-
-    // Enable thin instances
     this.prototypeMesh.thinInstanceEnablePicking = false;
 
-    console.log("🪙 Coin prototype created");
+    console.log("🪙 Coin prototype created (symbol atlas)");
+  }
+
+  private createCoinAtlas(): DynamicTexture {
+    const size = 1024;
+    const cellSize = size / 4;
+    const dt = new DynamicTexture("coinAtlas", size, this.scene, true);
+    const ctx = dt.getContext() as unknown as CanvasRenderingContext2D;
+
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.fillStyle = "white";
+    ctx.font = "bold 160px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i < COIN_SYMBOLS.length; i++) {
+      const col = i % 4;
+      const row = Math.floor(i / 4);
+      const cx = col * cellSize + cellSize / 2;
+      const cy = row * cellSize + cellSize / 2;
+      ctx.fillText(COIN_SYMBOLS[i], cx, cy);
+    }
+
+    dt.update();
+    return dt;
+  }
+
+  private createSingleSymbolTexture(): DynamicTexture {
+    const size = 256;
+    const dt = new DynamicTexture("coinSymbol", size, this.scene, true);
+    dt.drawText("₿", null, null, "bold 160px sans-serif", "white", "black", true, true);
+    return dt;
   }
 
   addCoin(
@@ -94,6 +140,11 @@ export class CoinMeshManager {
 
     // Write transform to buffer
     this.writeMatrixToBuffer(index, pos, rot);
+
+    // Assign random symbol and glow
+    const off = index * 2;
+    this.coinDataBuffer[off] = Math.floor(Math.random() * 16);
+    this.coinDataBuffer[off + 1] = Math.random() < 0.1 ? 1 : 0;
   }
 
   updateCoin(
@@ -127,11 +178,17 @@ export class CoinMeshManager {
       const lastCoinId = this.indexToId[lastIndex];
 
       // Copy matrix data: from lastIndex to index
-      // copyWithin(targetStart, sourceStart, sourceEnd)
       this.matrixBuffer.copyWithin(
         index * 16,
         lastIndex * 16,
         (lastIndex + 1) * 16
+      );
+
+      // Copy coinData: from lastIndex to index
+      this.coinDataBuffer.copyWithin(
+        index * 2,
+        lastIndex * 2,
+        (lastIndex + 1) * 2
       );
 
       // Update mappings for the moved coin
@@ -148,16 +205,22 @@ export class CoinMeshManager {
   public updateInstances(): void {
     if (this.activeCoins === 0) {
       this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
+      this.prototypeMesh.thinInstanceSetBuffer("coinData", null);
       return;
     }
 
     // Pass the active portion of the buffer to BabylonJS
-    // Using subarray is efficient (creates a view, copies nothing)
-    const activeData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
+    const activeMatrixData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
+    this.prototypeMesh.thinInstanceSetBuffer("matrix", activeMatrixData, 16, false);
 
-    // Update the thin instance buffer
-    // 16 floats per instance, 4th arg false = don't instantiate new buffer if possible (static optimization)
-    this.prototypeMesh.thinInstanceSetBuffer("matrix", activeData, 16, false);
+    const activeCoinData = this.coinDataBuffer.subarray(0, this.activeCoins * 2);
+    this.prototypeMesh.thinInstanceSetBuffer("coinData", activeCoinData, 2, false);
+
+    // Update time uniform for glow animation (only on custom ShaderMaterial)
+    const mat = this.prototypeMesh.material;
+    if (mat instanceof ShaderMaterial) {
+      mat.setFloat("time", performance.now() / 1000);
+    }
   }
 
   private writeMatrixToBuffer(
@@ -191,6 +254,10 @@ export class CoinMeshManager {
     newMatrixBuffer.set(this.matrixBuffer);
     this.matrixBuffer = newMatrixBuffer;
 
+    const newCoinDataBuffer = new Float32Array(newCapacity * 2);
+    newCoinDataBuffer.set(this.coinDataBuffer);
+    this.coinDataBuffer = newCoinDataBuffer;
+
     const newIndexToId = new Int32Array(newCapacity);
     newIndexToId.set(this.indexToId);
     this.indexToId = newIndexToId;
@@ -198,8 +265,21 @@ export class CoinMeshManager {
     this.capacity = newCapacity;
   }
 
+  getCoinTexture(): DynamicTexture {
+    return this.singleSymbolTexture;
+  }
+
   getCoinCount(): number {
     return this.activeCoins;
+  }
+
+  /** Get world position of a coin by id (reads translation from matrix buffer). */
+  getCoinPosition(id: number): [number, number, number] | null {
+    const index = this.idToIndex.get(id);
+    if (index === undefined) return null;
+    const off = index * 16;
+    // Translation is at indices 12, 13, 14 of the 4x4 row-major matrix
+    return [this.matrixBuffer[off + 12], this.matrixBuffer[off + 13], this.matrixBuffer[off + 14]];
   }
 
   clear(): void {

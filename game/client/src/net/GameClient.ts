@@ -163,6 +163,31 @@ export class GameClient {
     this.wsClient.send(message);
   }
 
+  tornado(x: number, z: number): void {
+    const message: ClientMessage = {
+      op: "tornado",
+      x,
+      z,
+    };
+    this.wsClient.send(message);
+  }
+
+  explosion(x: number, z: number): void {
+    const message: ClientMessage = {
+      op: "explosion",
+      x,
+      z,
+    };
+    this.wsClient.send(message);
+  }
+
+  lightning(): void {
+    const message: ClientMessage = {
+      op: "lightning",
+    };
+    this.wsClient.send(message);
+  }
+
   clearAll(): void {
     this.wsClient.send({ op: "clear_all" } as ClientMessage);
   }

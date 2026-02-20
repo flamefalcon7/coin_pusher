@@ -18,14 +18,14 @@ export class PostProcessing {
 
     // Image processing: contrast + exposure + saturation
     this.pipeline.imageProcessingEnabled = true;
-    this.pipeline.imageProcessing.contrast = 1.4;
-    this.pipeline.imageProcessing.exposure = 0.95;
+    this.pipeline.imageProcessing.contrast = 1.5;
+    this.pipeline.imageProcessing.exposure = 1.05;
     this.pipeline.imageProcessing.colorCurvesEnabled = true;
 
     // Subtle bloom — amplifies shock effect glow
     this.pipeline.bloomEnabled = true;
     this.pipeline.bloomThreshold = 0.7;
-    this.pipeline.bloomWeight = 0.15;
+    this.pipeline.bloomWeight = 0.25;
     this.pipeline.bloomKernel = 64;
 
     // FXAA for smoother outlines

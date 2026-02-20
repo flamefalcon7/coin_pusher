@@ -8,9 +8,9 @@ interface ConnectionStatusProps {
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ status }) => {
   const statusText = {
-    connecting: '🔄 Connecting...',
-    connected: '✅ Connected',
-    disconnected: '❌ Disconnected'
+    connecting: 'Connecting...',
+    connected: 'Connected',
+    disconnected: 'Disconnected'
   };
 
   return (
@@ -19,4 +19,3 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ status }) =>
     </div>
   );
 };
-

@@ -60,6 +60,7 @@ type EditorObject struct {
 type ClientMessage struct {
 	Op         string         `msgpack:"op"`
 	X          float64        `msgpack:"x,omitempty"`
+	Z          float64        `msgpack:"z,omitempty"`
 	Type       string         `msgpack:"type,omitempty"`
 	ClientTime int64          `msgpack:"clientTime,omitempty"`
 	Objects    []EditorObject `msgpack:"objects,omitempty"`

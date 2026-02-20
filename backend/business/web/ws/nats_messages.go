@@ -22,6 +22,25 @@ type NATSShockCmd struct {
 	UserID string `json:"user_id"`
 }
 
+// NATSTornadoCmd is published to game.{room}.cmd.tornado.
+type NATSTornadoCmd struct {
+	UserID string  `json:"user_id"`
+	X      float64 `json:"x"`
+	Z      float64 `json:"z"`
+}
+
+// NATSExplosionCmd is published to game.{room}.cmd.explosion.
+type NATSExplosionCmd struct {
+	UserID string  `json:"user_id"`
+	X      float64 `json:"x"`
+	Z      float64 `json:"z"`
+}
+
+// NATSLightningCmd is published to game.{room}.cmd.lightning.
+type NATSLightningCmd struct {
+	UserID string `json:"user_id"`
+}
+
 // NATSClearAllCmd is published to game.{room}.cmd.clear_all.
 type NATSClearAllCmd struct {
 	UserID string `json:"user_id"`

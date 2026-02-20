@@ -11,6 +11,8 @@ import {
 } from "@babylonjs/core";
 import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
+import { createStoneWallTexture } from "./WallTexture";
+import { CastleDecorations } from "./CastleDecorations";
 
 function createCellMat(name: string, color: Color3, scene: Scene): CellMaterial {
   const mat = new CellMaterial(name, scene);
@@ -33,6 +35,7 @@ export class StaticMeshes {
     // CellMaterial for platform, walls, pins — colors overridden by theme
     const platformMat = createCellMat("platformMat", new Color3(0.12, 0.12, 0.18), this.scene);
     const wallMat = createCellMat("wallMat", new Color3(0.12, 0.32, 1.0), this.scene);
+    wallMat.diffuseTexture = createStoneWallTexture(this.scene, "wallStoneTex", 12345);
     const rampMat = createCellMat("rampMat", new Color3(0.45, 0.2, 0.1), this.scene);
     rampMat.backFaceCulling = false;
 
@@ -44,6 +47,10 @@ export class StaticMeshes {
 
     // Angled side walls
     this.createAngledSideWalls(wallMat);
+
+    // Castle decorations (battlements + turrets on top of existing walls)
+    // Also applies stone material to wall meshes
+    new CastleDecorations(this.scene);
 
     // Drop zone indicator (stays StandardMaterial — needs alpha)
     const {

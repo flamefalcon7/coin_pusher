@@ -23,6 +23,22 @@ export type ShockCommand = {
   user_id: string;
 };
 
+export type TornadoCommand = {
+  user_id: string;
+  x: number;
+  z: number;
+};
+
+export type ExplosionCommand = {
+  user_id: string;
+  x: number;
+  z: number;
+};
+
+export type LightningCommand = {
+  user_id: string;
+};
+
 export type ClearAllCommand = {
   user_id: string;
 };
@@ -92,6 +108,42 @@ export class NATSClient {
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as ShockCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to tornado commands (JSON encoded)
+  subscribeTornado(handler: (cmd: TornadoCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.tornado`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as TornadoCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to explosion commands (JSON encoded)
+  subscribeExplosion(handler: (cmd: ExplosionCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.explosion`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as ExplosionCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to lightning commands (JSON encoded)
+  subscribeLightning(handler: (cmd: LightningCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.lightning`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as LightningCommand;
         handler(cmd);
       }
     })();

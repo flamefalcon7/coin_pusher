@@ -1,0 +1,201 @@
+.editor-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 100%;
+  background: rgba(20, 20, 30, 0.92);
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.editor-panel-header {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: bold;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #8bf;
+}
+
+/* Toolbar */
+.editor-toolbar {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.editor-toolbar-row {
+  display: flex;
+  gap: 4px;
+}
+
+.editor-toolbar-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.editor-btn {
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 11px;
+  transition: background 0.15s;
+  flex: 1;
+}
+
+.editor-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.editor-btn.active {
+  background: rgba(100, 140, 255, 0.3);
+  border-color: rgba(100, 140, 255, 0.5);
+  color: #adf;
+}
+
+.editor-btn.danger {
+  color: #f88;
+}
+
+.editor-btn.danger:hover {
+  background: rgba(255, 80, 80, 0.2);
+}
+
+/* Object List */
+.editor-object-list {
+  flex: 1;
+  overflow-y: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.editor-object-list-header {
+  padding: 6px 10px;
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.editor-object-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.1s;
+}
+
+.editor-object-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.editor-object-item.selected {
+  background: rgba(100, 140, 255, 0.2);
+  color: #adf;
+}
+
+.editor-object-item-type {
+  font-size: 10px;
+  color: #777;
+  width: 50px;
+}
+
+.editor-object-item-name {
+  flex: 1;
+}
+
+/* Property Panel */
+.editor-property-panel {
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.editor-property-group {
+  margin-bottom: 8px;
+}
+
+.editor-property-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.editor-property-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.editor-property-axis {
+  font-size: 10px;
+  color: #666;
+  width: 10px;
+  text-align: center;
+}
+
+.editor-property-input {
+  width: 60px;
+  padding: 3px 4px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #ddd;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  font-family: monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+.editor-property-input:focus {
+  outline: none;
+  border-color: rgba(100, 140, 255, 0.5);
+}
+
+/* Toggle button */
+.editor-toggle-btn {
+  position: absolute;
+  top: 50px;
+  left: 10px;
+  z-index: 201;
+  padding: 6px 12px;
+  background: rgba(20, 20, 30, 0.85);
+  color: #8bf;
+  border: 1px solid rgba(100, 140, 255, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+  transition: background 0.15s;
+}
+
+.editor-toggle-btn:hover {
+  background: rgba(40, 40, 60, 0.9);
+}
+
+.editor-toggle-btn.active {
+  background: rgba(100, 140, 255, 0.3);
+  border-color: rgba(100, 140, 255, 0.6);
+}
+
+.editor-empty {
+  padding: 12px;
+  color: #666;
+  text-align: center;
+  font-style: italic;
+}
