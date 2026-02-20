@@ -1,4 +1,5 @@
-import { Effect, ShaderMaterial, Scene, Color3, Vector3, BaseTexture } from "@babylonjs/core";
+import { Effect, ShaderMaterial, Scene, Color3, Vector2, Vector3, Texture } from "@babylonjs/core";
+import { deriveShadow, deriveHighlight } from "./ToonTheme";
 
 // ── Vertex Shader ──────────────────────────────────────────────────────────
 const VERTEX_SHADER = `
@@ -7,7 +8,7 @@ precision highp float;
 // Attributes
 attribute vec3 position;
 attribute vec3 normal;
-#ifdef USE_TEXTURE
+#ifdef DIFFUSE_TEX
 attribute vec2 uv;
 #endif
 
@@ -16,10 +17,6 @@ attribute vec4 world0;
 attribute vec4 world1;
 attribute vec4 world2;
 attribute vec4 world3;
-#endif
-
-#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
-attribute vec2 coinData;
 #endif
 
 // Uniforms
@@ -31,12 +28,8 @@ uniform mat4 world;
 // Varyings
 varying vec3 vWorldNormal;
 varying vec3 vWorldPos;
-#ifdef USE_TEXTURE
+#ifdef DIFFUSE_TEX
 varying vec2 vUV;
-#endif
-
-#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
-varying vec2 vCoinData;
 #endif
 
 void main() {
@@ -53,12 +46,8 @@ void main() {
     mat3 normalMat = mat3(worldMat);
     vWorldNormal = normalize(normalMat * normal);
 
-#ifdef USE_TEXTURE
+#ifdef DIFFUSE_TEX
     vUV = uv;
-#endif
-
-#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
-    vCoinData = coinData;
 #endif
 
     gl_Position = viewProjection * worldPos;
@@ -71,65 +60,94 @@ precision highp float;
 
 varying vec3 vWorldNormal;
 varying vec3 vWorldPos;
-#ifdef USE_TEXTURE
-varying vec2 vUV;
-uniform sampler2D coinTexture;
-uniform float time;
-#endif
 
-#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
-varying vec2 vCoinData;
+#ifdef DIFFUSE_TEX
+varying vec2 vUV;
+uniform sampler2D diffuseTex;
+uniform vec2 diffuseTexScale;
 #endif
 
 uniform vec3 baseColor;
-uniform vec3 shadowTint;
+uniform vec3 shadowColor;
+uniform vec3 highlightColor;
+uniform vec3 rimColor;
 uniform vec3 lightDirection;
 uniform vec3 cameraPosition;
 uniform vec3 emissiveColor;
+uniform float rimPower;
+uniform float specPower;
+uniform float time;
+uniform float useCelShading;
 
 void main() {
     vec3 N = normalize(vWorldNormal);
     vec3 L = normalize(-lightDirection);
-
-    // 3-band stepped cel shading — keep colors bold, shadows subtle
-    float NdotL = dot(N, L);
-    float intensity;
-    if (NdotL > 0.3) {
-        intensity = 1.0;
-    } else if (NdotL > -0.1) {
-        intensity = 0.85;
-    } else {
-        intensity = 0.65;
-    }
-
-    // Shadows = darkened base color blended with subtle tint
-    vec3 shadowColor = baseColor * 0.55 + shadowTint * 0.45;
-    vec3 litColor = mix(shadowColor, baseColor, intensity);
-
-    // Fresnel rim light
     vec3 V = normalize(cameraPosition - vWorldPos);
-    float rim = 1.0 - max(dot(N, V), 0.0);
-    rim = smoothstep(0.55, 0.75, rim);
-    litColor += rim * 0.25;
+    vec3 H = normalize(L + V);
 
-    // Emissive (for shock effect glow)
-    litColor += emissiveColor;
+    float NdotL = dot(N, L);
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotH = max(dot(N, H), 0.0);
 
-#ifdef USE_TEXTURE
-    vec2 atlasUV = vUV;
-#ifdef THIN_INSTANCES
-    float col = mod(vCoinData.x, 4.0);
-    float row = floor(vCoinData.x / 4.0);
-    atlasUV = (vUV + vec2(col, row)) / 4.0;
+    // Albedo — start with base color, modulate by diffuse texture if present
+    vec3 albedo = baseColor;
+#ifdef DIFFUSE_TEX
+    albedo *= texture2D(diffuseTex, vUV * diffuseTexScale).rgb;
 #endif
-    float symbol = texture2D(coinTexture, atlasUV).r;
-    litColor += symbol * 0.2;
-#ifdef THIN_INSTANCES
-    if (vCoinData.y > 0.5) {
-        litColor += baseColor * 0.4 * (0.7 + 0.3 * sin(time * 4.0));
+
+    vec3 litColor;
+
+    if (useCelShading > 0.5) {
+        // ── 4-band cel shading (HiFi Rush style) ─────────────────────
+        float intensity;
+        if (NdotL > 0.55) {
+            intensity = 1.0;
+        } else if (NdotL > 0.05) {
+            intensity = 0.85;
+        } else if (NdotL > -0.3) {
+            intensity = 0.65;
+        } else {
+            intensity = 0.45;
+        }
+
+        // 4-band color mapping: shadow → base → highlight
+        vec3 bandColor;
+        if (intensity > 0.9) {
+            bandColor = mix(albedo, highlightColor, 0.15);
+        } else if (intensity > 0.75) {
+            bandColor = albedo;
+        } else if (intensity > 0.55) {
+            bandColor = mix(shadowColor, albedo, 0.5);
+        } else {
+            bandColor = shadowColor;
+        }
+        litColor = bandColor;
+
+        // Hard-edge specular
+        float spec = pow(NdotH, specPower);
+        float specMask = smoothstep(0.4, 0.5, spec);
+        litColor += specMask * highlightColor * 0.3;
+    } else {
+        // ── Smooth Lambert fallback ──────────────────────────────────
+        float diffuse = clamp(NdotL * 0.5 + 0.5, 0.15, 1.0);
+        litColor = mix(shadowColor, albedo, diffuse);
+
+        // Smooth specular
+        float spec = pow(NdotH, specPower);
+        litColor += spec * 0.15;
     }
-#endif
-#endif
+
+    // ── Animated rim light ───────────────────────────────────────────
+    float rim = pow(1.0 - NdotV, rimPower);
+    float rimAnim = 0.7 + 0.3 * sin(time * 3.0 + vWorldPos.y * 2.0);
+    litColor += rim * rimColor * rimAnim * 0.4;
+
+    // ── Fresnel glow (subtle additive) ───────────────────────────────
+    float fresnel = pow(1.0 - NdotV, 3.0) * 0.08;
+    litColor += fresnel;
+
+    // ── Emissive (for shock effect glow) ─────────────────────────────
+    litColor += emissiveColor;
 
     gl_FragColor = vec4(litColor, 1.0);
 }
@@ -142,9 +160,14 @@ Effect.ShadersStore["toonFragmentShader"] = FRAGMENT_SHADER;
 export interface ToonMaterialOptions {
   name?: string;
   baseColor?: Color3;
-  shadowTint?: Color3;
+  shadowColor?: Color3;
+  highlightColor?: Color3;
+  rimColor?: Color3;
+  rimPower?: number;
+  specPower?: number;
   thinInstances?: boolean;
-  texture?: BaseTexture;
+  diffuseTexture?: Texture;
+  useCelShading?: boolean;
 }
 
 export function createToonMaterial(
@@ -154,9 +177,15 @@ export function createToonMaterial(
   const {
     name = "toonMat",
     baseColor = new Color3(0.7, 0.7, 0.7),
-    shadowTint = new Color3(0.25, 0.22, 0.32),
     thinInstances = false,
+    rimPower = 3.0,
+    specPower = 32.0,
+    useCelShading = true,
   } = options;
+
+  const shadowColor = options.shadowColor ?? deriveShadow(baseColor, new Color3(0.25, 0.22, 0.32));
+  const highlightColor = options.highlightColor ?? deriveHighlight(baseColor);
+  const rimColor = options.rimColor ?? new Color3(0.8, 0.8, 0.9);
 
   const defines: string[] = [];
   if (thinInstances) {
@@ -166,32 +195,34 @@ export function createToonMaterial(
   const attribs = ["position", "normal"];
   const samplers: string[] = [];
 
-  if (options.texture) {
-    defines.push("#define USE_TEXTURE");
+  if (options.diffuseTexture) {
+    defines.push("#define DIFFUSE_TEX");
     attribs.push("uv");
-    samplers.push("coinTexture");
+    samplers.push("diffuseTex");
   }
 
   if (thinInstances) {
     attribs.push("world0", "world1", "world2", "world3");
   }
 
-  if (options.texture && thinInstances) {
-    attribs.push("coinData");
-  }
-
   const uniforms = [
     "world",
     "viewProjection",
     "baseColor",
-    "shadowTint",
+    "shadowColor",
+    "highlightColor",
+    "rimColor",
     "lightDirection",
     "cameraPosition",
     "emissiveColor",
+    "rimPower",
+    "specPower",
+    "time",
+    "useCelShading",
   ];
 
-  if (options.texture) {
-    uniforms.push("time");
+  if (options.diffuseTexture) {
+    uniforms.push("diffuseTexScale");
   }
 
   const mat = new ShaderMaterial(name, scene, "toon", {
@@ -202,16 +233,40 @@ export function createToonMaterial(
   });
 
   mat.setColor3("baseColor", baseColor);
-  mat.setColor3("shadowTint", shadowTint);
+  mat.setColor3("shadowColor", shadowColor);
+  mat.setColor3("highlightColor", highlightColor);
+  mat.setColor3("rimColor", rimColor);
   mat.setColor3("emissiveColor", Color3.Black());
   mat.setVector3("lightDirection", new Vector3(0.3, -0.7, 0.5));
+  mat.setFloat("rimPower", rimPower);
+  mat.setFloat("specPower", specPower);
+  mat.setFloat("time", 0);
+  mat.setFloat("useCelShading", useCelShading ? 1.0 : 0.0);
 
-  if (options.texture) {
-    mat.setTexture("coinTexture", options.texture);
+  if (options.diffuseTexture) {
+    mat.setTexture("diffuseTex", options.diffuseTexture);
+    mat.setVector2("diffuseTexScale", new Vector2(
+      options.diffuseTexture.uScale ?? 1,
+      options.diffuseTexture.vScale ?? 1,
+    ));
   }
 
   // Backface culling on by default
   mat.backFaceCulling = true;
 
   return mat;
+}
+
+/** Convenience wrapper: create a toon material with common defaults. */
+export function createToonMat(
+  name: string,
+  color: Color3,
+  scene: Scene,
+  opts?: Partial<ToonMaterialOptions>,
+): ShaderMaterial {
+  return createToonMaterial(scene, {
+    name,
+    baseColor: color,
+    ...opts,
+  });
 }
