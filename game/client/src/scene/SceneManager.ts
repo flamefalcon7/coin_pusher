@@ -1,4 +1,4 @@
-import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, StandardMaterial } from "@babylonjs/core";
+import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
@@ -7,6 +7,7 @@ import { PusherMesh } from "./PusherMesh";
 import { CoinMeshManager } from "./CoinMeshManager";
 import { SoundManager } from "./SoundManager";
 import { PostProcessing } from "./PostProcessing";
+import { VFXManager } from "./VFXManager";
 import { THEMES, ToonTheme } from "./ToonTheme";
 
 
@@ -19,6 +20,7 @@ export class SceneManager {
   private pusherMesh: PusherMesh;
   private coinManager: CoinMeshManager;
   private soundManager: SoundManager;
+  private vfxManager: VFXManager;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -32,7 +34,7 @@ export class SceneManager {
   private coinStdMat: StandardMaterial | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
-    console.log("🎮 Initializing BabylonJS scene...");
+    console.log("Initializing BabylonJS scene...");
 
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
@@ -42,8 +44,6 @@ export class SceneManager {
     this.scene = new Scene(this.engine);
     this.scene.useRightHandedSystem = true;
     this.scene.clearColor = new Color4(0.02, 0.02, 0.06, 1.0);
-
-    console.log("✅ Right-handed coordinate system enabled");
 
     new CameraSetup(this.scene, canvas);
     new Lighting(this.scene);
@@ -68,10 +68,16 @@ export class SceneManager {
       this.coinCellMat = coinMat;
     }
 
-    // Apply default theme
+    // Initialize VFX
+    this.vfxManager = new VFXManager(this.scene);
+
+    // Apply default theme (also initializes VFX after theme colors are set)
     this.applyTheme(THEMES[0]);
 
-    console.log("✅ Scene initialized successfully");
+    // Start VFX after theme is applied so wall colors are cached correctly
+    this.vfxManager.init();
+
+    console.log("Scene initialized successfully");
 
     window.addEventListener("resize", () => {
       this.engine.resize();
@@ -109,7 +115,10 @@ export class SceneManager {
       this.coinStdMat.diffuseColor = theme.coin;
     }
 
-    console.log(`🎨 Theme applied: ${theme.label}`);
+    // Refresh VFX wall color cache after theme change
+    this.vfxManager.refreshWallColor();
+
+    console.log(`Theme applied: ${theme.label}`);
   }
 
   cycleTheme(): string {
@@ -135,7 +144,10 @@ export class SceneManager {
       this.switchToStandard(theme);
     }
 
-    console.log(`🎨 Cel shading: ${this.celShadingEnabled ? "ON" : "OFF"}`);
+    // Refresh VFX wall reference since material instance may have changed
+    this.vfxManager.refreshWallColor();
+
+    console.log(`Cel shading: ${this.celShadingEnabled ? "ON" : "OFF"}`);
     return this.celShadingEnabled;
   }
 
@@ -156,6 +168,11 @@ export class SceneManager {
       if (!this.standardMats.has(name)) {
         const stdMat = new StandardMaterial(`${name}_std`, this.scene);
         stdMat.specularColor = new Color3(0.2, 0.2, 0.2);
+        // Copy diffuseTexture from cel material if it has one
+        const cellMat = this.cellMats.get(name);
+        if (cellMat?.diffuseTexture) {
+          stdMat.diffuseTexture = cellMat.diffuseTexture;
+        }
         this.standardMats.set(name, stdMat);
       }
       this.standardMats.get(name)!.diffuseColor = colorMap[name];
@@ -166,6 +183,10 @@ export class SceneManager {
       this.coinStdMat = new StandardMaterial("coinMat_std", this.scene);
       this.coinStdMat.specularColor = new Color3(0.8, 0.7, 0.3);
       this.coinStdMat.specularPower = 64;
+      // Apply ₿ texture as emissive so it glows on the coin face
+      const coinTex = this.coinManager.getCoinTexture();
+      this.coinStdMat.emissiveTexture = coinTex;
+      this.coinStdMat.emissiveColor = new Color3(0.2, 0.2, 0.2);
     }
     this.coinStdMat.diffuseColor = theme.coin;
 
@@ -209,7 +230,6 @@ export class SceneManager {
     if (this.running) return;
 
     this.running = true;
-    console.log("▶️  Render loop started");
 
     this.engine.runRenderLoop(() => {
       this.scene.render();
@@ -226,13 +246,13 @@ export class SceneManager {
 
     this.running = false;
     this.engine.stopRenderLoop();
-    console.log("⏸️  Render loop stopped");
   }
 
   // ── Coin & Pusher API ────────────────────────────────────────────────────
 
   updatePusherPosition(z: number): void {
     this.pusherMesh.updatePosition(z);
+    this.vfxManager.updatePusherGlow(z);
   }
 
   addCoin(
@@ -241,6 +261,8 @@ export class SceneManager {
     rot: [number, number, number, number]
   ): void {
     this.coinManager.addCoin(id, pos, rot);
+    // VFX: landing ring at coin position
+    this.vfxManager.playCoinLand(new Vector3(pos[0], pos[1], pos[2]));
   }
 
   updateCoin(
@@ -249,6 +271,15 @@ export class SceneManager {
     rot: [number, number, number, number]
   ): void {
     this.coinManager.updateCoin(id, pos, rot);
+  }
+
+  /** Remove a coin and return its last position (for VFX). */
+  removeCoinWithEffect(id: number): void {
+    const pos = this.coinManager.getCoinPosition(id);
+    if (pos) {
+      this.vfxManager.playCoinDespawn(new Vector3(pos[0], pos[1], pos[2]));
+    }
+    this.coinManager.removeCoin(id);
   }
 
   removeCoin(id: number): void {
@@ -275,12 +306,16 @@ export class SceneManager {
     return this.soundManager;
   }
 
+  getVFXManager(): VFXManager {
+    return this.vfxManager;
+  }
+
   dispose(): void {
     this.stopRenderLoop();
+    this.vfxManager.dispose();
     this.soundManager.dispose();
     this.scene.dispose();
     this.engine.dispose();
-    console.log("🗑️  Scene disposed");
   }
 
   // ── Shock Effect ─────────────────────────────────────────────────────────
@@ -335,6 +370,116 @@ export class SceneManager {
         mat.diffuseColor = Color3.Lerp(flashColor, origColor, t);
       }, fadeInterval);
     }
+
+    // 3. VFX: ground wave + pin particles
+    this.vfxManager.playShockWave();
+  }
+
+  // ── Tornado Effect ──────────────────────────────────────────────────────
+
+  playTornadoEffect(position: Vector3): void {
+    this.vfxManager.playTornado(position, 4.0);
+    this.soundManager.playTornado();
+
+    // Gentle camera wobble (weaker than shock shake)
+    const camera = this.scene.activeCamera as ArcRotateCamera | null;
+    if (camera) {
+      const origTarget = camera.target.clone();
+      const wobbleIntensity = 0.012;
+      const wobbleDuration = 4000;
+      const wobbleInterval = 50;
+      let elapsed = 0;
+
+      const wobbleTimer = setInterval(() => {
+        elapsed += wobbleInterval;
+        if (elapsed >= wobbleDuration) {
+          camera.target.copyFrom(origTarget);
+          clearInterval(wobbleTimer);
+          return;
+        }
+        // Ramp down over time
+        const t = 1 - elapsed / wobbleDuration;
+        camera.target.x = origTarget.x + (Math.random() - 0.5) * wobbleIntensity * t;
+        camera.target.y = origTarget.y + (Math.random() - 0.5) * wobbleIntensity * t;
+      }, wobbleInterval);
+    }
+  }
+
+  // ── Explosion Effect ────────────────────────────────────────────────────
+
+  playExplosionEffect(position: Vector3): void {
+    this.vfxManager.playExplosion(position);
+    this.soundManager.playExplosion();
+
+    // Heavy camera shake — strong initial punch, fast decay
+    const camera = this.scene.activeCamera as ArcRotateCamera | null;
+    if (camera) {
+      const origTarget = camera.target.clone();
+      const shakeIntensity = 0.08;
+      const shakeDuration = 400;
+      const shakeInterval = 16; // ~60fps
+      let elapsed = 0;
+
+      const shakeTimer = setInterval(() => {
+        elapsed += shakeInterval;
+        if (elapsed >= shakeDuration) {
+          camera.target.copyFrom(origTarget);
+          clearInterval(shakeTimer);
+          return;
+        }
+        // Exponential decay for snappy "punch" feel
+        const t = Math.exp(-elapsed / 80) ;
+        camera.target.x = origTarget.x + (Math.random() - 0.5) * shakeIntensity * t;
+        camera.target.y = origTarget.y + (Math.random() - 0.5) * shakeIntensity * t;
+      }, shakeInterval);
+    }
+  }
+
+  // ── Lightning Effect ───────────────────────────────────────────────────
+
+  playLightningEffect(): void {
+    this.vfxManager.playLightning(3.0);
+    this.soundManager.playLightning();
+
+    // Gentle camera wobble over 3s (like tornado), linear decay
+    const camera = this.scene.activeCamera as ArcRotateCamera | null;
+    if (camera) {
+      const origTarget = camera.target.clone();
+      const wobbleIntensity = 0.02;
+      const wobbleDuration = 3000;
+      const wobbleInterval = 50;
+      let elapsed = 0;
+
+      const wobbleTimer = setInterval(() => {
+        elapsed += wobbleInterval;
+        if (elapsed >= wobbleDuration) {
+          camera.target.copyFrom(origTarget);
+          clearInterval(wobbleTimer);
+          return;
+        }
+        const t = 1 - elapsed / wobbleDuration;
+        camera.target.x = origTarget.x + (Math.random() - 0.5) * wobbleIntensity * t;
+        camera.target.y = origTarget.y + (Math.random() - 0.5) * wobbleIntensity * t;
+      }, wobbleInterval);
+    }
+  }
+
+  // ── VFX Triggers (called from App) ─────────────────────────────────────
+
+  playCoinInsertVFX(slotIndex: number): void {
+    this.vfxManager.playCoinInsert(slotIndex);
+  }
+
+  playComboVFX(count: number): void {
+    this.vfxManager.playCombo(count);
+  }
+
+  playRewardCoinRain(duration?: number): void {
+    this.vfxManager.playRewardCoinRain(duration);
+  }
+
+  playRewardTicketRain(duration?: number): void {
+    this.vfxManager.playRewardTicketRain(duration);
   }
 
   getScene(): Scene {

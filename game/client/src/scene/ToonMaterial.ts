@@ -1,4 +1,4 @@
-import { Effect, ShaderMaterial, Scene, Color3, Vector3 } from "@babylonjs/core";
+import { Effect, ShaderMaterial, Scene, Color3, Vector3, BaseTexture } from "@babylonjs/core";
 
 // ── Vertex Shader ──────────────────────────────────────────────────────────
 const VERTEX_SHADER = `
@@ -7,12 +7,19 @@ precision highp float;
 // Attributes
 attribute vec3 position;
 attribute vec3 normal;
+#ifdef USE_TEXTURE
+attribute vec2 uv;
+#endif
 
 #ifdef THIN_INSTANCES
 attribute vec4 world0;
 attribute vec4 world1;
 attribute vec4 world2;
 attribute vec4 world3;
+#endif
+
+#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
+attribute vec2 coinData;
 #endif
 
 // Uniforms
@@ -24,6 +31,13 @@ uniform mat4 world;
 // Varyings
 varying vec3 vWorldNormal;
 varying vec3 vWorldPos;
+#ifdef USE_TEXTURE
+varying vec2 vUV;
+#endif
+
+#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
+varying vec2 vCoinData;
+#endif
 
 void main() {
 #ifdef THIN_INSTANCES
@@ -39,6 +53,14 @@ void main() {
     mat3 normalMat = mat3(worldMat);
     vWorldNormal = normalize(normalMat * normal);
 
+#ifdef USE_TEXTURE
+    vUV = uv;
+#endif
+
+#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
+    vCoinData = coinData;
+#endif
+
     gl_Position = viewProjection * worldPos;
 }
 `;
@@ -49,6 +71,15 @@ precision highp float;
 
 varying vec3 vWorldNormal;
 varying vec3 vWorldPos;
+#ifdef USE_TEXTURE
+varying vec2 vUV;
+uniform sampler2D coinTexture;
+uniform float time;
+#endif
+
+#if defined(USE_TEXTURE) && defined(THIN_INSTANCES)
+varying vec2 vCoinData;
+#endif
 
 uniform vec3 baseColor;
 uniform vec3 shadowTint;
@@ -84,6 +115,22 @@ void main() {
     // Emissive (for shock effect glow)
     litColor += emissiveColor;
 
+#ifdef USE_TEXTURE
+    vec2 atlasUV = vUV;
+#ifdef THIN_INSTANCES
+    float col = mod(vCoinData.x, 4.0);
+    float row = floor(vCoinData.x / 4.0);
+    atlasUV = (vUV + vec2(col, row)) / 4.0;
+#endif
+    float symbol = texture2D(coinTexture, atlasUV).r;
+    litColor += symbol * 0.2;
+#ifdef THIN_INSTANCES
+    if (vCoinData.y > 0.5) {
+        litColor += baseColor * 0.4 * (0.7 + 0.3 * sin(time * 4.0));
+    }
+#endif
+#endif
+
     gl_FragColor = vec4(litColor, 1.0);
 }
 `;
@@ -97,6 +144,7 @@ export interface ToonMaterialOptions {
   baseColor?: Color3;
   shadowTint?: Color3;
   thinInstances?: boolean;
+  texture?: BaseTexture;
 }
 
 export function createToonMaterial(
@@ -115,19 +163,41 @@ export function createToonMaterial(
     defines.push("#define THIN_INSTANCES");
   }
 
+  const attribs = ["position", "normal"];
+  const samplers: string[] = [];
+
+  if (options.texture) {
+    defines.push("#define USE_TEXTURE");
+    attribs.push("uv");
+    samplers.push("coinTexture");
+  }
+
+  if (thinInstances) {
+    attribs.push("world0", "world1", "world2", "world3");
+  }
+
+  if (options.texture && thinInstances) {
+    attribs.push("coinData");
+  }
+
+  const uniforms = [
+    "world",
+    "viewProjection",
+    "baseColor",
+    "shadowTint",
+    "lightDirection",
+    "cameraPosition",
+    "emissiveColor",
+  ];
+
+  if (options.texture) {
+    uniforms.push("time");
+  }
+
   const mat = new ShaderMaterial(name, scene, "toon", {
-    attributes: thinInstances
-      ? ["position", "normal", "world0", "world1", "world2", "world3"]
-      : ["position", "normal"],
-    uniforms: [
-      "world",
-      "viewProjection",
-      "baseColor",
-      "shadowTint",
-      "lightDirection",
-      "cameraPosition",
-      "emissiveColor",
-    ],
+    attributes: attribs,
+    uniforms,
+    samplers,
     defines,
   });
 
@@ -135,6 +205,10 @@ export function createToonMaterial(
   mat.setColor3("shadowTint", shadowTint);
   mat.setColor3("emissiveColor", Color3.Black());
   mat.setVector3("lightDirection", new Vector3(0.3, -0.7, 0.5));
+
+  if (options.texture) {
+    mat.setTexture("coinTexture", options.texture);
+  }
 
   // Backface culling on by default
   mat.backFaceCulling = true;

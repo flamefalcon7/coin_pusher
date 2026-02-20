@@ -12,10 +12,10 @@ export class Lighting {
       scene
     );
 
-    this.light.intensity = 0.5;
-    this.light.diffuse = new Color3(1, 1, 1);
-    this.light.specular = new Color3(0.3, 0.3, 0.3);
-    this.light.groundColor = new Color3(0.3, 0.3, 0.4);
+    this.light.intensity = 0.65;
+    this.light.diffuse = new Color3(1.0, 0.85, 0.95);    // Pink-warm tint
+    this.light.specular = new Color3(0.3, 0.25, 0.3);
+    this.light.groundColor = new Color3(0.15, 0.08, 0.25); // Purple ambient
 
     // Directional light — intensity 0, used only as direction vector for toon shader
     this.dirLight = new DirectionalLight(

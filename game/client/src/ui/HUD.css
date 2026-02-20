@@ -1,0 +1,64 @@
+/* ── HUD (top-center panel with Kenney styling) ─────────────────────── */
+
+.hud {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+  z-index: 10;
+}
+
+.hud-inner {
+  position: relative;
+  background: rgba(26, 14, 46, 0.88);
+  border: 2px solid rgba(232, 150, 32, 0.6);
+  border-radius: 14px;
+  padding: 10px 28px 8px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(245, 230, 184, 0.08);
+}
+
+.hud-title {
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: #E8396B;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(232, 57, 107, 0.5);
+  margin-bottom: 2px;
+}
+
+.hud-coin-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.hud-coin-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+}
+
+.hud-coin-count {
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 30px;
+  font-weight: bold;
+  color: #E89620;
+  line-height: 1.1;
+  text-shadow: 0 0 6px rgba(232, 150, 32, 0.4);
+}
+
+.hud-stats {
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 10px;
+  color: #F5E6B8;
+  opacity: 0.6;
+  margin-top: 2px;
+}

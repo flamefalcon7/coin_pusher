@@ -3,9 +3,12 @@ import "./App.css";
 import { HUD } from "./ui/HUD";
 import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
+import { Toolbar } from "./ui/Toolbar";
+
 import { SceneManager } from "./scene/SceneManager";
 import { GameClient } from "./net/GameClient";
 import { SLOT_CONFIG, RATE_LIMIT_CONFIG, type EditorObjectNet } from "@coin-pusher/shared";
+import { Vector3 } from "@babylonjs/core";
 import { EditorManager, GizmoMode } from "./editor/EditorManager";
 import { EditorPanel } from "./editor/EditorPanel";
 import { EditorObjectData } from "./editor/EditorObject";
@@ -25,9 +28,17 @@ function App() {
   >("disconnected");
   const [buttonDisabled, setButtonDisabled] = useState(false);
   const [shockCooldown, setShockCooldown] = useState(false);
+  const [tornadoCooldown, setTornadoCooldown] = useState(false);
+  const [tornadoTargeting, setTornadoTargeting] = useState(false);
+  const [explosionCooldown, setExplosionCooldown] = useState(false);
+  const [explosionTargeting, setExplosionTargeting] = useState(false);
+  const [lightningCooldown, setLightningCooldown] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [themeName, setThemeName] = useState("Neon");
+  const [themeName, setThemeName] = useState("Psychedelic Pop");
   const [celShading, setCelShading] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [devToolsOpen, setDevToolsOpen] = useState(false);
+
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -141,13 +152,15 @@ function App() {
           let despawnCount = 0;
           for (const id of knownCoins) {
             if (!currentCoinIds.has(id)) {
-              sceneManager.removeCoin(id);
+              sceneManager.removeCoinWithEffect(id);
               knownCoins.delete(id);
               despawnCount++;
             }
           }
           if (despawnCount > 0) {
             sceneManager.getSoundManager().playCoinDespawn(despawnCount);
+            sceneManager.playComboVFX(despawnCount);
+
           }
 
           // Batch update coin instances to GPU
@@ -260,6 +273,7 @@ function App() {
     // Send to server
     gameClientRef.current.insertCoin(x);
     sceneManagerRef.current?.getSoundManager().playCoinInsert();
+    sceneManagerRef.current?.playCoinInsertVFX(slotIndex);
 
     // Visual feedback
     setButtonDisabled(true);
@@ -277,6 +291,76 @@ function App() {
     setTimeout(() => setShockCooldown(false), RATE_LIMIT_CONFIG.SHOCK_COOLDOWN);
   };
 
+  const handleTornadoClick = () => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected() || tornadoCooldown) {
+      return;
+    }
+    setTornadoTargeting(true);
+  };
+
+  const handleTornadoPlace = (x: number, z: number) => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
+    gameClientRef.current.tornado(x, z);
+
+    // Play VFX optimistically
+    const platformY = 0.25 + 0.05 / 2; // PLATFORM.POSITION.y + THICKNESS/2
+    sceneManagerRef.current?.playTornadoEffect(new Vector3(x, platformY, z));
+
+    setTornadoTargeting(false);
+    setTornadoCooldown(true);
+    setTimeout(() => setTornadoCooldown(false), RATE_LIMIT_CONFIG.TORNADO_COOLDOWN);
+  };
+
+  const handleExplosionClick = () => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected() || explosionCooldown) {
+      return;
+    }
+    setExplosionTargeting(true);
+  };
+
+  const handleExplosionPlace = (x: number, z: number) => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
+    gameClientRef.current.explosion(x, z);
+
+    // Play VFX optimistically
+    const platformY = 0.25 + 0.05 / 2; // PLATFORM.POSITION.y + THICKNESS/2
+    sceneManagerRef.current?.playExplosionEffect(new Vector3(x, platformY, z));
+
+    setExplosionTargeting(false);
+    setExplosionCooldown(true);
+    setTimeout(() => setExplosionCooldown(false), RATE_LIMIT_CONFIG.EXPLOSION_COOLDOWN);
+  };
+
+  const handleLightning = () => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected() || lightningCooldown) {
+      return;
+    }
+    gameClientRef.current.lightning();
+    sceneManagerRef.current?.playLightningEffect();
+    setLightningCooldown(true);
+    setTimeout(() => setLightningCooldown(false), RATE_LIMIT_CONFIG.LIGHTNING_COOLDOWN);
+  };
+
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!tornadoTargeting && !explosionTargeting) return;
+
+    const scene = sceneManagerRef.current?.getScene();
+    if (!scene) return;
+
+    const pickResult = scene.pick(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+    if (pickResult?.hit && pickResult.pickedPoint) {
+      if (tornadoTargeting) {
+        handleTornadoPlace(pickResult.pickedPoint.x, pickResult.pickedPoint.z);
+      } else if (explosionTargeting) {
+        handleExplosionPlace(pickResult.pickedPoint.x, pickResult.pickedPoint.z);
+      }
+    } else {
+      // Cancel targeting if clicked outside platform
+      setTornadoTargeting(false);
+      setExplosionTargeting(false);
+    }
+  };
+
   const handleCycleTheme = () => {
     const label = sceneManagerRef.current?.cycleTheme();
     if (label) setThemeName(label);
@@ -285,6 +369,14 @@ function App() {
   const handleToggleCel = () => {
     const enabled = sceneManagerRef.current?.toggleCelShading();
     if (enabled !== undefined) setCelShading(enabled);
+  };
+
+  const handleToggleMute = () => {
+    const sm = sceneManagerRef.current?.getSoundManager();
+    if (sm) {
+      const nowMuted = sm.toggleMute();
+      setMuted(nowMuted);
+    }
   };
 
   const handleTestLoop = () => {
@@ -324,6 +416,30 @@ function App() {
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
+
+      <Toolbar
+        muted={muted}
+        onToggleMute={handleToggleMute}
+        celShading={celShading}
+        onToggleCel={handleToggleCel}
+        themeName={themeName}
+        onCycleTheme={handleCycleTheme}
+        onShock={handleShock}
+        shockDisabled={connectionStatus !== "connected"}
+        shockCooldown={shockCooldown}
+        onTornado={handleTornadoClick}
+        tornadoDisabled={connectionStatus !== "connected"}
+        tornadoCooldown={tornadoCooldown}
+        tornadoTargeting={tornadoTargeting}
+        onExplosion={handleExplosionClick}
+        explosionDisabled={connectionStatus !== "connected"}
+        explosionCooldown={explosionCooldown}
+        explosionTargeting={explosionTargeting}
+        onLightning={handleLightning}
+        lightningDisabled={connectionStatus !== "connected"}
+        lightningCooldown={lightningCooldown}
+      />
+
       <button
         className={`editor-toggle-btn ${editorActive ? "active" : ""}`}
         onClick={toggleEditor}
@@ -340,67 +456,62 @@ function App() {
         />
       )}
       <div id="canvas-container">
-        <canvas ref={canvasRef} id="babylon-canvas" />
+        <canvas
+          ref={canvasRef}
+          id="babylon-canvas"
+          onPointerDown={handleCanvasPointerDown}
+          style={tornadoTargeting || explosionTargeting ? { cursor: "crosshair" } : undefined}
+        />
       </div>
-      <div
-        style={{
-          position: "absolute",
-          top: "10px",
-          right: "10px",
-          zIndex: 100,
-          display: "flex",
-          gap: "8px",
-        }}
-      >
+
+      {/* Dev tools (collapsed by default) */}
+      <div className="dev-tools-corner">
         <button
-          onClick={handleToggleCel}
-          className="theme-button"
+          className="dev-tools-toggle"
+          onClick={() => setDevToolsOpen(!devToolsOpen)}
         >
-          Cel: {celShading ? "ON" : "OFF"}
+          Dev {devToolsOpen ? "▲" : "▼"}
         </button>
-        <button
-          onClick={handleCycleTheme}
-          className="theme-button"
-        >
-          Theme: {themeName}
-        </button>
-        <button
-          onClick={handleShock}
-          disabled={shockCooldown || connectionStatus !== "connected"}
-          className="shock-button"
-        >
-          {shockCooldown ? "Shocking..." : "Shock Pins"}
-        </button>
-        <button
-          onClick={handleTestLoop}
-          disabled={isTesting || connectionStatus !== "connected"}
-          style={{
-            padding: "8px 16px",
-            backgroundColor: isTesting ? "#666" : "#ff4444",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: isTesting ? "not-allowed" : "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          {isTesting ? "Testing..." : "Test: Insert 200 Coins"}
-        </button>
-        <button
-          onClick={() => gameClientRef.current?.clearAll()}
-          disabled={connectionStatus !== "connected"}
-          className="shock-button"
-        >
-          Clear All [0]
-        </button>
-        <button
-          onClick={() => gameClientRef.current?.fillPlatform()}
-          disabled={connectionStatus !== "connected"}
-          className="shock-button"
-        >
-          Fill Platform [9]
-        </button>
+        {devToolsOpen && (
+          <div className="dev-tools-panel">
+            <button
+              onClick={handleTestLoop}
+              disabled={isTesting || connectionStatus !== "connected"}
+              className="dev-button"
+            >
+              {isTesting ? "Testing..." : "Insert 200 Coins"}
+            </button>
+            <button
+              onClick={() => gameClientRef.current?.clearAll()}
+              disabled={connectionStatus !== "connected"}
+              className="dev-button"
+            >
+              Clear All [0]
+            </button>
+            <button
+              onClick={() => gameClientRef.current?.fillPlatform()}
+              disabled={connectionStatus !== "connected"}
+              className="dev-button"
+            >
+              Fill Platform [9]
+            </button>
+            <button
+              onClick={() => sceneManagerRef.current?.playRewardCoinRain()}
+              className="dev-button"
+            >
+              Coin Rain
+            </button>
+            <button
+              onClick={() => sceneManagerRef.current?.playRewardTicketRain()}
+              className="dev-button"
+            >
+              Ticket Rain
+            </button>
+          </div>
+        )}
       </div>
+
+
       <CoinInsertButton
         onClick={handleInsertCoin}
         disabled={buttonDisabled || connectionStatus !== "connected"}

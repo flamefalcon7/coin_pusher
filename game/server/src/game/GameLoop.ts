@@ -9,7 +9,7 @@ import type {
   DespawnMessage,
   StateUpdate,
 } from "@coin-pusher/shared";
-import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
 
 export class GameLoop {
@@ -30,6 +30,19 @@ export class GameLoop {
   // Pre-allocated reusable arrays to reduce GC pressure
   private updates: StateUpdate[] = [];
   private despawnIds: number[] = [];
+
+  // Tornado state
+  private tornadoActive: boolean = false;
+  private tornadoCenter: { x: number; z: number } = { x: 0, z: 0 };
+  private tornadoStartTime: number = 0;
+  private static readonly TORNADO_DURATION = RATE_LIMIT_CONFIG.TORNADO_DURATION;
+  private static readonly TORNADO_RADIUS = 0.4;
+
+  // Lightning storm state
+  private lightningActive: boolean = false;
+  private lightningStartTime: number = 0;
+  private lightningTickCounter: number = 0;
+  private static readonly LIGHTNING_DURATION = 3000; // ms
 
   // Tick timing stats
   private tickTimings: number[] = [];
@@ -95,6 +108,10 @@ export class GameLoop {
     // 1. Update pusher position
     this.pusher.update();
     const tAfterPusher = performance.now();
+
+    // 1b. Update tornado / lightning forces (before physics step)
+    this.updateTornado();
+    this.updateLightning();
 
     // 2. Pre-sleep check for coins (CCD management) BEFORE physics step
     this.coins.forEach((coin) => coin.update());
@@ -437,6 +454,223 @@ export class GameLoop {
 
     console.log(`Filled platform with ${spawned.length} coins`);
     return spawned;
+  }
+
+  startTornado(x: number, z: number): void {
+    this.tornadoActive = true;
+    this.tornadoCenter = { x, z };
+    this.tornadoStartTime = performance.now();
+    console.log(`🌪️  Tornado started at (${x.toFixed(2)}, ${z.toFixed(2)})`);
+  }
+
+  private updateTornado(): void {
+    if (!this.tornadoActive) return;
+
+    const elapsed = performance.now() - this.tornadoStartTime;
+    if (elapsed > GameLoop.TORNADO_DURATION) {
+      this.tornadoActive = false;
+      console.log("🌪️  Tornado ended");
+      return;
+    }
+
+    // Ramp multiplier: ramp up 0→1 in first 0.5s, hold 1.0, ramp down 1→0 in last 0.5s
+    const rampUpEnd = 500;
+    const rampDownStart = GameLoop.TORNADO_DURATION - 500;
+    let ramp = 1.0;
+    if (elapsed < rampUpEnd) {
+      ramp = elapsed / rampUpEnd;
+    } else if (elapsed > rampDownStart) {
+      ramp = (GameLoop.TORNADO_DURATION - elapsed) / 500;
+    }
+
+    const cx = this.tornadoCenter.x;
+    const cz = this.tornadoCenter.z;
+    const radius = GameLoop.TORNADO_RADIUS;
+
+    this.coins.forEach((coin) => {
+      const pos = coin.getPosition();
+      const dx = pos.x - cx;
+      const dz = pos.z - cz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist > radius) return;
+
+      const body = coin.getRigidBody();
+      body.wakeUp();
+
+      const strength = (1 - dist / radius) * ramp;
+
+      // Normalize direction toward center (avoid div by zero)
+      const invDist = dist > 0.001 ? 1 / dist : 0;
+      const nx = -dx * invDist;
+      const nz = -dz * invDist;
+
+      // Centripetal: pull toward center
+      const centripetal = 0.008 * strength;
+      // Tangential: perpendicular in XZ plane (creates spin)
+      const tangential = 0.006 * strength;
+      // Lift: height-capped to keep coins below wall top
+      const maxTornadoY = 0.9;
+      let lift: number;
+      if (pos.y < maxTornadoY) {
+        lift = 0.01 * strength;
+      } else {
+        lift = -0.004 * strength; // push back down
+      }
+
+      body.applyImpulse(
+        {
+          x: nx * centripetal + (-nz) * tangential,
+          y: lift,
+          z: nz * centripetal + nx * tangential,
+        },
+        true,
+      );
+    });
+  }
+
+  /** Instant one-shot explosion: blast coins outward + upward from center. */
+  explode(x: number, z: number): void {
+    const radius = 0.6;
+    let affected = 0;
+
+    this.coins.forEach((coin) => {
+      const pos = coin.getPosition();
+      const dx = pos.x - x;
+      const dz = pos.z - z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist > radius) return;
+
+      const body = coin.getRigidBody();
+      body.wakeUp();
+
+      // Quadratic falloff — center hits much harder than edges
+      const t = 1 - dist / radius;
+      const strength = t * t;
+
+      // Normalize outward direction (avoid div by zero)
+      const invDist = dist > 0.001 ? 1 / dist : 0;
+      const nx = dx * invDist;
+      const nz = dz * invDist;
+
+      // Strong outward blast + upward launch + random scatter
+      body.applyImpulse(
+        {
+          x: nx * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+          y: 0.06 * strength,
+          z: nz * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+        },
+        true,
+      );
+
+      // Random torque for tumbling
+      body.applyTorqueImpulse(
+        {
+          x: (Math.random() - 0.5) * 0.002 * strength,
+          y: (Math.random() - 0.5) * 0.002 * strength,
+          z: (Math.random() - 0.5) * 0.002 * strength,
+        },
+        true,
+      );
+      affected++;
+    });
+
+    if (affected > 0) {
+      console.log(`💥 Explosion at (${x.toFixed(2)}, ${z.toFixed(2)}): ${affected} coins affected`);
+    }
+  }
+
+  /** Start a 3-second sustained lightning storm (like tornado pattern). */
+  lightning(): void {
+    this.lightningActive = true;
+    this.lightningStartTime = performance.now();
+    this.lightningTickCounter = 0;
+    console.log("⚡ Lightning storm started");
+  }
+
+  private updateLightning(): void {
+    if (!this.lightningActive) return;
+
+    const elapsed = performance.now() - this.lightningStartTime;
+    if (elapsed > GameLoop.LIGHTNING_DURATION) {
+      this.lightningActive = false;
+      console.log("⚡ Lightning storm ended");
+      return;
+    }
+
+    // Strike every ~4 ticks (~133ms) → ~22 strikes over 3s
+    this.lightningTickCounter++;
+    if (this.lightningTickCounter % 4 !== 0) return;
+
+    const { POSITION: PLAT_POS, DEPTH: PLAT_DEPTH, WIDTH, FLARE_Z, FLARE_ANGLE } = SCENE_CONFIG.PLATFORM;
+    const { POSITION: PUSH_POS, DEPTH: PUSH_DEPTH } = SCENE_CONFIG.PUSHER;
+    const hw = WIDTH / 2;
+    const flareRad = FLARE_ANGLE * Math.PI / 180;
+
+    // Full zone: pusher back edge to platform front edge
+    const backZ = PUSH_POS.z - PUSH_DEPTH / 2;
+    const frontZ = PLAT_POS.z + PLAT_DEPTH / 2;
+
+    // Pick random strike position
+    const sz = backZ + Math.random() * (frontZ - backZ);
+    let halfW: number;
+    if (sz < FLARE_Z) {
+      halfW = hw;
+    } else {
+      halfW = hw + Math.tan(flareRad) * (sz - FLARE_Z);
+    }
+    halfW -= 0.05; // inset from walls
+    const sx = (Math.random() * 2 - 1) * halfW;
+
+    // Mini explosion at strike point — bigger radius & stronger impulse
+    const radius = 0.35;
+    let affected = 0;
+
+    this.coins.forEach((coin) => {
+      const pos = coin.getPosition();
+      const dx = pos.x - sx;
+      const dz = pos.z - sz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist > radius) return;
+
+      const body = coin.getRigidBody();
+      body.wakeUp();
+
+      // Quadratic falloff
+      const t = 1 - dist / radius;
+      const strength = t * t;
+
+      // Strong outward blast + upward launch
+      const invDist = dist > 0.001 ? 1 / dist : 0;
+      const nx = dx * invDist;
+      const nz = dz * invDist;
+
+      body.applyImpulse(
+        {
+          x: nx * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+          y: 0.055 * strength,
+          z: nz * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+        },
+        true,
+      );
+
+      // Torque for tumbling
+      body.applyTorqueImpulse(
+        {
+          x: (Math.random() - 0.5) * 0.002 * strength,
+          y: (Math.random() - 0.5) * 0.002 * strength,
+          z: (Math.random() - 0.5) * 0.002 * strength,
+        },
+        true,
+      );
+      affected++;
+    });
+
+    if (affected > 0) {
+      console.log(`⚡ Lightning strike at (${sx.toFixed(2)}, ${sz.toFixed(2)}): ${affected} coins`);
+    }
   }
 
   shockPins(): void {

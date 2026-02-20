@@ -12,6 +12,20 @@ export interface ToonTheme {
   pusher: Color3;
 }
 
+// ── Theme 0: Psychedelic Pop ──────────────────────────────────────────────
+// Amber Orange coins, Dark Plum platform, Mint Turquoise walls
+const PSYCHEDELIC_POP: ToonTheme = {
+  name: "psychedelic_pop",
+  label: "Psychedelic Pop",
+  clearColor: new Color4(0.102, 0.055, 0.180, 1.0), // #1A0E2E Deep psychedelic purple
+  shadowTint: new Color3(0.10, 0.05, 0.18),           // Purple shadow
+  coin: new Color3(0.910, 0.588, 0.125),               // #E89620 Amber Orange
+  platform: new Color3(0.169, 0.082, 0.282),           // #2B1548 Dark Plum
+  wall: new Color3(0.306, 0.804, 0.769),               // #4ECDC4 Mint Turquoise
+  pin: new Color3(0.910, 0.224, 0.420),                 // #E8396B Hot Pink
+  pusher: new Color3(0.478, 0.188, 0.412),              // #7A3069 Deep Plum
+};
+
 // ── Theme 1: Neon ──────────────────────────────────────────────────────────
 // Neon Green coins, Electric Blue walls, Neon Pink pusher, deep black BG
 const NEON: ToonTheme = {
@@ -54,4 +68,4 @@ const INDUSTRIAL: ToonTheme = {
   pusher: new Color3(1.0, 0.0, 0.0),        // #FF0000 Vibrant Red
 };
 
-export const THEMES: ToonTheme[] = [NEON, RETRO, INDUSTRIAL];
+export const THEMES: ToonTheme[] = [PSYCHEDELIC_POP, NEON, RETRO, INDUSTRIAL];

@@ -39,8 +39,8 @@ export class Coin {
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, y, z)
       .setRotation(finalRotation)
-      .setLinearDamping(5.0)
-      .setAngularDamping(5.0);
+      .setLinearDamping(6.0)
+      .setAngularDamping(6.0);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall

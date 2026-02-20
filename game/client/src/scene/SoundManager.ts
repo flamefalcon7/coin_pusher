@@ -9,6 +9,7 @@ export class SoundManager {
   private coinLandBuf: AudioBuffer | null = null;
   private coinDespawnBuf: AudioBuffer | null = null;
   private loaded = false;
+  private _muted = false;
 
   /** Lazy-init AudioContext on first user interaction (autoplay policy). */
   private ensureContext(): AudioContext {
@@ -41,13 +42,24 @@ export class SoundManager {
     this.coinDespawnBuf = despawnBuf;
   }
 
+  get muted(): boolean { return this._muted; }
+
+  setMuted(muted: boolean): void {
+    this._muted = muted;
+  }
+
+  toggleMute(): boolean {
+    this._muted = !this._muted;
+    return this._muted;
+  }
+
   /** Play a sample with slight pitch randomization for natural variation. */
   private playSampleRandomized(
     buffer: AudioBuffer | null,
     volume: number,
     pitchRange: number = 0.08,
   ): void {
-    if (!buffer) return;
+    if (!buffer || this._muted) return;
     const ctx = this.ensureContext();
     const src = ctx.createBufferSource();
     const gain = ctx.createGain();
@@ -87,6 +99,7 @@ export class SoundManager {
 
   /** Low rumble — noise burst + low oscillator (procedural, kept as-is). */
   playShock(): void {
+    if (this._muted) return;
     const ctx = this.ensureContext();
     const t = ctx.currentTime;
 
@@ -123,6 +136,192 @@ export class SoundManager {
     noise.connect(noiseGain).connect(ctx.destination);
     noise.start(t);
     noise.stop(t + 0.3);
+  }
+
+  /** Heavy explosion — sub-bass thump + mid crunch + noise blast. */
+  playExplosion(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    // Layer 1: Sub-bass thump (40→15Hz sine, heavy)
+    const sub = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(40, t);
+    sub.frequency.exponentialRampToValueAtTime(15, t + 0.5);
+    subGain.gain.setValueAtTime(0.4, t);
+    subGain.gain.setValueAtTime(0.4, t + 0.05);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    sub.connect(subGain).connect(ctx.destination);
+    sub.start(t);
+    sub.stop(t + 0.6);
+
+    // Layer 2: Mid crunch (sawtooth 120→30Hz, distorted feel)
+    const mid = ctx.createOscillator();
+    const midGain = ctx.createGain();
+    mid.type = "sawtooth";
+    mid.frequency.setValueAtTime(120, t);
+    mid.frequency.exponentialRampToValueAtTime(30, t + 0.3);
+    midGain.gain.setValueAtTime(0.12, t);
+    midGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    // Waveshaper for crunch/distortion
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 128) - 1;
+      curve[i] = (Math.PI + 3) * x / (Math.PI + 3 * Math.abs(x));
+    }
+    shaper.curve = curve;
+    shaper.oversample = "2x";
+    mid.connect(shaper).connect(midGain).connect(ctx.destination);
+    mid.start(t);
+    mid.stop(t + 0.35);
+
+    // Layer 3: Noise blast (low-pass filtered, punchy)
+    const bufferSize = ctx.sampleRate * 0.4;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1);
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.setValueAtTime(1200, t);
+    lowpass.frequency.exponentialRampToValueAtTime(150, t + 0.35);
+    lowpass.Q.setValueAtTime(1.5, t);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.25, t);
+    noiseGain.gain.setValueAtTime(0.25, t + 0.03);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+
+    noise.connect(lowpass).connect(noiseGain).connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + 0.4);
+  }
+
+  /** Lightning storm — 3-second soundscape with initial crack, rolling rumble,
+   *  crackle, and periodic secondary cracks throughout the storm. */
+  playLightning(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    // Layer 1: Sharp initial crack (sine 2500→300Hz, very fast decay, loud)
+    const crack = ctx.createOscillator();
+    const crackGain = ctx.createGain();
+    crack.type = "sine";
+    crack.frequency.setValueAtTime(2500, t);
+    crack.frequency.exponentialRampToValueAtTime(300, t + 0.06);
+    crackGain.gain.setValueAtTime(0.4, t);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    crack.connect(crackGain).connect(ctx.destination);
+    crack.start(t);
+    crack.stop(t + 0.1);
+
+    // Layer 2: Rolling thunder rumble — extended to 3s (sawtooth 70→15Hz, slow decay)
+    const rumble = ctx.createOscillator();
+    const rumbleGain = ctx.createGain();
+    rumble.type = "sawtooth";
+    rumble.frequency.setValueAtTime(70, t);
+    rumble.frequency.exponentialRampToValueAtTime(15, t + 3.0);
+    rumbleGain.gain.setValueAtTime(0.2, t);
+    rumbleGain.gain.setValueAtTime(0.2, t + 0.1);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + 3.0);
+    rumble.connect(rumbleGain).connect(ctx.destination);
+    rumble.start(t);
+    rumble.stop(t + 3.0);
+
+    // Layer 3: Initial crackle (noise burst, bandpass 1000-3000Hz)
+    const bufferSize = ctx.sampleRate * 0.2;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1);
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const bandpass = ctx.createBiquadFilter();
+    bandpass.type = "bandpass";
+    bandpass.frequency.setValueAtTime(2000, t);
+    bandpass.Q.setValueAtTime(1.0, t);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.25, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+    noise.connect(bandpass).connect(noiseGain).connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + 0.2);
+
+    // Layer 4: Periodic secondary cracks throughout the storm
+    const secondaryCracks = [0.5, 1.2, 2.0, 2.5];
+    secondaryCracks.forEach((offset, i) => {
+      const vol = 0.25 - i * 0.04; // Each slightly quieter
+      const freq = 1800 + (Math.random() - 0.5) * 400; // Slight frequency variation
+      const sc = ctx.createOscillator();
+      const scGain = ctx.createGain();
+      sc.type = "sine";
+      sc.frequency.setValueAtTime(freq, t + offset);
+      sc.frequency.exponentialRampToValueAtTime(300, t + offset + 0.06);
+      scGain.gain.setValueAtTime(0, t);
+      scGain.gain.setValueAtTime(vol, t + offset);
+      scGain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.08);
+      sc.connect(scGain).connect(ctx.destination);
+      sc.start(t + offset);
+      sc.stop(t + offset + 0.1);
+    });
+  }
+
+  /** Wind whoosh — filtered noise with pitch oscillation for 4 seconds. */
+  playTornado(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+    const duration = 4.0;
+
+    // White noise buffer
+    const bufferSize = ctx.sampleRate * duration;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    // Bandpass filter (200-800Hz) for wind-like sound
+    const bandpass = ctx.createBiquadFilter();
+    bandpass.type = "bandpass";
+    bandpass.frequency.setValueAtTime(500, t);
+    bandpass.Q.setValueAtTime(0.8, t);
+
+    // Slow pitch oscillation via playbackRate LFO
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.setValueAtTime(0.8, t); // Slow whoosh
+    lfoGain.gain.setValueAtTime(200, t); // Modulate filter freq
+    lfo.connect(lfoGain);
+    lfoGain.connect(bandpass.frequency);
+    lfo.start(t);
+    lfo.stop(t + duration);
+
+    // Volume envelope: fade in 0.5s → sustain → fade out 0.5s
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.15, t + 0.5);
+    gain.gain.setValueAtTime(0.15, t + duration - 0.5);
+    gain.gain.linearRampToValueAtTime(0, t + duration);
+
+    noise.connect(bandpass).connect(gain).connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + duration);
   }
 
   dispose(): void {

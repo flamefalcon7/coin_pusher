@@ -137,6 +137,12 @@ func (h *Handler) readPump(c *Connection) {
 			h.handleSpawnStack(c, msg)
 		case "shock":
 			h.handleShock(c)
+		case "tornado":
+			h.handleTornado(c, msg)
+		case "explosion":
+			h.handleExplosion(c, msg)
+		case "lightning":
+			h.handleLightning(c)
 		case "clear_all":
 			h.handleClearAll(c)
 		case "fill_platform":
@@ -231,6 +237,104 @@ func (h *Handler) handleShock(c *Connection) {
 	}
 
 	h.nc.Publish(TopicShock(h.room), data)
+}
+
+func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
+	if !c.CanTornado() {
+		return
+	}
+
+	// Clamp x to valid range.
+	x := msg.X
+	if x < -maxXPosition {
+		x = -maxXPosition
+	}
+	if x > maxXPosition {
+		x = maxXPosition
+	}
+
+	// Clamp z to platform range.
+	z := msg.Z
+	platformFrontZ := 0.7
+	platformBackZ := -0.5
+	if z < platformBackZ {
+		z = platformBackZ
+	}
+	if z > platformFrontZ {
+		z = platformFrontZ
+	}
+
+	cmd := NATSTornadoCmd{
+		UserID: c.userID,
+		X:      x,
+		Z:      z,
+	}
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal tornado", "error", err)
+		return
+	}
+
+	h.nc.Publish(TopicTornado(h.room), data)
+}
+
+func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
+	if !c.CanExplosion() {
+		return
+	}
+
+	// Clamp x to valid range.
+	x := msg.X
+	if x < -maxXPosition {
+		x = -maxXPosition
+	}
+	if x > maxXPosition {
+		x = maxXPosition
+	}
+
+	// Clamp z to platform range.
+	z := msg.Z
+	platformFrontZ := 0.7
+	platformBackZ := -0.5
+	if z < platformBackZ {
+		z = platformBackZ
+	}
+	if z > platformFrontZ {
+		z = platformFrontZ
+	}
+
+	cmd := NATSExplosionCmd{
+		UserID: c.userID,
+		X:      x,
+		Z:      z,
+	}
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal explosion", "error", err)
+		return
+	}
+
+	h.nc.Publish(TopicExplosion(h.room), data)
+}
+
+func (h *Handler) handleLightning(c *Connection) {
+	if !c.CanLightning() {
+		return
+	}
+
+	cmd := NATSLightningCmd{
+		UserID: c.userID,
+	}
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal lightning", "error", err)
+		return
+	}
+
+	h.nc.Publish(TopicLightning(h.room), data)
 }
 
 func (h *Handler) handleClearAll(c *Connection) {
