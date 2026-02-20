@@ -6,6 +6,7 @@ import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { Toolbar } from "./ui/Toolbar";
 
 import { SceneManager } from "./scene/SceneManager";
+import { ToonDebugGUI } from "./scene/ToonDebugGUI";
 import { GameClient } from "./net/GameClient";
 import { SLOT_CONFIG, RATE_LIMIT_CONFIG, type EditorObjectNet } from "@coin-pusher/shared";
 import { Vector3 } from "@babylonjs/core";
@@ -19,6 +20,7 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gameClientRef = useRef<GameClient | null>(null);
+  const toonGuiRef = useRef<ToonDebugGUI | null>(null);
 
   const [fps, setFps] = useState(0);
   const [ping, setPing] = useState(0);
@@ -159,8 +161,6 @@ function App() {
           }
           if (despawnCount > 0) {
             sceneManager.getSoundManager().playCoinDespawn(despawnCount);
-            sceneManager.playComboVFX(despawnCount);
-
           }
 
           // Batch update coin instances to GPU
@@ -185,6 +185,8 @@ function App() {
     // Cleanup on unmount
     return () => {
       cancelAnimationFrame(animationFrameId);
+      toonGuiRef.current?.dispose();
+      toonGuiRef.current = null;
       editorManager.dispose();
       gameClient.disconnect();
       sceneManager.dispose();
@@ -404,6 +406,15 @@ function App() {
     }, intervalTime);
   };
 
+  const handleToggleToonDebug = useCallback(() => {
+    if (toonGuiRef.current) {
+      toonGuiRef.current.dispose();
+      toonGuiRef.current = null;
+    } else if (sceneManagerRef.current) {
+      toonGuiRef.current = new ToonDebugGUI(sceneManagerRef.current);
+    }
+  }, []);
+
   const handleEditorObjectsChange = useCallback(() => {
     const mgr = editorManagerRef.current;
     if (!mgr) return;
@@ -506,6 +517,12 @@ function App() {
               className="dev-button"
             >
               Ticket Rain
+            </button>
+            <button
+              onClick={handleToggleToonDebug}
+              className="dev-button"
+            >
+              Toon Debug
             </button>
           </div>
         )}

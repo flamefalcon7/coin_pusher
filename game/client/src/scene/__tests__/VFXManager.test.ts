@@ -9,8 +9,8 @@ const {
   MockParticleSystem,
   MockMesh,
   MockStandardMaterial,
+  MockShaderMaterial,
   MockDynamicTexture,
-  MockGlowLayer,
   mockMeshBuilder,
   resetParticleSystemCount,
 } = vi.hoisted(() => {
@@ -95,6 +95,13 @@ const {
     constructor(public name: string) {}
   }
 
+  class _MockShaderMaterial {
+    constructor(public name: string) {}
+    setColor3() {}
+    setVector3() {}
+    setFloat() {}
+  }
+
   class _MockDynamicTexture {
     constructor() {}
     getContext() {
@@ -107,12 +114,6 @@ const {
       };
     }
     update() {}
-    dispose() {}
-  }
-
-  class _MockGlowLayer {
-    intensity = 0;
-    customEmissiveColorSelector: unknown = null;
     dispose() {}
   }
 
@@ -129,7 +130,7 @@ const {
     MockMesh: _MockMesh,
     MockStandardMaterial: _MockStandardMaterial,
     MockDynamicTexture: _MockDynamicTexture,
-    MockGlowLayer: _MockGlowLayer,
+    MockShaderMaterial: _MockShaderMaterial,
     mockMeshBuilder: _mockMeshBuilder,
     resetParticleSystemCount: () => { _particleSystemCount = 0; },
   };
@@ -145,12 +146,8 @@ vi.mock("@babylonjs/core", () => ({
   MeshBuilder: mockMeshBuilder,
   ParticleSystem: MockParticleSystem,
   DynamicTexture: MockDynamicTexture,
-  GlowLayer: MockGlowLayer,
   StandardMaterial: MockStandardMaterial,
-}));
-
-vi.mock("@babylonjs/materials/cell/cellMaterial", () => ({
-  CellMaterial: MockStandardMaterial,
+  ShaderMaterial: MockShaderMaterial,
 }));
 
 // ── Import VFXManager (after mocks) ─────────────────────────────────────────
@@ -160,8 +157,7 @@ import { VFXManager } from "../VFXManager";
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 function createMockScene(): any {
-  const wallMat = new MockStandardMaterial("wallMat");
-  wallMat.diffuseColor = new MockColor3(0.29, 0.55, 0.56);
+  const wallMat = new MockShaderMaterial("wallMat");
 
   return {
     activeCamera: { position: new MockVector3(0, 2, -3) },
@@ -202,10 +198,6 @@ describe("VFXManager", () => {
       expect(vfx).toBeDefined();
     });
 
-    it("starts ambient dust on init", () => {
-      expect(vfx.isAmbientDustRunning()).toBe(true);
-    });
-
     it("dispose cleans up all systems", () => {
       vfx.playCoinInsert(0);
       vfx.playCoinInsert(1);
@@ -214,7 +206,6 @@ describe("VFXManager", () => {
       vfx.dispose();
 
       expect(vfx.getActiveBurstCount()).toBe(0);
-      expect(vfx.isAmbientDustRunning()).toBe(false);
     });
 
     it("double dispose does not throw", () => {
@@ -283,39 +274,6 @@ describe("VFXManager", () => {
         vfx.playCoinLand(new MockVector3(i * 0.1, 0.3, 0) as any);
       }
       expect(vfx.getActiveRingCount()).toBe(5);
-    });
-  });
-
-  // ── Combo Flash ────────────────────────────────────────────────────────
-
-  describe("playCombo", () => {
-    it("ignores count below threshold", () => {
-      vfx.playCombo(1);
-      expect(vfx.getComboFlashAlpha()).toBe(0);
-    });
-
-    it("triggers flash at threshold", () => {
-      vfx.playCombo(3);
-      expect(vfx.getComboFlashAlpha()).toBeGreaterThan(0);
-    });
-
-    it("flash intensity scales with count", () => {
-      vfx.playCombo(5);
-      const alpha5 = vfx.getComboFlashAlpha();
-
-      vfx.dispose();
-      vfx = new VFXManager(scene);
-      vfx.init();
-
-      vfx.playCombo(10);
-      const alpha10 = vfx.getComboFlashAlpha();
-
-      expect(alpha10).toBeGreaterThan(alpha5);
-    });
-
-    it("flash alpha is capped", () => {
-      vfx.playCombo(100);
-      expect(vfx.getComboFlashAlpha()).toBeLessThanOrEqual(0.35);
     });
   });
 

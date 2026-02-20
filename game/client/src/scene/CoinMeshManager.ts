@@ -6,16 +6,9 @@ import {
   Quaternion,
   Mesh,
   Matrix,
-  DynamicTexture,
-  ShaderMaterial,
 } from "@babylonjs/core";
 import { COIN_CONFIG } from "@coin-pusher/shared";
 import { createToonMaterial } from "./ToonMaterial";
-
-const COIN_SYMBOLS = [
-  "₿", "Ξ", "Ð", "¤", "◈", "★", "✦", "⚡",
-  "☀", "Ψ", "Ω", "♠", "⚜", "◉", "⬡", "⊛",
-];
 
 export class CoinMeshManager {
   private scene: Scene;
@@ -24,8 +17,6 @@ export class CoinMeshManager {
   // Optimized storage: pre-allocated buffer for instance matrices
   // 16 floats per instance (4x4 matrix)
   private matrixBuffer: Float32Array;
-  // Per-instance vec2: (symbolIndex, glowFlag)
-  private coinDataBuffer: Float32Array;
   private activeCoins: number = 0;
   private capacity: number = 2000;
 
@@ -40,13 +31,11 @@ export class CoinMeshManager {
   private static tmpQuaternion = new Quaternion();
   private static tmpMatrix = new Matrix();
   private static tmpScale = new Vector3(1, 1, 1);
-  private singleSymbolTexture!: DynamicTexture;
 
   constructor(scene: Scene) {
     this.scene = scene;
     // Initialize buffers with default capacity
     this.matrixBuffer = new Float32Array(this.capacity * 16);
-    this.coinDataBuffer = new Float32Array(this.capacity * 2);
     this.indexToId = new Int32Array(this.capacity);
     this.createPrototype();
   }
@@ -64,55 +53,17 @@ export class CoinMeshManager {
       this.scene
     );
 
-    // Create textures: atlas for toon shader, single ₿ for standard fallback
-    const atlasTexture = this.createCoinAtlas();
-    this.singleSymbolTexture = this.createSingleSymbolTexture();
-
     // Toon material with thin instances
     const material = createToonMaterial(this.scene, {
       name: "coinMat",
       baseColor: new Color3(0.22, 1.0, 0.08), // Default — overridden by theme
       thinInstances: true,
-      texture: atlasTexture,
     });
     this.prototypeMesh.material = material;
 
     this.prototypeMesh.thinInstanceEnablePicking = false;
 
-    console.log("🪙 Coin prototype created (symbol atlas)");
-  }
-
-  private createCoinAtlas(): DynamicTexture {
-    const size = 1024;
-    const cellSize = size / 4;
-    const dt = new DynamicTexture("coinAtlas", size, this.scene, true);
-    const ctx = dt.getContext() as unknown as CanvasRenderingContext2D;
-
-    ctx.fillStyle = "black";
-    ctx.fillRect(0, 0, size, size);
-
-    ctx.fillStyle = "white";
-    ctx.font = "bold 160px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    for (let i = 0; i < COIN_SYMBOLS.length; i++) {
-      const col = i % 4;
-      const row = Math.floor(i / 4);
-      const cx = col * cellSize + cellSize / 2;
-      const cy = row * cellSize + cellSize / 2;
-      ctx.fillText(COIN_SYMBOLS[i], cx, cy);
-    }
-
-    dt.update();
-    return dt;
-  }
-
-  private createSingleSymbolTexture(): DynamicTexture {
-    const size = 256;
-    const dt = new DynamicTexture("coinSymbol", size, this.scene, true);
-    dt.drawText("₿", null, null, "bold 160px sans-serif", "white", "black", true, true);
-    return dt;
+    console.log("🪙 Coin prototype created");
   }
 
   addCoin(
@@ -140,11 +91,6 @@ export class CoinMeshManager {
 
     // Write transform to buffer
     this.writeMatrixToBuffer(index, pos, rot);
-
-    // Assign random symbol and glow
-    const off = index * 2;
-    this.coinDataBuffer[off] = Math.floor(Math.random() * 16);
-    this.coinDataBuffer[off + 1] = Math.random() < 0.1 ? 1 : 0;
   }
 
   updateCoin(
@@ -184,13 +130,6 @@ export class CoinMeshManager {
         (lastIndex + 1) * 16
       );
 
-      // Copy coinData: from lastIndex to index
-      this.coinDataBuffer.copyWithin(
-        index * 2,
-        lastIndex * 2,
-        (lastIndex + 1) * 2
-      );
-
       // Update mappings for the moved coin
       this.idToIndex.set(lastCoinId, index);
       this.indexToId[index] = lastCoinId;
@@ -205,22 +144,12 @@ export class CoinMeshManager {
   public updateInstances(): void {
     if (this.activeCoins === 0) {
       this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
-      this.prototypeMesh.thinInstanceSetBuffer("coinData", null);
       return;
     }
 
     // Pass the active portion of the buffer to BabylonJS
     const activeMatrixData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
     this.prototypeMesh.thinInstanceSetBuffer("matrix", activeMatrixData, 16, false);
-
-    const activeCoinData = this.coinDataBuffer.subarray(0, this.activeCoins * 2);
-    this.prototypeMesh.thinInstanceSetBuffer("coinData", activeCoinData, 2, false);
-
-    // Update time uniform for glow animation (only on custom ShaderMaterial)
-    const mat = this.prototypeMesh.material;
-    if (mat instanceof ShaderMaterial) {
-      mat.setFloat("time", performance.now() / 1000);
-    }
   }
 
   private writeMatrixToBuffer(
@@ -254,19 +183,11 @@ export class CoinMeshManager {
     newMatrixBuffer.set(this.matrixBuffer);
     this.matrixBuffer = newMatrixBuffer;
 
-    const newCoinDataBuffer = new Float32Array(newCapacity * 2);
-    newCoinDataBuffer.set(this.coinDataBuffer);
-    this.coinDataBuffer = newCoinDataBuffer;
-
     const newIndexToId = new Int32Array(newCapacity);
     newIndexToId.set(this.indexToId);
     this.indexToId = newIndexToId;
 
     this.capacity = newCapacity;
-  }
-
-  getCoinTexture(): DynamicTexture {
-    return this.singleSymbolTexture;
   }
 
   getCoinCount(): number {

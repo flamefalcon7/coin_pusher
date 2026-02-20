@@ -1,5 +1,4 @@
-import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
+import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, Vector3 } from "@babylonjs/core";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
@@ -8,11 +7,14 @@ import { CoinMeshManager } from "./CoinMeshManager";
 import { SoundManager } from "./SoundManager";
 import { PostProcessing } from "./PostProcessing";
 import { VFXManager } from "./VFXManager";
-import { THEMES, ToonTheme } from "./ToonTheme";
+import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 
-
-// Material names shared between cel and standard versions
-const MAT_NAMES = ["platformMat", "wallMat", "pinMat", "pusherMat"] as const;
+// All toon material names to track
+const TOON_MAT_NAMES = [
+  "platformMat", "wallMat", "pinMat", "pusherMat", "rampMat",
+  "castleWallMat", "castleDecoMat", "castleRoofMat",
+  "bumperRailMat", "panelDividerMat", "coinMat",
+] as const;
 
 export class SceneManager {
   private engine: Engine;
@@ -20,18 +22,19 @@ export class SceneManager {
   private pusherMesh: PusherMesh;
   private coinManager: CoinMeshManager;
   private soundManager: SoundManager;
+  private postProcessing: PostProcessing;
   private vfxManager: VFXManager;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
 
-  // Cel shading toggle state
+  // Unified toon material tracking
   private celShadingEnabled: boolean = true;
-  private standardMats: Map<string, StandardMaterial> = new Map();
-  private cellMats: Map<string, CellMaterial> = new Map();
-  // Coin materials (ShaderMaterial for cel, StandardMaterial for standard)
-  private coinCellMat: ShaderMaterial | null = null;
-  private coinStdMat: StandardMaterial | null = null;
+  private toonMats: Map<string, ShaderMaterial> = new Map();
+  private allToonMats: ShaderMaterial[] = [];
+
+  // Pin flash: cache original color for fade-back
+  private pinOrigColor: Color3 = new Color3(0.7, 0.7, 0.85);
 
   constructor(canvas: HTMLCanvasElement) {
     console.log("Initializing BabylonJS scene...");
@@ -52,21 +55,27 @@ export class SceneManager {
     this.coinManager = new CoinMeshManager(this.scene);
     this.soundManager = new SoundManager();
 
-    new PostProcessing(this.scene);
+    this.postProcessing = new PostProcessing(this.scene);
 
-    // Cache CellMaterial references
-    for (const name of MAT_NAMES) {
+    // Cache all toon ShaderMaterial references
+    for (const name of TOON_MAT_NAMES) {
       const mat = this.scene.getMaterialByName(name);
-      if (mat && mat instanceof CellMaterial) {
-        this.cellMats.set(name, mat);
+      if (mat && mat instanceof ShaderMaterial) {
+        this.toonMats.set(name, mat);
+        this.allToonMats.push(mat);
       }
     }
 
-    // Cache coin ShaderMaterial
-    const coinMat = this.scene.getMaterialByName("coinMat");
-    if (coinMat && coinMat instanceof ShaderMaterial) {
-      this.coinCellMat = coinMat;
-    }
+    // Per-frame uniform updates (time + cameraPosition)
+    const camera = this.scene.activeCamera;
+    this.scene.onBeforeRenderObservable.add(() => {
+      const t = performance.now() / 1000;
+      const camPos = camera ? (camera as ArcRotateCamera).position : Vector3.Zero();
+      for (const mat of this.allToonMats) {
+        mat.setFloat("time", t);
+        mat.setVector3("cameraPosition", camPos);
+      }
+    });
 
     // Initialize VFX
     this.vfxManager = new VFXManager(this.scene);
@@ -94,29 +103,31 @@ export class SceneManager {
       wallMat: theme.wall,
       pinMat: theme.pin,
       pusherMat: theme.pusher,
+      rampMat: theme.platform,
+      coinMat: theme.coin,
+      // Castle + wall decorations get the wall color by default
+      castleWallMat: theme.wall,
+      castleDecoMat: theme.wall,
+      castleRoofMat: theme.pusher,
+      bumperRailMat: theme.pin,
+      panelDividerMat: theme.pin,
     };
 
-    // Update whichever material type is currently active
-    for (const name of MAT_NAMES) {
-      const color = colorMap[name];
-      const cellMat = this.cellMats.get(name);
-      if (cellMat) cellMat.diffuseColor = color;
-
-      const stdMat = this.standardMats.get(name);
-      if (stdMat) stdMat.diffuseColor = color;
+    for (const [name, color] of Object.entries(colorMap)) {
+      const mat = this.toonMats.get(name);
+      if (mat) {
+        mat.setColor3("baseColor", color);
+        mat.setColor3("shadowColor", deriveShadow(color, theme.shadowTint));
+        mat.setColor3("highlightColor", deriveHighlight(color));
+        mat.setColor3("rimColor", theme.rim);
+      }
     }
 
-    // Coin materials
-    if (this.coinCellMat) {
-      this.coinCellMat.setColor3("baseColor", theme.coin);
-      this.coinCellMat.setColor3("shadowTint", theme.shadowTint);
-    }
-    if (this.coinStdMat) {
-      this.coinStdMat.diffuseColor = theme.coin;
-    }
+    // Cache pin color for shock effect fade-back
+    this.pinOrigColor = theme.pin.clone();
 
     // Refresh VFX wall color cache after theme change
-    this.vfxManager.refreshWallColor();
+    this.vfxManager.refreshWallColor(theme.wall);
 
     console.log(`Theme applied: ${theme.label}`);
   }
@@ -136,16 +147,11 @@ export class SceneManager {
 
   toggleCelShading(): boolean {
     this.celShadingEnabled = !this.celShadingEnabled;
-    const theme = THEMES[this.currentThemeIndex];
+    const value = this.celShadingEnabled ? 1.0 : 0.0;
 
-    if (this.celShadingEnabled) {
-      this.switchToCel(theme);
-    } else {
-      this.switchToStandard(theme);
+    for (const mat of this.allToonMats) {
+      mat.setFloat("useCelShading", value);
     }
-
-    // Refresh VFX wall reference since material instance may have changed
-    this.vfxManager.refreshWallColor();
 
     console.log(`Cel shading: ${this.celShadingEnabled ? "ON" : "OFF"}`);
     return this.celShadingEnabled;
@@ -153,75 +159,6 @@ export class SceneManager {
 
   isCelShadingEnabled(): boolean {
     return this.celShadingEnabled;
-  }
-
-  private switchToStandard(theme: ToonTheme): void {
-    const colorMap: Record<string, Color3> = {
-      platformMat: theme.platform,
-      wallMat: theme.wall,
-      pinMat: theme.pin,
-      pusherMat: theme.pusher,
-    };
-
-    // Create StandardMaterial counterparts if not cached
-    for (const name of MAT_NAMES) {
-      if (!this.standardMats.has(name)) {
-        const stdMat = new StandardMaterial(`${name}_std`, this.scene);
-        stdMat.specularColor = new Color3(0.2, 0.2, 0.2);
-        // Copy diffuseTexture from cel material if it has one
-        const cellMat = this.cellMats.get(name);
-        if (cellMat?.diffuseTexture) {
-          stdMat.diffuseTexture = cellMat.diffuseTexture;
-        }
-        this.standardMats.set(name, stdMat);
-      }
-      this.standardMats.get(name)!.diffuseColor = colorMap[name];
-    }
-
-    // Create standard coin material if not cached
-    if (!this.coinStdMat) {
-      this.coinStdMat = new StandardMaterial("coinMat_std", this.scene);
-      this.coinStdMat.specularColor = new Color3(0.8, 0.7, 0.3);
-      this.coinStdMat.specularPower = 64;
-      // Apply ₿ texture as emissive so it glows on the coin face
-      const coinTex = this.coinManager.getCoinTexture();
-      this.coinStdMat.emissiveTexture = coinTex;
-      this.coinStdMat.emissiveColor = new Color3(0.2, 0.2, 0.2);
-    }
-    this.coinStdMat.diffuseColor = theme.coin;
-
-    // Swap on all meshes
-    this.swapMaterials(false);
-  }
-
-  private switchToCel(theme: ToonTheme): void {
-    // Re-apply theme colors to cel materials
-    this.applyTheme(theme);
-    // Swap on all meshes
-    this.swapMaterials(true);
-  }
-
-  private swapMaterials(toCel: boolean): void {
-    // Swap static mesh materials
-    for (const mesh of this.scene.meshes) {
-      if (!mesh.material) continue;
-      const matName = mesh.material.name;
-
-      // Check if this mesh uses one of our managed materials (cell or std version)
-      for (const name of MAT_NAMES) {
-        if (matName === name || matName === `${name}_std`) {
-          mesh.material = toCel
-            ? this.cellMats.get(name)!
-            : this.standardMats.get(name)!;
-          break;
-        }
-      }
-
-      // Coin prototype
-      if (matName === "coinMat" || matName === "coinMat_std") {
-        mesh.material = toCel ? this.coinCellMat! : this.coinStdMat!;
-      }
-    }
   }
 
   // ── Render Loop ──────────────────────────────────────────────────────────
@@ -252,7 +189,6 @@ export class SceneManager {
 
   updatePusherPosition(z: number): void {
     this.pusherMesh.updatePosition(z);
-    this.vfxManager.updatePusherGlow(z);
   }
 
   addCoin(
@@ -343,17 +279,13 @@ export class SceneManager {
       }, shakeInterval);
     }
 
-    // 2. Pin flash — works with both CellMaterial and StandardMaterial
-    const pinMatName = this.celShadingEnabled ? "pinMat" : "pinMat_std";
-    const pinMat = this.scene.getMaterialByName(pinMatName);
-
+    // 2. Pin flash — modify baseColor uniform on ShaderMaterial
+    const pinMat = this.toonMats.get("pinMat");
     if (pinMat) {
-      // Both CellMaterial and StandardMaterial have diffuseColor
-      const mat = pinMat as CellMaterial | StandardMaterial;
-      const origColor = mat.diffuseColor.clone();
+      const origColor = this.pinOrigColor.clone();
       const flashColor = new Color3(1.0, 0.6, 0.1);
 
-      mat.diffuseColor = flashColor;
+      pinMat.setColor3("baseColor", flashColor);
 
       const fadeDuration = 400;
       const fadeInterval = 30;
@@ -362,12 +294,12 @@ export class SceneManager {
       const fadeTimer = setInterval(() => {
         fadeElapsed += fadeInterval;
         if (fadeElapsed >= fadeDuration) {
-          mat.diffuseColor = origColor;
+          pinMat.setColor3("baseColor", origColor);
           clearInterval(fadeTimer);
           return;
         }
         const t = fadeElapsed / fadeDuration;
-        mat.diffuseColor = Color3.Lerp(flashColor, origColor, t);
+        pinMat.setColor3("baseColor", Color3.Lerp(flashColor, origColor, t));
       }, fadeInterval);
     }
 
@@ -470,10 +402,6 @@ export class SceneManager {
     this.vfxManager.playCoinInsert(slotIndex);
   }
 
-  playComboVFX(count: number): void {
-    this.vfxManager.playCombo(count);
-  }
-
   playRewardCoinRain(duration?: number): void {
     this.vfxManager.playRewardCoinRain(duration);
   }
@@ -488,5 +416,24 @@ export class SceneManager {
 
   getEngine(): Engine {
     return this.engine;
+  }
+
+  getPostProcessing(): PostProcessing {
+    return this.postProcessing;
+  }
+
+  getAllToonMats(): ShaderMaterial[] {
+    return this.allToonMats;
+  }
+
+  getLightDirection(): Vector3 {
+    // Read from the first toon material (all share the same value)
+    return new Vector3(0.3, -0.7, 0.5); // default; real value read by GUI from mat uniforms
+  }
+
+  setLightDirection(v: Vector3): void {
+    for (const mat of this.allToonMats) {
+      mat.setVector3("lightDirection", v);
+    }
   }
 }

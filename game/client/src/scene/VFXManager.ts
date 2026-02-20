@@ -8,11 +8,10 @@ import {
   ParticleSystem,
   DynamicTexture,
   Texture,
-  GlowLayer,
   StandardMaterial,
+  ShaderMaterial,
   NoiseProceduralTexture,
 } from "@babylonjs/core";
-import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -20,7 +19,6 @@ import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
 export interface VFXConfig {
   maxBurstSystems: number;
   comboThreshold: number;
-  ambientDustRate: number;
   wallPulseSpeed: number;
   wallPulseIntensity: number;
 }
@@ -28,7 +26,6 @@ export interface VFXConfig {
 const DEFAULT_CONFIG: VFXConfig = {
   maxBurstSystems: 20,
   comboThreshold: 3,
-  ambientDustRate: 25,
   wallPulseSpeed: 0.6,
   wallPulseIntensity: 0.5,
 };
@@ -48,21 +45,15 @@ export class VFXManager {
   // Active burst systems (auto-cleanup pool)
   private burstSystems: ParticleSystem[] = [];
 
-  // Persistent effects
-  private ambientDust: ParticleSystem | null = null;
-  private glowLayer: GlowLayer | null = null;
 
   // Wall pulse
   private wallPulseTime: number = 0;
-  private wallMat: CellMaterial | StandardMaterial | null = null;
+  private wallMat: ShaderMaterial | null = null;
   private wallBaseColor: Color3 = new Color3();
 
   // Combo flash
   private comboFlashMesh: Mesh | null = null;
   private comboFlashAlpha: number = 0;
-
-  // Combo floating text billboards
-  private floatingTexts: { mesh: Mesh; age: number; startY: number }[] = [];
 
   // Cached reward textures
   private coinRewardTex: Texture | null = null;
@@ -92,8 +83,6 @@ export class VFXManager {
 
   init(): void {
     this.particleTexture = this.createParticleTexture();
-    this.startAmbientDust();
-    this.initGlow();
     this.initComboFlash();
     this.cacheWallMaterial();
 
@@ -112,10 +101,6 @@ export class VFXManager {
       this.scene.onBeforeRenderObservable.remove(this.renderObserver);
       this.renderObserver = null;
     }
-    this.ambientDust?.dispose();
-    this.ambientDust = null;
-    this.glowLayer?.dispose();
-    this.glowLayer = null;
     this.comboFlashMesh?.dispose();
     this.comboFlashMesh = null;
     for (const ps of this.burstSystems) ps.dispose();
@@ -130,8 +115,6 @@ export class VFXManager {
       for (const m of b.meshes) { m.material?.dispose(); m.dispose(); }
     }
     this.activeBolts = [];
-    for (const ft of this.floatingTexts) ft.mesh.dispose();
-    this.floatingTexts = [];
     this.particleTexture?.dispose();
     this.particleTexture = null;
     this.coinRewardTex?.dispose();
@@ -148,9 +131,6 @@ export class VFXManager {
     return this.burstSystems.length;
   }
 
-  isAmbientDustRunning(): boolean {
-    return this.ambientDust !== null && this.ambientDust.isAlive();
-  }
 
   getActiveRingCount(): number {
     return this.activeRings.length;
@@ -253,77 +233,6 @@ export class VFXManager {
     ps.start();
     this.trackBurst(ps);
     return ps;
-  }
-
-  /** Gold screen flash for mass despawn combo */
-  playCombo(count: number): void {
-    // Floating text for any despawn
-    this.playComboText(count);
-
-    if (count < this.config.comboThreshold) return;
-    // Intensity scales with count, capped
-    this.comboFlashAlpha = Math.min(0.35, 0.1 + count * 0.03);
-  }
-
-  /** Floating "+N" text billboard in 3D space above the platform edge */
-  playComboText(count: number): void {
-    const size = 256;
-    const dt = new DynamicTexture(`comboTex_${Date.now()}`, size, this.scene, false);
-    const ctx = dt.getContext() as unknown as CanvasRenderingContext2D;
-
-    ctx.clearRect(0, 0, size, size);
-
-    // Text: "+N"
-    const text = `+${count}`;
-    const fontSize = count >= 10 ? 100 : 120;
-    ctx.font = `bold ${fontSize}px 'Arial', sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    // Outline
-    ctx.strokeStyle = "rgba(90, 56, 0, 0.9)";
-    ctx.lineWidth = 8;
-    ctx.strokeText(text, size / 2, size / 2);
-
-    // Fill gold
-    ctx.fillStyle = "#FFD740";
-    ctx.fillText(text, size / 2, size / 2);
-
-    // Star above text for big combos
-    if (count >= 6) {
-      ctx.font = "bold 48px sans-serif";
-      ctx.fillStyle = "#FFD740";
-      ctx.fillText("★", size / 2, size / 2 - 70);
-    }
-
-    dt.update();
-    dt.hasAlpha = true;
-
-    // Create billboard plane
-    const planeSize = 0.3 + Math.min(count * 0.02, 0.2);
-    const mesh = MeshBuilder.CreatePlane(`comboText_${Date.now()}`, { size: planeSize, sideOrientation: Mesh.BACKSIDE }, this.scene);
-    mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
-    mesh.isPickable = false;
-
-    // Position above platform front edge
-    const platPos = SCENE_CONFIG.PLATFORM.POSITION;
-    const startY = platPos.y + 0.6;
-    mesh.position = new Vector3(
-      (Math.random() - 0.5) * 0.4, // slight random x offset
-      startY,
-      platPos.z - SCENE_CONFIG.PLATFORM.DEPTH / 2 - 0.1,
-    );
-
-    const mat = new StandardMaterial(`comboTextMat_${Date.now()}`, this.scene);
-    mat.diffuseTexture = dt;
-    mat.emissiveTexture = dt;
-    mat.opacityTexture = dt;
-    mat.disableLighting = true;
-    mat.backFaceCulling = false;
-    mat.useAlphaFromDiffuseTexture = true;
-    mesh.material = mat;
-
-    this.floatingTexts.push({ mesh, age: 0, startY });
   }
 
   /** Enhanced shock: ground wave ring + brighter pin flash */
@@ -903,73 +812,7 @@ export class VFXManager {
     );
   }
 
-  /** Update pusher glow intensity based on forward movement */
-  updatePusherGlow(pusherZ: number): void {
-    if (!this.glowLayer) return;
-
-    // Glow brighter when pusher is forward (higher z = more forward)
-    const baseZ = SCENE_CONFIG.PUSHER.POSITION.z;
-    const amplitude = 0.1;
-    const t = Math.max(0, (pusherZ - baseZ) / amplitude);
-    this.glowLayer.intensity = 0.4 + t * 0.8;
-  }
-
   // ── Internal: Persistent Effects ───────────────────────────────────────────
-
-  private startAmbientDust(): void {
-    if (!this.particleTexture) return;
-
-    const ps = new ParticleSystem("ambientDust", 200, this.scene);
-    ps.particleTexture = this.particleTexture;
-
-    // Emit across the play area
-    const platPos = SCENE_CONFIG.PLATFORM.POSITION;
-    ps.emitter = new Vector3(platPos.x, platPos.y + 0.5, platPos.z);
-    ps.minEmitBox = new Vector3(-0.8, -0.2, -0.6);
-    ps.maxEmitBox = new Vector3(0.8, 0.8, 0.6);
-
-    ps.minLifeTime = 3;
-    ps.maxLifeTime = 6;
-    ps.minSize = 0.008;
-    ps.maxSize = 0.02;
-    ps.minEmitPower = 0.01;
-    ps.maxEmitPower = 0.05;
-    ps.direction1 = new Vector3(-0.02, 0.02, -0.02);
-    ps.direction2 = new Vector3(0.02, 0.05, 0.02);
-    ps.gravity = new Vector3(0, 0.01, 0);
-    ps.emitRate = this.config.ambientDustRate;
-
-    // Visible warm gold
-    ps.color1 = new Color4(1.0, 0.85, 0.5, 0.5);
-    ps.color2 = new Color4(0.9, 0.75, 0.4, 0.35);
-    ps.colorDead = new Color4(0.5, 0.4, 0.2, 0);
-
-    ps.addSizeGradient(0, 0.005);
-    ps.addSizeGradient(0.5, 0.02);
-    ps.addSizeGradient(1, 0.005);
-
-    ps.start();
-    this.ambientDust = ps;
-  }
-
-  private initGlow(): void {
-    this.glowLayer = new GlowLayer("vfxGlow", this.scene, {
-      mainTextureSamples: 4,
-      blurKernelSize: 64,
-    });
-    this.glowLayer.intensity = 0.5;
-
-    // Pusher, bolt meshes get glow
-    this.glowLayer.customEmissiveColorSelector = (mesh, _subMesh, _material, result) => {
-      if (mesh.name === "pusher") {
-        result.set(0.5, 0.35, 0.25, 0.6);
-      } else if (mesh.name.startsWith("bolt_")) {
-        result.set(0.6, 0.85, 1.0, 1.0);
-      } else {
-        result.set(0, 0, 0, 0);
-      }
-    };
-  }
 
   private initComboFlash(): void {
     const camera = this.scene.activeCamera;
@@ -994,17 +837,19 @@ export class VFXManager {
   }
 
   private cacheWallMaterial(): void {
-    const mat = this.scene.getMaterialByName("wallMat") ??
-      this.scene.getMaterialByName("wallMat_std");
-    if (mat && ("diffuseColor" in mat)) {
-      this.wallMat = mat as CellMaterial | StandardMaterial;
-      this.wallBaseColor = this.wallMat.diffuseColor.clone();
+    const mat = this.scene.getMaterialByName("wallMat");
+    if (mat && mat instanceof ShaderMaterial) {
+      this.wallMat = mat;
     }
   }
 
-  /** Refresh cached wall material reference (call after theme change) */
-  refreshWallColor(): void {
+  /** Refresh cached wall material reference and base color (call after theme change).
+   *  ShaderMaterial uniforms are write-only, so base color must be passed from SceneManager. */
+  refreshWallColor(baseColor?: Color3): void {
     this.cacheWallMaterial();
+    if (baseColor) {
+      this.wallBaseColor = baseColor.clone();
+    }
   }
 
   // ── Internal: Update Loop ──────────────────────────────────────────────────
@@ -1015,7 +860,6 @@ export class VFXManager {
     this.updateTornadoRings(dt);
     this.updateBolts(dt);
     this.updateComboFlash(dt);
-    this.updateFloatingTexts(dt);
     this.cleanupBurstSystems();
   }
 
@@ -1027,9 +871,12 @@ export class VFXManager {
     const intensity = pulse * this.config.wallPulseIntensity;
 
     // Brighten toward teal-white (magic shimmer)
-    this.wallMat.diffuseColor.r = this.wallBaseColor.r + intensity * 0.15;
-    this.wallMat.diffuseColor.g = this.wallBaseColor.g + intensity * 0.35;
-    this.wallMat.diffuseColor.b = this.wallBaseColor.b + intensity * 0.35;
+    const pulsedColor = new Color3(
+      this.wallBaseColor.r + intensity * 0.15,
+      this.wallBaseColor.g + intensity * 0.35,
+      this.wallBaseColor.b + intensity * 0.35,
+    );
+    this.wallMat.setColor3("baseColor", pulsedColor);
   }
 
   private updateRings(dt: number): void {
@@ -1079,66 +926,6 @@ export class VFXManager {
       const remaining = tr.duration - tr.elapsed;
       const mat = tr.mesh.material as StandardMaterial;
       mat.alpha = remaining < 0.5 ? remaining / 0.5 * 0.5 : 0.5;
-    }
-  }
-
-  private updateFloatingTexts(dt: number): void {
-    const FLOAT_DURATION = 2.0;
-    const FLOAT_HEIGHT = 0.8;
-    const BOUNCE_COUNT = 3;        // number of bounces
-    const BOUNCE_DECAY = 0.5;      // each bounce is 50% of previous height
-    const BOUNCE_AMPLITUDE = 0.12; // first bounce height
-
-    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-      const ft = this.floatingTexts[i];
-      ft.age += dt;
-      const t = ft.age / FLOAT_DURATION;
-
-      if (t >= 1) {
-        ft.mesh.material?.dispose();
-        ft.mesh.dispose();
-        this.floatingTexts.splice(i, 1);
-        continue;
-      }
-
-      // Base: float upward
-      const baseY = ft.startY + t * FLOAT_HEIGHT;
-
-      // Bounce: damped sine wave overlaid on upward drift
-      // Bounces happen in the first 60% of the duration, then settle
-      let bounceOffset = 0;
-      if (t < 0.6) {
-        const bt = t / 0.6; // 0..1 within bounce phase
-        const amplitude = BOUNCE_AMPLITUDE * Math.pow(BOUNCE_DECAY, bt * BOUNCE_COUNT);
-        bounceOffset = Math.abs(Math.sin(bt * BOUNCE_COUNT * Math.PI)) * amplitude;
-      }
-
-      ft.mesh.position.y = baseY + bounceOffset;
-
-      // Scale: elastic pop in, then gentle pulse
-      let scale: number;
-      if (t < 0.1) {
-        // Elastic overshoot entrance
-        const et = t / 0.1;
-        scale = et * (1 + 0.3 * Math.sin(et * Math.PI));
-      } else if (t < 0.6) {
-        // Squash & stretch synced with bounces
-        const bt = (t - 0.1) / 0.5;
-        const squash = Math.sin(bt * BOUNCE_COUNT * Math.PI);
-        const scaleX = 1 + squash * 0.12 * Math.pow(BOUNCE_DECAY, bt * BOUNCE_COUNT);
-        const scaleY = 1 - squash * 0.08 * Math.pow(BOUNCE_DECAY, bt * BOUNCE_COUNT);
-        ft.mesh.scaling.set(scaleX, scaleY, 1);
-        scale = -1; // signal: already set scaling
-      } else {
-        scale = 1.0;
-      }
-      if (scale >= 0) {
-        ft.mesh.scaling.setAll(Math.max(0.1, scale));
-      }
-
-      // Fade out in last 30%
-      const mat = ft.mesh.material as StandardMaterial;
-      mat.alpha = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
     }
   }
 
