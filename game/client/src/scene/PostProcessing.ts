@@ -53,7 +53,7 @@ void main() {
     float edgeLum = sqrt(sobelX_lum * sobelX_lum + sobelY_lum * sobelY_lum);
 
     // Combine edges
-    float edge = smoothstep(0.02, 0.06, edgeDepth * 40.0 + edgeLum * 1.5);
+    float edge = smoothstep(0.01, 0.14, edgeDepth * 40.0 + edgeLum * 1.5);
 
     // Dark outline color (near-black with slight purple tint)
     vec3 outlineColor = vec3(0.05, 0.03, 0.08);
@@ -87,7 +87,7 @@ export class PostProcessing {
       camera,
     );
     let _outlineStrength = 0.85;
-    let _outlineNearScale = 2.0;
+    let _outlineNearScale = 1.2;
     let _outlineFarScale = 0.5;
     let _outlineDepthRange: [number, number] = [0.0, 1.0];
     this.sobelOutline.onApply = (effect) => {
@@ -131,7 +131,7 @@ export class PostProcessing {
 
     // Chromatic aberration
     this.pipeline.chromaticAberrationEnabled = true;
-    this.pipeline.chromaticAberration.aberrationAmount = 8;
+    this.pipeline.chromaticAberration.aberrationAmount = 1;
 
     // Vignette
     this.pipeline.imageProcessing.vignetteEnabled = true;
