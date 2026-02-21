@@ -144,9 +144,11 @@ export class CoinMeshManager {
   public updateInstances(): void {
     if (this.activeCoins === 0) {
       this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
+      this.prototypeMesh.isVisible = false;
       return;
     }
 
+    this.prototypeMesh.isVisible = true;
     // Pass the active portion of the buffer to BabylonJS
     const activeMatrixData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
     this.prototypeMesh.thinInstanceSetBuffer("matrix", activeMatrixData, 16, false);

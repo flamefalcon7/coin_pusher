@@ -199,7 +199,7 @@ export const PHYSICS_CONFIG = {
 
 // Pusher configuration
 export const PUSHER_CONFIG = {
-  AMPLITUDE: 0.1, // meters
+  AMPLITUDE: 0.08, // meters
   FREQUENCY: 0.5, // Hz
   INITIAL_PHASE: 0,
   Z_OFFSET: 0.1, // meters
@@ -260,11 +260,11 @@ export const SLOT_CONFIG = {
 export const SCENE_CONFIG = {
   PLATFORM: {
     WIDTH: 1.2, // meters (back edge width, constant up to FLARE_Z)
-    DEPTH: 1.2, // meters
+    DEPTH: 1.3, // meters
     FLARE_Z: 0, // z where outward flare begins (0 = midpoint of platform)
     FLARE_ANGLE: 30, // degrees outward from each side wall
     THICKNESS: 0.05, // meters
-    POSITION: { x: 0, y: 0.25, z: 0.1 },
+    POSITION: { x: 0, y: 0.25, z: 0.05 },
     TILT_ANGLE: 2, // degrees (forward tilt to help coins flow toward front)
     FRICTION: 0.35,
     RESTITUTION: 0.15,
@@ -292,11 +292,11 @@ export const SCENE_CONFIG = {
     RESTITUTION: 0.8, // high bounce to push coins away from pins
   },
   SIDE_WALLS: {
-    DEPTH: 1.2, // meters
+    DEPTH: 1.3, // meters
     HEIGHT: 2, // meters
-    THICKNESS: 0.10, // meters
-    LEFT_POSITION: { x: -0.6, y: 0.5, z: 0.1 },
-    RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0.1 },
+    THICKNESS: 0.1, // meters
+    LEFT_POSITION: { x: -0.6, y: 0.5, z: 0.05 },
+    RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0.05 },
     INNER_TILT_ANGLE: 1.5, // degrees (inward tilt)
     FRONT_OPENING_SIZE: 0.25, // meters - square hole side length
     FRONT_OPENING_CENTER: 0.5, // normalized position along flared wall (0=FLARE_Z end, 1=front end)
@@ -306,37 +306,37 @@ export const SCENE_CONFIG = {
   },
   // Left platform: raised shelf extending outward from the left wall
   LEFT_PLATFORM: {
-    WIDTH: 0.35,            // meters — extends outward from left wall (-x direction)
-    HEIGHT: 0.08,           // meters — shelf thickness
-    BACK_Z: -0.5,           // z start (aligns with platform back)
-    FRONT_Z: 0.0,           // z end (up to flare point — back segment only)
-    TOP_Y: 1.5,             // y position of shelf surface (at wall top)
+    WIDTH: 0.35, // meters — extends outward from left wall (-x direction)
+    HEIGHT: 0.08, // meters — shelf thickness
+    BACK_Z: -0.6, // z start (aligns with platform back)
+    FRONT_Z: 0.0, // z end (up to flare point — back segment only)
+    TOP_Y: 1.5, // y position of shelf surface (at wall top)
     FRICTION: 0.3,
     RESTITUTION: 0.1,
   },
   // Slot machine: decorative slot machine on the left platform (visual only)
   SLOT_MACHINE: {
-    WIDTH: 0.28,            // meters — cabinet width
-    HEIGHT: 0.45,           // meters — cabinet height
-    DEPTH: 0.22,            // meters — cabinet depth
+    WIDTH: 0.28, // meters — cabinet width
+    HEIGHT: 0.45, // meters — cabinet height
+    DEPTH: 0.22, // meters — cabinet depth
     POSITION_OFFSET_Z: -0.25, // z offset from platform center (centered on back segment)
   },
   // Side ramps: depressed surfaces near wall openings to guide coins through
   SIDE_RAMP: {
-    DROP: 0.02,       // meters — how far the outer edge dips below platform surface
-    FRICTION: 0.1,    // low friction to help coins slide into openings
+    DROP: 0.02, // meters — how far the outer edge dips below platform surface
+    FRICTION: 0.1, // low friction to help coins slide into openings
   },
   // Front lip: wedge at front edge to prevent coins from sliding off too easily
   FRONT_LIP: {
-    HEIGHT: 0.035,    // meters — rise at front edge (~2.9× coin thickness)
-    DEPTH: 0.10,      // meters — extent in Z
-    BASE: 0.005,      // meters — embedded base thickness
+    HEIGHT: 0.035, // meters — rise at front edge (~2.9× coin thickness)
+    DEPTH: 0.1, // meters — extent in Z
+    BASE: 0.005, // meters — embedded base thickness
   },
   PUSHER: {
     WIDTH: 1.2, // meters
     HEIGHT: 0.2, // meters (thickness)
     DEPTH: 1, // meters
-    POSITION: { x: 0, y: 0.3, z: -0.5 },
+    POSITION: { x: 0, y: 0.3, z: -0.6 },
     FRICTION: 0.5,
     RESTITUTION: 0.1,
   },
@@ -351,12 +351,12 @@ export const SCENE_CONFIG = {
 
 // Slot machine configuration
 export const SLOT_MACHINE_CONFIG = {
-  TRIGGER_COUNT: 10,        // coins through left wall to trigger spin
-  BONUS_AMOUNT: 100,        // coins awarded on jackpot
-  X_THRESHOLD: -0.5,        // coins with x < this count as left-wall drops
-  Z_MAX_THRESHOLD: 0.55,    // coins through left opening have Z < 0.5; front-edge coins have Z > 0.7
+  TRIGGER_COUNT: 10, // coins through left wall to trigger spin
+  BONUS_AMOUNT: 100, // coins awarded on jackpot
+  X_THRESHOLD: -0.5, // coins with x < this count as left-wall drops
+  Z_MAX_THRESHOLD: 0.55, // coins through left opening have Z < 0.5; front-edge coins have Z > 0.7
   SYMBOLS: ["bitcoin", "ethereum", "solana"] as const,
-  SPIN_DURATION: 3500,      // ms total reel animation time
-  BONUS_SPAWN_DELAY: 4000,  // ms after spin starts before bonus coins drop
+  SPIN_DURATION: 3500, // ms total reel animation time
+  BONUS_SPAWN_DELAY: 4000, // ms after spin starts before bonus coins drop
   BONUS_SPAWN_INTERVAL: 30, // ms between each bonus coin spawn
 } as const;
