@@ -18,3 +18,4 @@ func TopicFillPlatform(room string) string       { return "game." + room + ".cmd
 func TopicUpdateSceneObjects(room string) string { return "game." + room + ".cmd.update_scene_objects" }
 func TopicSlotSpin(room string) string            { return "game." + room + ".slot_spin" }
 func TopicSlotCounter(room string) string          { return "game." + room + ".slot_counter" }
+func TopicAbility(room string) string              { return "game." + room + ".ability" }

@@ -93,21 +93,25 @@ async function initialize() {
   // Subscribe to shock commands from Go backend
   natsClient.subscribeShock((_cmd: ShockCommand) => {
     gameLoop.shockPins();
+    natsClient.publishAbilityEvent({ op: "ability", ability: "shock" });
   });
 
   // Subscribe to tornado commands from Go backend
   natsClient.subscribeTornado((cmd: TornadoCommand) => {
     gameLoop.startTornado(cmd.x, cmd.z);
+    natsClient.publishAbilityEvent({ op: "ability", ability: "tornado", x: cmd.x, z: cmd.z });
   });
 
   // Subscribe to explosion commands from Go backend
   natsClient.subscribeExplosion((cmd: ExplosionCommand) => {
     gameLoop.explode(cmd.x, cmd.z);
+    natsClient.publishAbilityEvent({ op: "ability", ability: "explosion", x: cmd.x, z: cmd.z });
   });
 
   // Subscribe to lightning commands from Go backend
   natsClient.subscribeLightning((_cmd: LightningCommand) => {
     gameLoop.lightning();
+    natsClient.publishAbilityEvent({ op: "ability", ability: "lightning" });
   });
 
   // Subscribe to clear_all commands from Go backend

@@ -89,6 +89,38 @@ function App() {
       setSlotCounter(counter);
     });
 
+    // Set ability event callback — plays VFX/sound + syncs cooldown for ALL clients
+    gameClient.onAbilityEvent((ability, x, z) => {
+      const platformY = 0.25 + 0.05 / 2;
+      switch (ability) {
+        case "shock":
+          sceneManager.playShockEffect();
+          sceneManager.getSoundManager().playShock();
+          setShockCooldown(true);
+          setTimeout(() => setShockCooldown(false), RATE_LIMIT_CONFIG.SHOCK_COOLDOWN);
+          break;
+        case "tornado":
+          if (x !== undefined && z !== undefined) {
+            sceneManager.playTornadoEffect(new Vector3(x, platformY, z));
+          }
+          setTornadoCooldown(true);
+          setTimeout(() => setTornadoCooldown(false), RATE_LIMIT_CONFIG.TORNADO_COOLDOWN);
+          break;
+        case "explosion":
+          if (x !== undefined && z !== undefined) {
+            sceneManager.playExplosionEffect(new Vector3(x, platformY, z));
+          }
+          setExplosionCooldown(true);
+          setTimeout(() => setExplosionCooldown(false), RATE_LIMIT_CONFIG.EXPLOSION_COOLDOWN);
+          break;
+        case "lightning":
+          sceneManager.playLightningEffect();
+          setLightningCooldown(true);
+          setTimeout(() => setLightningCooldown(false), RATE_LIMIT_CONFIG.LIGHTNING_COOLDOWN);
+          break;
+      }
+    });
+
     // Connect to server
     gameClient.connect();
 
@@ -301,10 +333,7 @@ function App() {
       return;
     }
     gameClientRef.current.shock();
-    sceneManagerRef.current?.playShockEffect();
-    sceneManagerRef.current?.getSoundManager().playShock();
-    setShockCooldown(true);
-    setTimeout(() => setShockCooldown(false), RATE_LIMIT_CONFIG.SHOCK_COOLDOWN);
+    // VFX/sound/cooldown now synced via server ability broadcast
   };
 
   const handleTornadoClick = () => {
@@ -317,14 +346,8 @@ function App() {
   const handleTornadoPlace = (x: number, z: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
     gameClientRef.current.tornado(x, z);
-
-    // Play VFX optimistically
-    const platformY = 0.25 + 0.05 / 2; // PLATFORM.POSITION.y + THICKNESS/2
-    sceneManagerRef.current?.playTornadoEffect(new Vector3(x, platformY, z));
-
+    // VFX/cooldown now synced via server ability broadcast
     setTornadoTargeting(false);
-    setTornadoCooldown(true);
-    setTimeout(() => setTornadoCooldown(false), RATE_LIMIT_CONFIG.TORNADO_COOLDOWN);
   };
 
   const handleExplosionClick = () => {
@@ -337,14 +360,8 @@ function App() {
   const handleExplosionPlace = (x: number, z: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
     gameClientRef.current.explosion(x, z);
-
-    // Play VFX optimistically
-    const platformY = 0.25 + 0.05 / 2; // PLATFORM.POSITION.y + THICKNESS/2
-    sceneManagerRef.current?.playExplosionEffect(new Vector3(x, platformY, z));
-
+    // VFX/cooldown now synced via server ability broadcast
     setExplosionTargeting(false);
-    setExplosionCooldown(true);
-    setTimeout(() => setExplosionCooldown(false), RATE_LIMIT_CONFIG.EXPLOSION_COOLDOWN);
   };
 
   const handleLightning = () => {
@@ -352,9 +369,7 @@ function App() {
       return;
     }
     gameClientRef.current.lightning();
-    sceneManagerRef.current?.playLightningEffect();
-    setLightningCooldown(true);
-    setTimeout(() => setLightningCooldown(false), RATE_LIMIT_CONFIG.LIGHTNING_COOLDOWN);
+    // VFX/cooldown now synced via server ability broadcast
   };
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {

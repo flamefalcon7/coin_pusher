@@ -4,6 +4,7 @@ import type {
   StackType,
   EditorObjectNet,
   SlotSymbol,
+  AbilityType,
 } from "@coin-pusher/shared";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
@@ -16,6 +17,7 @@ export type ConnectionStatusCallback = (
 export type PingCallback = (ping: number) => void;
 export type SlotSpinCallback = (reels: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean) => void;
 export type SlotCounterCallback = (counter: number) => void;
+export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number) => void;
 
 export class GameClient {
   private wsClient: WebSocketClient;
@@ -27,6 +29,7 @@ export class GameClient {
   private pingCallback?: PingCallback;
   private slotSpinCallback?: SlotSpinCallback;
   private slotCounterCallback?: SlotCounterCallback;
+  private abilityEventCallback?: AbilityEventCallback;
   private pendingPingTime: number = 0;
 
   constructor(url: string, token?: string) {
@@ -126,6 +129,12 @@ export class GameClient {
       case "slot_counter":
         if (this.slotCounterCallback) {
           this.slotCounterCallback(message.counter);
+        }
+        break;
+
+      case "ability":
+        if (this.abilityEventCallback) {
+          this.abilityEventCallback(message.ability, message.x, message.z);
         }
         break;
     }
@@ -235,6 +244,10 @@ export class GameClient {
 
   onSlotCounter(callback: SlotCounterCallback): void {
     this.slotCounterCallback = callback;
+  }
+
+  onAbilityEvent(callback: AbilityEventCallback): void {
+    this.abilityEventCallback = callback;
   }
 
   isConnected(): boolean {
