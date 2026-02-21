@@ -63,6 +63,7 @@ function vary(base: number, range: number, rng: () => number): number {
   return Math.max(0, Math.min(255, base + (rng() - 0.5) * 2 * range));
 }
 
+// @ts-ignore unused utility kept for potential future use
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }

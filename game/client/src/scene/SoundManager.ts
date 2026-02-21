@@ -278,6 +278,47 @@ export class SoundManager {
     });
   }
 
+  /** Mechanical clicking — square wave sweep 800→200Hz over 3.5s. */
+  playSlotSpin(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+    const duration = 3.5;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + duration);
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.setValueAtTime(0.08, t + duration - 0.3);
+    gain.gain.linearRampToValueAtTime(0, t + duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  /** Ascending arpeggio — C5→E5→G5→C6 triangle waves. */
+  playJackpot(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, t + i * 0.15);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.setValueAtTime(0.2, t + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.4);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t + i * 0.15);
+      osc.stop(t + i * 0.15 + 0.4);
+    });
+  }
+
   /** Wind whoosh — filtered noise with pitch oscillation for 4 seconds. */
   playTornado(): void {
     if (this._muted) return;

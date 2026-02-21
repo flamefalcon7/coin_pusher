@@ -16,3 +16,5 @@ func TopicLightning(room string) string  { return "game." + room + ".cmd.lightni
 func TopicClearAll(room string) string    { return "game." + room + ".cmd.clear_all" }
 func TopicFillPlatform(room string) string       { return "game." + room + ".cmd.fill_platform" }
 func TopicUpdateSceneObjects(room string) string { return "game." + room + ".cmd.update_scene_objects" }
+func TopicSlotSpin(room string) string            { return "game." + room + ".slot_spin" }
+func TopicSlotCounter(room string) string          { return "game." + room + ".slot_counter" }

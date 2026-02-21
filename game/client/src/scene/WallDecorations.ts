@@ -2,12 +2,12 @@ import {
   Scene,
   Mesh,
   MeshBuilder,
-  StandardMaterial,
+  ShaderMaterial,
   Color3,
   Vector3,
 } from "@babylonjs/core";
-import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
+import { createToonMat } from "./ToonMaterial";
 
 export interface WallRefs {
   leftBack: Mesh;
@@ -17,9 +17,9 @@ export interface WallRefs {
 }
 
 export interface DecorationMaterials {
-  emissiveMats: StandardMaterial[];
-  celToggleMats: CellMaterial[];
-  alphaMats: StandardMaterial[];
+  emissiveMats: ShaderMaterial[];
+  celToggleMats: ShaderMaterial[];
+  alphaMats: ShaderMaterial[];
 }
 
 interface WallSegment {
@@ -30,14 +30,16 @@ interface WallSegment {
 
 export class WallDecorations {
   private scene: Scene;
-  private celToggleMats: CellMaterial[] = [];
+  private celToggleMats: ShaderMaterial[] = [];
 
   constructor(scene: Scene) {
     this.scene = scene;
   }
 
   decorate(walls: WallRefs): void {
-    const { HEIGHT, THICKNESS, ARC_SEGMENTS, ARC_BULGE } = SCENE_CONFIG.SIDE_WALLS;
+    const { HEIGHT, THICKNESS } = SCENE_CONFIG.SIDE_WALLS;
+    const ARC_SEGMENTS = 8;
+    const ARC_BULGE = 0.08;
     const { WIDTH, DEPTH, FLARE_Z, POSITION } = SCENE_CONFIG.PLATFORM;
 
     const hw = WIDTH / 2;
@@ -50,15 +52,11 @@ export class WallDecorations {
     const dx = fhw - hw;
     const frontLen = Math.sqrt(dx * dx + flareDepth * flareDepth);
 
-    // Accent materials — opaque CellMaterials, themed by accent color
-    const bumperRailMat = new CellMaterial("bumperRailMat", this.scene);
-    bumperRailMat.diffuseColor = new Color3(0.8, 0.8, 0.9);
-    bumperRailMat.computeHighLevel = true;
+    // Accent materials — toon shaded, themed by accent color
+    const bumperRailMat = createToonMat("bumperRailMat", new Color3(0.8, 0.8, 0.9), this.scene);
     this.celToggleMats.push(bumperRailMat);
 
-    const panelDividerMat = new CellMaterial("panelDividerMat", this.scene);
-    panelDividerMat.diffuseColor = new Color3(0.8, 0.8, 0.9);
-    panelDividerMat.computeHighLevel = true;
+    const panelDividerMat = createToonMat("panelDividerMat", new Color3(0.8, 0.8, 0.9), this.scene);
     this.celToggleMats.push(panelDividerMat);
 
     const segments: WallSegment[] = [
@@ -111,7 +109,7 @@ export class WallDecorations {
 
   private createBumperRail(
     seg: WallSegment, thickness: number, height: number,
-    bulge: number, arcSegments: number, mat: CellMaterial,
+    bulge: number, arcSegments: number, mat: ShaderMaterial,
   ): void {
     const path = this.getArcPath(seg.depth, bulge, seg.outwardSign, arcSegments, height / 2);
     const tube = MeshBuilder.CreateTube(
@@ -125,7 +123,7 @@ export class WallDecorations {
 
   private createPanelDividers(
     seg: WallSegment, _height: number,
-    bulge: number, arcSegments: number, mat: CellMaterial,
+    bulge: number, arcSegments: number, mat: ShaderMaterial,
   ): void {
     const offsets = [-0.3, 0, 0.3];
     for (let i = 0; i < offsets.length; i++) {
@@ -142,7 +140,7 @@ export class WallDecorations {
 
   private createEdgeFrame(
     seg: WallSegment, thickness: number, height: number,
-    bulge: number, arcSegments: number, mat: CellMaterial,
+    bulge: number, arcSegments: number, mat: ShaderMaterial,
   ): void {
     const barRadius = 0.0075;
     const halfH = height / 2;

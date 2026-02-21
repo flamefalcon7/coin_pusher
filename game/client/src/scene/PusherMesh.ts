@@ -5,8 +5,8 @@ import {
   Vector3,
   Mesh,
 } from "@babylonjs/core";
-import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
+import { createToonMat } from "./ToonMaterial";
 
 export class PusherMesh {
   private mesh: Mesh;
@@ -22,11 +22,7 @@ export class PusherMesh {
 
     this.mesh.position = new Vector3(POSITION.x, POSITION.y, POSITION.z);
 
-    // CellMaterial — color overridden by theme
-    const material = new CellMaterial("pusherMat", scene);
-    material.diffuseColor = new Color3(1.0, 0.0, 0.5);
-    material.computeHighLevel = true;
-    this.mesh.material = material;
+    this.mesh.material = createToonMat("pusherMat", new Color3(1.0, 0.0, 0.5), scene);
 
     console.log("🔨 Pusher mesh created");
   }

@@ -155,12 +155,29 @@ export type ClientMessage =
   | FillPlatformMessage
   | UpdateSceneObjectsMessage;
 
+// Server → Client: Slot machine spin result
+export type SlotSymbol = "bitcoin" | "ethereum" | "solana";
+
+export type SlotMachineSpinMessage = {
+  op: "slot_spin";
+  reels: [SlotSymbol, SlotSymbol, SlotSymbol];
+  jackpot: boolean;
+};
+
+// Server → Client: Slot machine counter update
+export type SlotMachineCounterMessage = {
+  op: "slot_counter";
+  counter: number;
+};
+
 // Union of all server-to-client messages
 export type ServerMessage =
   | WorldSnapshotMessage
   | StateDeltaMessage
   | DespawnMessage
-  | PongMessage;
+  | PongMessage
+  | SlotMachineSpinMessage
+  | SlotMachineCounterMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
@@ -287,6 +304,23 @@ export const SCENE_CONFIG = {
     FRICTION: 0.3,
     RESTITUTION: 0.1,
   },
+  // Left platform: raised shelf extending outward from the left wall
+  LEFT_PLATFORM: {
+    WIDTH: 0.35,            // meters — extends outward from left wall (-x direction)
+    HEIGHT: 0.08,           // meters — shelf thickness
+    BACK_Z: -0.5,           // z start (aligns with platform back)
+    FRONT_Z: 0.0,           // z end (up to flare point — back segment only)
+    TOP_Y: 1.5,             // y position of shelf surface (at wall top)
+    FRICTION: 0.3,
+    RESTITUTION: 0.1,
+  },
+  // Slot machine: decorative slot machine on the left platform (visual only)
+  SLOT_MACHINE: {
+    WIDTH: 0.28,            // meters — cabinet width
+    HEIGHT: 0.45,           // meters — cabinet height
+    DEPTH: 0.22,            // meters — cabinet depth
+    POSITION_OFFSET_Z: -0.25, // z offset from platform center (centered on back segment)
+  },
   // Side ramps: depressed surfaces near wall openings to guide coins through
   SIDE_RAMP: {
     DROP: 0.02,       // meters — how far the outer edge dips below platform surface
@@ -313,4 +347,16 @@ export const SCENE_CONFIG = {
     DEPTH: 0.3, // meters
     POSITION: { x: 0, y: 0.15, z: 0.75 },
   },
+} as const;
+
+// Slot machine configuration
+export const SLOT_MACHINE_CONFIG = {
+  TRIGGER_COUNT: 10,        // coins through left wall to trigger spin
+  BONUS_AMOUNT: 100,        // coins awarded on jackpot
+  X_THRESHOLD: -0.5,        // coins with x < this count as left-wall drops
+  Z_MAX_THRESHOLD: 0.55,    // coins through left opening have Z < 0.5; front-edge coins have Z > 0.7
+  SYMBOLS: ["bitcoin", "ethereum", "solana"] as const,
+  SPIN_DURATION: 3500,      // ms total reel animation time
+  BONUS_SPAWN_DELAY: 4000,  // ms after spin starts before bonus coins drop
+  BONUS_SPAWN_INTERVAL: 30, // ms between each bonus coin spawn
 } as const;
