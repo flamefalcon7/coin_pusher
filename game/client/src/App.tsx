@@ -172,8 +172,8 @@ function App() {
             sceneManager.getSoundManager().playCoinDespawn(despawnCount);
           }
 
-          // Batch update coin instances to GPU
-          sceneManager.updateCoinBuffers();
+          // Batch update coin instances to GPU (pass dt in seconds for animations)
+          sceneManager.updateCoinBuffers(deltaTime / 1000);
 
           // Only trigger React re-render when coin count actually changes
           const size = knownCoins.size;
