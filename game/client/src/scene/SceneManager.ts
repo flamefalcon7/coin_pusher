@@ -19,6 +19,7 @@ const TOON_MAT_NAMES = [
   "slotReelMat0", "slotReelMat1", "slotReelMat2",
   "slotLightMat", "slotPanelMat", "slotOutlineMat",
   "bumperRailMat", "panelDividerMat", "coinMat",
+  "honeycombWallMat",
 ] as const;
 
 export class SceneManager {
@@ -122,6 +123,7 @@ export class SceneManager {
       doodleOutlineMat: new Color3(0.1, 0.1, 0.1),  // always near-black
       bumperRailMat: theme.pin,
       panelDividerMat: theme.pin,
+      honeycombWallMat: theme.wall,
     };
 
     for (const [name, color] of Object.entries(colorMap)) {
@@ -132,6 +134,12 @@ export class SceneManager {
         mat.setColor3("highlightColor", deriveHighlight(color));
         mat.setColor3("rimColor", theme.rim);
       }
+    }
+
+    // Set honeycomb glow color from theme rim
+    const honeycombMat = this.toonMats.get("honeycombWallMat");
+    if (honeycombMat) {
+      honeycombMat.setColor3("honeycombGlowColor", theme.rim);
     }
 
     // Cache pin color for shock effect fade-back

@@ -13,6 +13,7 @@ import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
 import { DoodleDecorations } from "./DoodleDecorations";
 import { SlotMachine } from "./SlotMachine";
 import { createToonMat } from "./ToonMaterial";
+import { createHoneycombWallMaterial } from "./HoneycombWallMaterial";
 
 export class StaticMeshes {
   private scene: Scene;
@@ -42,8 +43,13 @@ export class StaticMeshes {
     // Back wall with pins
     this.createBackWallWithPins(wallMat);
 
+    // Honeycomb wall material for side walls
+    const honeycombWallMat = createHoneycombWallMaterial(
+      "honeycombWallMat", new Color3(1.0, 1.0, 1.0), this.scene,
+    );
+
     // Angled side walls
-    this.createAngledSideWalls(wallMat);
+    this.createAngledSideWalls(honeycombWallMat);
 
     // Doodle decorations (wavy edges + blob corners + starburst frames)
     // Also applies doodle texture to wall meshes
