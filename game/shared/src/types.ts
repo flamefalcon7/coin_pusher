@@ -316,7 +316,7 @@ export const SCENE_CONFIG = {
     LEFT_POSITION: { x: -0.6, y: 0.5, z: 0.05 },
     RIGHT_POSITION: { x: 0.6, y: 0.5, z: 0.05 },
     INNER_TILT_ANGLE: 1.5, // degrees (inward tilt)
-    FRONT_OPENING_SIZE: 0.25, // meters - square hole side length
+    FRONT_OPENING_SIZE: 0.32, // meters - square hole side length
     FRONT_OPENING_CENTER: 0.5, // normalized position along flared wall (0=FLARE_Z end, 1=front end)
     FRONT_OPENING_Y: 0.35, // world Y position of hole center
     FRICTION: 0.3,
@@ -341,8 +341,8 @@ export const SCENE_CONFIG = {
   },
   // Side ramps: depressed surfaces near wall openings to guide coins through
   SIDE_RAMP: {
-    DROP: 0.02, // meters — how far the outer edge dips below platform surface
-    FRICTION: 0.1, // low friction to help coins slide into openings
+    DROP: 0.04, // meters — how far the outer edge dips below platform surface
+    FRICTION: 0.05, // low friction to help coins slide into openings
   },
   // Front lip: wedge at front edge to prevent coins from sliding off too easily
   FRONT_LIP: {

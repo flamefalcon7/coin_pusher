@@ -71,15 +71,21 @@ export class HolePortalVFX {
     const xSign = holeId === "left" ? 1 : -1;
     const innerX = xSign * (THICKNESS / 2);
 
-    // Frame: torus slightly larger than hole
-    const frameDiameter = 0.29;
-    const frame = MeshBuilder.CreateTorus(
-      `holeFrame_${holeId}`,
-      { diameter: frameDiameter, thickness: 0.018, tessellation: 32 },
-      this.scene,
-    );
+    // Frame: square border around the hole
+    const barThickness = 0.018;
+    const barDepth = 0.01;
+    const topBar = MeshBuilder.CreateBox(`_ft_${holeId}`, { width: barDepth, height: barThickness, depth: FRONT_OPENING_SIZE }, this.scene);
+    topBar.position.y = hs;
+    const bottomBar = MeshBuilder.CreateBox(`_fb_${holeId}`, { width: barDepth, height: barThickness, depth: FRONT_OPENING_SIZE }, this.scene);
+    bottomBar.position.y = -hs;
+    const leftBar = MeshBuilder.CreateBox(`_fl_${holeId}`, { width: barDepth, height: FRONT_OPENING_SIZE, depth: barThickness }, this.scene);
+    leftBar.position.z = -hs;
+    const rightBar = MeshBuilder.CreateBox(`_fr_${holeId}`, { width: barDepth, height: FRONT_OPENING_SIZE, depth: barThickness }, this.scene);
+    rightBar.position.z = hs;
+
+    const frame = Mesh.MergeMeshes([topBar, bottomBar, leftBar, rightBar], true, true, undefined, false, true)!;
+    frame.name = `holeFrame_${holeId}`;
     frame.position = new Vector3(innerX + xSign * 0.005, holeLocalY, holeLocalZ);
-    frame.rotation.z = Math.PI / 2; // face outward (along wall thickness axis)
     frame.parent = wallParent;
     frame.isPickable = false;
 
