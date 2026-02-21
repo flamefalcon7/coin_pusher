@@ -10,7 +10,6 @@ import {
   Material,
 } from "@babylonjs/core";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
-import { createDoodleTexture } from "./DoodleTexture";
 import { DoodleDecorations } from "./DoodleDecorations";
 import { SlotMachine } from "./SlotMachine";
 import { createToonMat } from "./ToonMaterial";
@@ -33,10 +32,7 @@ export class StaticMeshes {
 
     // Toon materials for platform, walls, pins — colors overridden by theme
     const platformMat = createToonMat("platformMat", new Color3(0.12, 0.12, 0.18), this.scene);
-    const doodleWallTex = createDoodleTexture(this.scene, "wallDoodleTex", 12345);
-    const wallMat = createToonMat("wallMat", new Color3(1.0, 1.0, 1.0), this.scene, {
-      diffuseTexture: doodleWallTex,
-    });
+    const wallMat = createToonMat("wallMat", new Color3(1.0, 1.0, 1.0), this.scene);
     const rampMat = createToonMat("rampMat", new Color3(0.45, 0.2, 0.1), this.scene);
     rampMat.backFaceCulling = false;
 

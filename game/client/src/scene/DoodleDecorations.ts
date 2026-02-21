@@ -9,7 +9,6 @@ import {
   VertexData,
 } from "@babylonjs/core";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
-import { createDoodleTexture } from "./DoodleTexture";
 import { createToonMat } from "./ToonMaterial";
 
 // ── Scallop (half-circle bumps) ──────────────────────────────────────────────
@@ -69,47 +68,7 @@ export class DoodleDecorations {
     this.starMat = createToonMat("doodleBlobMat", STAR_COLOR, scene);
     this.burstMat = createToonMat("doodleBurstMat", BURST_COLOR, scene);
 
-    // Apply doodle texture to existing wall meshes
-    this.reskinWalls();
     this.build();
-  }
-
-  /** Apply doodle texture to existing wall meshes. */
-  private reskinWalls(): void {
-    const doodleTex = createDoodleTexture(this.scene, "doodleWallTex", 77777);
-    const wallMat = createToonMat("doodleWallMat", new Color3(1.0, 1.0, 1.0), this.scene, {
-      diffuseTexture: doodleTex,
-    });
-
-    // Back wall
-    const backWall = this.scene.getMeshByName("backWall");
-    if (backWall) backWall.material = wallMat;
-
-    // Side walls
-    const sideWallNames = [
-      "leftWallBack", "rightWallBack",
-      "leftWallFront_bottom", "leftWallFront_top", "leftWallFront_left", "leftWallFront_right",
-      "rightWallFront_bottom", "rightWallFront_top", "rightWallFront_left", "rightWallFront_right",
-    ];
-    for (const name of sideWallNames) {
-      const mesh = this.scene.getMeshByName(name);
-      if (mesh) {
-        mesh.material = wallMat;
-        this.rotateSideWallUVs(mesh as Mesh);
-      }
-    }
-  }
-
-  /** Swap U↔V on box meshes so doodle texture runs horizontally on side faces. */
-  private rotateSideWallUVs(mesh: Mesh): void {
-    const uvs = mesh.getVerticesData("uv");
-    if (!uvs) return;
-    const rotated = new Float32Array(uvs.length);
-    for (let i = 0; i < uvs.length; i += 2) {
-      rotated[i] = uvs[i + 1];
-      rotated[i + 1] = uvs[i];
-    }
-    mesh.setVerticesData("uv", rotated);
   }
 
   private build(): void {
