@@ -54,6 +54,7 @@ export class SceneManager {
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
       stencil: true,
+      adaptToDeviceRatio: true,
     });
 
     this.scene = new Scene(this.engine);

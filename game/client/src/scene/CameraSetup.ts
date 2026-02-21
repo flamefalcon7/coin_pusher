@@ -1,44 +1,54 @@
-import { ArcRotateCamera, Vector3, Scene } from "@babylonjs/core";
+import { ArcRotateCamera, Vector3, Scene, Engine } from "@babylonjs/core";
+
+const BASE_RADIUS = 3;
+const MIN_RADIUS = 2;
+const MAX_RADIUS = 5;
 
 export class CameraSetup {
   private camera: ArcRotateCamera;
 
   constructor(scene: Scene, canvas: HTMLCanvasElement) {
-    // Create ArcRotateCamera
-    // Target: center of main platform (0, 0.3, 0)
-    // Alpha: -π/2 (view from front-right)
-    // Beta: π/3 (45 degrees above horizontal)
-    // Radius: 3 meters
     this.camera = new ArcRotateCamera(
       "camera",
       Math.PI / 2,
       Math.PI / 2.5,
-      3,
+      BASE_RADIUS,
       new Vector3(0, 1, 0),
       scene
     );
 
-    // Attach controls to canvas
     this.camera.attachControl(canvas, true);
 
-    // Limit zoom range (2-4 meters for mobile)
-    this.camera.lowerRadiusLimit = 2;
-    this.camera.upperRadiusLimit = 4;
+    this.camera.lowerRadiusLimit = MIN_RADIUS;
+    this.camera.upperRadiusLimit = MAX_RADIUS;
 
-    // Limit vertical rotation (prevent flipping)
-    // this.camera.lowerBetaLimit = Math.PI / 6; // 30 degrees
-    // this.camera.upperBetaLimit = Math.PI / 2.2; // ~80 degrees
-
-    // Smooth camera movement
     this.camera.inertia = 0.8;
     this.camera.angularSensibilityX = 1000;
     this.camera.angularSensibilityY = 1000;
     this.camera.wheelPrecision = 50;
 
-    // Panning settings
-    this.camera.panningSensibility = 0; // Disable panning
+    this.camera.panningSensibility = 0;
 
-    console.log("📷 Camera initialized");
+    // Adjust radius for narrow (portrait) screens
+    const engine = scene.getEngine();
+    this.adjustRadiusForAspect(engine);
+    engine.onResizeObservable.add(() => this.adjustRadiusForAspect(engine));
+
+    console.log("Camera initialized");
+  }
+
+  private adjustRadiusForAspect(engine: Engine): void {
+    const aspect = engine.getAspectRatio(this.camera);
+    // Portrait or narrow screens: pull camera back so full table width is visible
+    // aspect ~0.5 (phone portrait) → radius ~4.2
+    // aspect ~1.0 (square/tablet) → radius ~3
+    // aspect ≥1.3 (landscape) → radius stays at BASE_RADIUS
+    if (aspect < 1.3) {
+      this.camera.radius = Math.min(
+        MAX_RADIUS,
+        BASE_RADIUS * (1.3 / aspect)
+      );
+    }
   }
 
   getCamera(): ArcRotateCamera {
