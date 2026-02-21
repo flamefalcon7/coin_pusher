@@ -9,7 +9,7 @@ import {
   TransformNode,
   Material,
 } from "@babylonjs/core";
-import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
+import { SCENE_CONFIG } from "@coin-pusher/shared";
 import { SlotMachine } from "./SlotMachine";
 import { PacManAnimation } from "./PacManAnimation";
 import { createToonMat } from "./ToonMaterial";
@@ -20,6 +20,7 @@ export class StaticMeshes {
   private slotMachine: SlotMachine | null = null;
   private leftWallFrontParent: TransformNode | null = null;
   private rightWallFrontParent: TransformNode | null = null;
+  private backWallGroup: TransformNode | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -36,6 +37,10 @@ export class StaticMeshes {
 
   getRightWallFrontParent(): TransformNode | null {
     return this.rightWallFrontParent;
+  }
+
+  getBackWallGroup(): TransformNode | null {
+    return this.backWallGroup;
   }
 
   private createStaticScene(): void {
@@ -388,9 +393,9 @@ export class StaticMeshes {
       TILT_ANGLE,
     } = SCENE_CONFIG.BACK_WALL;
 
-    const backWallGroup = new TransformNode("backWallGroup", this.scene);
-    backWallGroup.position = new Vector3(BACK_POS.x, BACK_POS.y, BACK_POS.z);
-    backWallGroup.rotation.x = TILT_ANGLE * (Math.PI / 180);
+    this.backWallGroup = new TransformNode("backWallGroup", this.scene);
+    this.backWallGroup.position = new Vector3(BACK_POS.x, BACK_POS.y, BACK_POS.z);
+    this.backWallGroup.rotation.x = TILT_ANGLE * (Math.PI / 180);
 
     const backWall = MeshBuilder.CreateBox(
       "backWall",
@@ -398,10 +403,9 @@ export class StaticMeshes {
       this.scene
     );
     backWall.material = wallMaterial;
-    backWall.parent = backWallGroup;
+    backWall.parent = this.backWallGroup;
 
-    this.createPinMeshes(backWallGroup);
-    this.createSlotIndicators(backWallGroup);
+    this.createPinMeshes(this.backWallGroup);
 
     console.log("  ✓ Back wall with pins rendered");
   }
@@ -461,30 +465,4 @@ export class StaticMeshes {
     console.log(`  ✓ ${pinsCreated} pin meshes rendered`);
   }
 
-  private createSlotIndicators(parentNode: TransformNode): void {
-    const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
-
-    const slotMat = new StandardMaterial("slotMat", this.scene);
-    slotMat.diffuseColor = new Color3(1.0, 0.8, 0.2);
-    slotMat.emissiveColor = new Color3(0.3, 0.2, 0.05);
-    slotMat.alpha = 0.7;
-
-    SLOT_CONFIG.POSITIONS.forEach((x: number, index: number) => {
-      const slot = MeshBuilder.CreateBox(
-        `slotIndicator_${index}`,
-        {
-          width: 0.1,
-          height: 0.12,
-          depth: 0.02,
-        },
-        this.scene
-      );
-
-      slot.position = new Vector3(x, WALL_HEIGHT / 2, THICKNESS / 2 + 0.01);
-      slot.material = slotMat;
-      slot.parent = parentNode;
-    });
-
-    console.log(`  ✓ ${SLOT_CONFIG.POSITIONS.length} slot indicators created`);
-  }
 }

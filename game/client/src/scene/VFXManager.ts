@@ -15,6 +15,7 @@ import {
 } from "@babylonjs/core";
 import { SCENE_CONFIG, SLOT_CONFIG, SUPER_PUSH_CONFIG } from "@coin-pusher/shared";
 import { HolePortalVFX } from "./HolePortalVFX";
+import { DropZoneVFX } from "./DropZoneVFX";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -75,6 +76,9 @@ export class VFXManager {
   // Hole portal effects
   private holePortalVFX: HolePortalVFX | null = null;
 
+  // Drop zone forging VFX
+  private dropZoneVFX: DropZoneVFX | null = null;
+
   // Active timers (setInterval/setTimeout) — tracked for cleanup on dispose
   private activeTimers: ReturnType<typeof setInterval>[] = [];
 
@@ -111,6 +115,10 @@ export class VFXManager {
     this.holePortalVFX = new HolePortalVFX(this.scene, leftParent, rightParent);
   }
 
+  initCoinSlots(backWallGroup: TransformNode): void {
+    this.dropZoneVFX = new DropZoneVFX(this.scene, backWallGroup);
+  }
+
   updateHoleProgress(counter: number, triggerCount: number): void {
     this.holePortalVFX?.setProgress(counter, triggerCount);
   }
@@ -122,6 +130,8 @@ export class VFXManager {
     }
     this.holePortalVFX?.dispose();
     this.holePortalVFX = null;
+    this.dropZoneVFX?.dispose();
+    this.dropZoneVFX = null;
     this.comboFlashMesh?.dispose();
     this.comboFlashMesh = null;
     for (const ps of this.burstSystems) ps.dispose();
@@ -210,6 +220,7 @@ export class VFXManager {
 
     ps.start();
     this.trackBurst(ps);
+    this.dropZoneVFX?.flash(slotIndex);
     return ps;
   }
 
@@ -1108,6 +1119,7 @@ export class VFXManager {
     this.updateBolts(dt);
     this.updateComboFlash(dt);
     this.holePortalVFX?.update(dt);
+    this.dropZoneVFX?.update(dt);
     this.cleanupBurstSystems();
   }
 
