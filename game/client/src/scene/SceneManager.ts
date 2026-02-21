@@ -105,6 +105,12 @@ export class SceneManager {
       this.vfxManager.initHolePortals(leftWallParent, rightWallParent);
     }
 
+    // Initialize forging coin slot VFX on back wall
+    const backWallGroup = this.staticMeshes.getBackWallGroup();
+    if (backWallGroup) {
+      this.vfxManager.initCoinSlots(backWallGroup);
+    }
+
     console.log("Scene initialized successfully");
 
     window.addEventListener("resize", this.resizeHandler);
