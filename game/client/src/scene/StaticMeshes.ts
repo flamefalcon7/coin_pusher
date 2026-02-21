@@ -9,34 +9,35 @@ import {
   TransformNode,
   Material,
 } from "@babylonjs/core";
-import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
-import { createStoneWallTexture } from "./WallTexture";
-import { CastleDecorations } from "./CastleDecorations";
-
-function createCellMat(name: string, color: Color3, scene: Scene): CellMaterial {
-  const mat = new CellMaterial(name, scene);
-  mat.diffuseColor = color;
-  mat.computeHighLevel = true;
-  return mat;
-}
+import { createDoodleTexture } from "./DoodleTexture";
+import { DoodleDecorations } from "./DoodleDecorations";
+import { SlotMachine } from "./SlotMachine";
+import { createToonMat } from "./ToonMaterial";
 
 export class StaticMeshes {
   private scene: Scene;
+  private slotMachine: SlotMachine | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
     this.createStaticScene();
   }
 
+  getSlotMachine(): SlotMachine | null {
+    return this.slotMachine;
+  }
+
   private createStaticScene(): void {
     console.log("🏗️  Building client scene...");
 
-    // CellMaterial for platform, walls, pins — colors overridden by theme
-    const platformMat = createCellMat("platformMat", new Color3(0.12, 0.12, 0.18), this.scene);
-    const wallMat = createCellMat("wallMat", new Color3(0.12, 0.32, 1.0), this.scene);
-    wallMat.diffuseTexture = createStoneWallTexture(this.scene, "wallStoneTex", 12345);
-    const rampMat = createCellMat("rampMat", new Color3(0.45, 0.2, 0.1), this.scene);
+    // Toon materials for platform, walls, pins — colors overridden by theme
+    const platformMat = createToonMat("platformMat", new Color3(0.12, 0.12, 0.18), this.scene);
+    const doodleWallTex = createDoodleTexture(this.scene, "wallDoodleTex", 12345);
+    const wallMat = createToonMat("wallMat", new Color3(1.0, 1.0, 1.0), this.scene, {
+      diffuseTexture: doodleWallTex,
+    });
+    const rampMat = createToonMat("rampMat", new Color3(0.45, 0.2, 0.1), this.scene);
     rampMat.backFaceCulling = false;
 
     // Decomposed platform (center rect + flare pieces with depressed ramps)
@@ -48,9 +49,12 @@ export class StaticMeshes {
     // Angled side walls
     this.createAngledSideWalls(wallMat);
 
-    // Castle decorations (battlements + turrets on top of existing walls)
-    // Also applies stone material to wall meshes
-    new CastleDecorations(this.scene);
+    // Doodle decorations (wavy edges + blob corners + starburst frames)
+    // Also applies doodle texture to wall meshes
+    new DoodleDecorations(this.scene);
+
+    // Slot machine embedded in the front-left side wall (above coin opening)
+    this.createEmbeddedSlotMachine();
 
     // Drop zone indicator (stays StandardMaterial — needs alpha)
     const {
@@ -212,6 +216,55 @@ export class StaticMeshes {
     return mesh;
   }
 
+  /**
+   * Mount the slot machine on the inner face of the front-left angled wall,
+   * sitting just above the platform surface.
+   */
+  private createEmbeddedSlotMachine(): void {
+    const { WIDTH, DEPTH, FLARE_Z, POSITION, THICKNESS: PLAT_THICK } = SCENE_CONFIG.PLATFORM;
+    const { THICKNESS, INNER_TILT_ANGLE } = SCENE_CONFIG.SIDE_WALLS;
+    const sm_config = SCENE_CONFIG.SLOT_MACHINE;
+    const machineScale = 1.5;
+
+    const hw = WIDTH / 2;
+    const fhw = StaticMeshes.getFrontHalfWidth();
+    const frontZ = POSITION.z + DEPTH / 2;
+    const flareDepth = frontZ - FLARE_Z;
+    const dx = fhw - hw;
+
+    // Front-left wall center position and angles
+    const frontCenterZ = (FLARE_Z + frontZ) / 2;
+    const frontCenterXOff = (hw + fhw) / 2;
+    const yAngle = Math.atan2(dx, flareDepth);
+    const tiltRad = INNER_TILT_ANGLE * (Math.PI / 180);
+
+    // Parent node matching the front-left wall's position & rotation
+    const wallParent = new TransformNode("slotMachineWallMount", this.scene);
+    wallParent.position = new Vector3(-frontCenterXOff, 0, frontCenterZ);
+    wallParent.rotation.y = -yAngle;
+    wallParent.rotation.z = -tiltRad;
+
+    // Y: sit just above platform surface
+    const platformSurfaceY = POSITION.y + PLAT_THICK / 2;
+    const machineY = platformSurfaceY + (sm_config.HEIGHT / 2) * machineScale;
+
+    // Z: centered along wall
+    const machineZ = 0;
+
+    const machinePos = new Vector3(
+      THICKNESS / 2 + 0.01, // flush against inner wall face
+      machineY,
+      machineZ,
+    );
+
+    this.slotMachine = new SlotMachine(this.scene, machinePos, wallParent);
+    // Rotate so front (+Z) faces the wall's inner normal (+X)
+    this.slotMachine.getGroup().rotation.y = Math.PI / 2;
+    this.slotMachine.getGroup().scaling.setAll(machineScale);
+
+    console.log("  ✓ Slot machine mounted on front-left wall");
+  }
+
   private createAngledSideWalls(material: Material): void {
     const { HEIGHT, THICKNESS, INNER_TILT_ANGLE } = SCENE_CONFIG.SIDE_WALLS;
     const { WIDTH, DEPTH, FLARE_Z, POSITION } = SCENE_CONFIG.PLATFORM;
@@ -355,8 +408,7 @@ export class StaticMeshes {
 
     const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
 
-    // CellMaterial for pins
-    const pinMat = createCellMat("pinMat", new Color3(0.7, 0.7, 0.85), this.scene);
+    const pinMat = createToonMat("pinMat", new Color3(0.7, 0.7, 0.85), this.scene);
 
     let pinsCreated = 0;
 
