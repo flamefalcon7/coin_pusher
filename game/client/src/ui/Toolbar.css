@@ -199,6 +199,11 @@
   animation: targeting-pulse 0.8s ease-in-out infinite alternate;
 }
 
+.toolbar-action-btn.superPush:hover:not(:disabled) .toolbar-action-icon {
+  filter: drop-shadow(0 3px 10px rgba(232, 50, 30, 0.5))
+          brightness(1.08);
+}
+
 .toolbar-action-btn.lightning:hover:not(:disabled) .toolbar-action-icon {
   filter: drop-shadow(0 3px 10px rgba(140, 100, 230, 0.5))
           brightness(1.08);

@@ -1,4 +1,4 @@
-import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
+import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type SuperPushCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
@@ -112,6 +112,12 @@ async function initialize() {
   natsClient.subscribeLightning((_cmd: LightningCommand) => {
     gameLoop.lightning();
     natsClient.publishAbilityEvent({ op: "ability", ability: "lightning" });
+  });
+
+  // Subscribe to super_push commands from Go backend
+  natsClient.subscribeSuperPush((_cmd: SuperPushCommand) => {
+    pusher.startSuperPush();
+    natsClient.publishAbilityEvent({ op: "ability", ability: "superPush" });
   });
 
   // Subscribe to clear_all commands from Go backend

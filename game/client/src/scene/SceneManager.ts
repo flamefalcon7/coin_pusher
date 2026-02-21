@@ -1,6 +1,6 @@
 import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, Vector3 } from "@babylonjs/core";
 import type { SlotSymbol } from "@coin-pusher/shared";
-import { SLOT_MACHINE_CONFIG } from "@coin-pusher/shared";
+import { SLOT_MACHINE_CONFIG, SUPER_PUSH_CONFIG } from "@coin-pusher/shared";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
@@ -436,6 +436,105 @@ export class SceneManager {
         camera.target.y = origTarget.y + (Math.random() - 0.5) * wobbleIntensity * t;
       }, wobbleInterval);
       this.activeTimers.push(wobbleTimer);
+    }
+  }
+
+  // ── Super Push Effect ────────────────────────────────────────────────────
+
+  playSuperPushEffect(): void {
+    this.vfxManager.playSuperPush();
+    this.soundManager.playSuperPush();
+
+    const camera = this.scene.activeCamera as ArcRotateCamera | null;
+    const { PULLBACK_DURATION, RECOVERY_DURATION } = SUPER_PUSH_CONFIG;
+
+    // 1. Camera zoom-in during charge phase (0 - PULLBACK_DURATION ms)
+    if (camera) {
+      const origRadius = camera.radius;
+      const zoomAmount = 0.15;
+      const zoomInterval = 30;
+      let zoomElapsed = 0;
+
+      const zoomTimer = setInterval(() => {
+        zoomElapsed += zoomInterval;
+        if (zoomElapsed >= PULLBACK_DURATION) {
+          camera.radius = origRadius - zoomAmount;
+          clearInterval(zoomTimer);
+          return;
+        }
+        const t = zoomElapsed / PULLBACK_DURATION;
+        camera.radius = origRadius - zoomAmount * t;
+      }, zoomInterval);
+      this.activeTimers.push(zoomTimer);
+
+      // 2. Camera shake at thrust moment
+      const shakeTimer = setTimeout(() => {
+        const origTarget = camera.target.clone();
+        const shakeIntensity = 0.06;
+        const shakeDuration = 350;
+        const shakeInterval = 16;
+        let shakeElapsed = 0;
+
+        const innerShake = setInterval(() => {
+          shakeElapsed += shakeInterval;
+          if (shakeElapsed >= shakeDuration) {
+            camera.target.copyFrom(origTarget);
+            clearInterval(innerShake);
+
+            // 3. Snap camera back to original radius over 300ms
+            const snapDuration = 300;
+            const snapInterval = 30;
+            let snapElapsed = 0;
+            const snapStart = camera.radius;
+
+            const snapTimer = setInterval(() => {
+              snapElapsed += snapInterval;
+              if (snapElapsed >= snapDuration) {
+                camera.radius = origRadius;
+                clearInterval(snapTimer);
+                return;
+              }
+              const st = snapElapsed / snapDuration;
+              camera.radius = snapStart + (origRadius - snapStart) * st;
+            }, snapInterval);
+            this.activeTimers.push(snapTimer);
+            return;
+          }
+          const t = Math.exp(-shakeElapsed / 70);
+          camera.target.x = origTarget.x + (Math.random() - 0.5) * shakeIntensity * t;
+          camera.target.y = origTarget.y + (Math.random() - 0.5) * shakeIntensity * t;
+        }, shakeInterval);
+        this.activeTimers.push(innerShake);
+      }, PULLBACK_DURATION);
+      this.activeTimers.push(shakeTimer as unknown as ReturnType<typeof setInterval>);
+    }
+
+    // 4. Pusher glow: change pusher toon material to deep red at thrust, lerp back
+    const pusherMat = this.toonMats.get("pusherMat");
+    if (pusherMat) {
+      const origColor = THEMES[this.currentThemeIndex].pusher.clone();
+      const glowColor = new Color3(1.0, 0.15, 0.05);
+
+      const glowTimer = setTimeout(() => {
+        pusherMat.setColor3("baseColor", glowColor);
+
+        const fadeDuration = RECOVERY_DURATION;
+        const fadeInterval = 30;
+        let fadeElapsed = 0;
+
+        const fadeTimer = setInterval(() => {
+          fadeElapsed += fadeInterval;
+          if (fadeElapsed >= fadeDuration) {
+            pusherMat.setColor3("baseColor", origColor);
+            clearInterval(fadeTimer);
+            return;
+          }
+          const t = fadeElapsed / fadeDuration;
+          pusherMat.setColor3("baseColor", Color3.Lerp(glowColor, origColor, t));
+        }, fadeInterval);
+        this.activeTimers.push(fadeTimer);
+      }, PULLBACK_DURATION);
+      this.activeTimers.push(glowTimer as unknown as ReturnType<typeof setInterval>);
     }
   }
 

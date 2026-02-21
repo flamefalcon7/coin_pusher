@@ -22,6 +22,9 @@ interface ToolbarProps {
   onLightning: () => void;
   lightningDisabled: boolean;
   lightningCooldown: boolean;
+  onSuperPush: () => void;
+  superPushDisabled: boolean;
+  superPushCooldown: boolean;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -45,6 +48,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onLightning,
   lightningDisabled,
   lightningCooldown,
+  onSuperPush,
+  superPushDisabled,
+  superPushCooldown,
 }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -121,6 +127,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Ability buttons — vertical stack on the right */}
       <div className="toolbar-abilities">
+        <button
+          className={`toolbar-action-btn toolbar-action-img superPush ${superPushCooldown ? 'cooldown' : ''}`}
+          onClick={onSuperPush}
+          disabled={superPushDisabled || superPushCooldown}
+          title="Super Push"
+        >
+          <img className="toolbar-action-icon" src="/ui/abilities/superPush.png" alt="Super Push" draggable={false} />
+        </button>
+
         <button
           className={`toolbar-action-btn toolbar-action-img tornado ${tornadoTargeting ? 'targeting' : ''} ${tornadoCooldown ? 'cooldown' : ''}`}
           onClick={onTornado}

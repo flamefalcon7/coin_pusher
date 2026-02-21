@@ -214,6 +214,10 @@ export class GameClient {
     this.wsClient.send(message);
   }
 
+  superPush(): void {
+    this.wsClient.send({ op: "super_push" } as ClientMessage);
+  }
+
   clearAll(): void {
     this.wsClient.send({ op: "clear_all" } as ClientMessage);
   }

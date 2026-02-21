@@ -1,6 +1,21 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { PhysicsWorld } from "./PhysicsWorld.js";
-import { PUSHER_CONFIG, SCENE_CONFIG } from "@coin-pusher/shared";
+import { PUSHER_CONFIG, SCENE_CONFIG, SUPER_PUSH_CONFIG } from "@coin-pusher/shared";
+
+type SuperPushState = 'idle' | 'pullback' | 'thrust' | 'hold' | 'recovery';
+
+// Easing functions
+function easeInCubic(t: number): number {
+  return t * t * t;
+}
+
+function easeOutExpo(t: number): number {
+  return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+}
+
+function easeInOutQuad(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
 
 export class Pusher {
   private rigidBody: RAPIER.RigidBody;
@@ -15,6 +30,12 @@ export class Pusher {
   private readonly baseX: number;
   private readonly baseY: number;
   private readonly baseZ: number;
+
+  // Super push state machine
+  private spState: SuperPushState = 'idle';
+  private spStartTime: number = 0;
+  private spStartZ: number = 0;
+  private recoveryTargetZ: number = 0;
 
   constructor(physicsWorld: PhysicsWorld) {
     const world = physicsWorld.getWorld();
@@ -60,6 +81,11 @@ export class Pusher {
   }
 
   update(): void {
+    if (this.spState !== 'idle') {
+      this.updateSuperPush();
+      return;
+    }
+
     const elapsedTime = (Date.now() - this.startTime) / 1000;
 
     const phase = this.omega * elapsedTime + this.initialPhase;
@@ -74,6 +100,115 @@ export class Pusher {
     this.rigidBody.setLinvel({ x: 0, y: 0, z: velocityZ }, true);
 
     // Set position to correct drift
+    this.rigidBody.setTranslation(
+      {
+        x: this.baseX,
+        y: this.baseY,
+        z: this.baseZ + this.currentZ,
+      },
+      true
+    );
+  }
+
+  startSuperPush(): void {
+    if (this.spState !== 'idle') return;
+
+    this.spStartZ = this.currentZ;
+    this.spStartTime = Date.now();
+    this.spState = 'pullback';
+
+    console.log("💥 Super push activated!");
+  }
+
+  private updateSuperPush(): void {
+    const now = Date.now();
+    const elapsed = now - this.spStartTime;
+    const { PULLBACK_Z, THRUST_Z, PULLBACK_DURATION, THRUST_DURATION, HOLD_DURATION, RECOVERY_DURATION } = SUPER_PUSH_CONFIG;
+
+    let targetZ: number;
+    let velocityZ: number;
+
+    switch (this.spState) {
+      case 'pullback': {
+        if (elapsed >= PULLBACK_DURATION) {
+          this.spStartTime = now;
+          this.spState = 'thrust';
+          targetZ = PULLBACK_Z;
+          velocityZ = 0;
+          break;
+        }
+        const t = elapsed / PULLBACK_DURATION;
+        const eased = easeInCubic(t);
+        targetZ = this.spStartZ + (PULLBACK_Z - this.spStartZ) * eased;
+        // Analytical derivative: dz/dt = (PULLBACK_Z - spStartZ) * 3t^2 / PULLBACK_DURATION
+        const range = PULLBACK_Z - this.spStartZ;
+        velocityZ = range * 3 * t * t / (PULLBACK_DURATION / 1000);
+        break;
+      }
+
+      case 'thrust': {
+        if (elapsed >= THRUST_DURATION) {
+          this.spStartTime = now;
+          this.spState = 'hold';
+          targetZ = THRUST_Z;
+          velocityZ = 0;
+          break;
+        }
+        const t = elapsed / THRUST_DURATION;
+        const eased = easeOutExpo(t);
+        targetZ = PULLBACK_Z + (THRUST_Z - PULLBACK_Z) * eased;
+        // Analytical derivative of easeOutExpo: d/dt = (range * 10 * ln(2) * 2^(-10t)) / duration
+        const range = THRUST_Z - PULLBACK_Z;
+        const deriv = 10 * Math.LN2 * Math.pow(2, -10 * t);
+        velocityZ = range * deriv / (THRUST_DURATION / 1000);
+        break;
+      }
+
+      case 'hold': {
+        if (elapsed >= HOLD_DURATION) {
+          this.spStartTime = now;
+          this.spState = 'recovery';
+          // Pre-compute where the sin wave will be when recovery ends
+          const recoveryEndTime = (now + RECOVERY_DURATION - this.startTime) / 1000;
+          const recoveryEndPhase = this.omega * recoveryEndTime + this.initialPhase;
+          this.recoveryTargetZ = this.amplitude * Math.sin(recoveryEndPhase) + this.zOffset;
+          targetZ = THRUST_Z;
+          velocityZ = 0;
+          break;
+        }
+        targetZ = THRUST_Z;
+        velocityZ = 0;
+        break;
+      }
+
+      case 'recovery': {
+        if (elapsed >= RECOVERY_DURATION) {
+          this.spState = 'idle';
+          // Resume normal oscillation — the sin wave's startTime was never modified
+          this.update();
+          return;
+        }
+        const t = elapsed / RECOVERY_DURATION;
+        const eased = easeInOutQuad(t);
+        targetZ = THRUST_Z + (this.recoveryTargetZ - THRUST_Z) * eased;
+        // Analytical derivative of easeInOutQuad
+        const range = this.recoveryTargetZ - THRUST_Z;
+        let derivEase: number;
+        if (t < 0.5) {
+          derivEase = 4 * t;
+        } else {
+          derivEase = -4 * t + 4;
+        }
+        velocityZ = range * derivEase / (RECOVERY_DURATION / 1000);
+        break;
+      }
+
+      default:
+        return;
+    }
+
+    this.currentZ = targetZ;
+    this.rigidBody.setLinvel({ x: 0, y: 0, z: velocityZ }, true);
     this.rigidBody.setTranslation(
       {
         x: this.baseX,

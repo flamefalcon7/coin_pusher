@@ -333,6 +333,89 @@ export class SoundManager {
     });
   }
 
+  /** Super push — charge-up rising tone + explosive thrust impact. */
+  playSuperPush(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    // Layer 1: Charge-up rising oscillator (0-0.4s)
+    const chargeOsc = ctx.createOscillator();
+    const chargeGain = ctx.createGain();
+    chargeOsc.type = "sine";
+    chargeOsc.frequency.setValueAtTime(100, t);
+    chargeOsc.frequency.exponentialRampToValueAtTime(400, t + 0.4);
+    chargeGain.gain.setValueAtTime(0.08, t);
+    chargeGain.gain.linearRampToValueAtTime(0.2, t + 0.35);
+    chargeGain.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+    chargeOsc.connect(chargeGain).connect(ctx.destination);
+    chargeOsc.start(t);
+    chargeOsc.stop(t + 0.45);
+
+    // Layer 2: Charge-up filtered noise with rising cutoff (0-0.4s)
+    const chargeNoiseSize = ctx.sampleRate * 0.45;
+    const chargeNoiseBuf = ctx.createBuffer(1, chargeNoiseSize, ctx.sampleRate);
+    const chargeNoiseData = chargeNoiseBuf.getChannelData(0);
+    for (let i = 0; i < chargeNoiseSize; i++) {
+      chargeNoiseData[i] = (Math.random() * 2 - 1);
+    }
+    const chargeNoise = ctx.createBufferSource();
+    chargeNoise.buffer = chargeNoiseBuf;
+
+    const chargeLp = ctx.createBiquadFilter();
+    chargeLp.type = "lowpass";
+    chargeLp.frequency.setValueAtTime(200, t);
+    chargeLp.frequency.exponentialRampToValueAtTime(2000, t + 0.4);
+    chargeLp.Q.setValueAtTime(2, t);
+
+    const chargeNoiseGain = ctx.createGain();
+    chargeNoiseGain.gain.setValueAtTime(0.04, t);
+    chargeNoiseGain.gain.linearRampToValueAtTime(0.12, t + 0.35);
+    chargeNoiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+
+    chargeNoise.connect(chargeLp).connect(chargeNoiseGain).connect(ctx.destination);
+    chargeNoise.start(t);
+    chargeNoise.stop(t + 0.45);
+
+    // Layer 3: Thrust impact — sub-bass thump at 0.4s
+    const thumpOsc = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thumpOsc.type = "sine";
+    thumpOsc.frequency.setValueAtTime(40, t + 0.4);
+    thumpOsc.frequency.exponentialRampToValueAtTime(15, t + 0.8);
+    thumpGain.gain.setValueAtTime(0, t);
+    thumpGain.gain.setValueAtTime(0.35, t + 0.4);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+    thumpOsc.connect(thumpGain).connect(ctx.destination);
+    thumpOsc.start(t + 0.4);
+    thumpOsc.stop(t + 0.9);
+
+    // Layer 4: Whoosh — bandpass noise burst at 0.4s
+    const whooshSize = ctx.sampleRate * 0.4;
+    const whooshBuf = ctx.createBuffer(1, whooshSize, ctx.sampleRate);
+    const whooshData = whooshBuf.getChannelData(0);
+    for (let i = 0; i < whooshSize; i++) {
+      whooshData[i] = (Math.random() * 2 - 1);
+    }
+    const whoosh = ctx.createBufferSource();
+    whoosh.buffer = whooshBuf;
+
+    const whooshBp = ctx.createBiquadFilter();
+    whooshBp.type = "bandpass";
+    whooshBp.frequency.setValueAtTime(800, t + 0.4);
+    whooshBp.frequency.exponentialRampToValueAtTime(200, t + 0.7);
+    whooshBp.Q.setValueAtTime(1.0, t + 0.4);
+
+    const whooshGain = ctx.createGain();
+    whooshGain.gain.setValueAtTime(0, t);
+    whooshGain.gain.setValueAtTime(0.2, t + 0.4);
+    whooshGain.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+
+    whoosh.connect(whooshBp).connect(whooshGain).connect(ctx.destination);
+    whoosh.start(t + 0.4);
+    whoosh.stop(t + 0.8);
+  }
+
   /** Slot reels rolling — sample-based. */
   playSlotSpin(): void {
     this.ensureContext();

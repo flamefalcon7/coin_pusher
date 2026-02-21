@@ -12,7 +12,8 @@ func TopicSnapshotReq(room string) string { return "game." + room + ".snapshot.r
 func TopicShock(room string) string       { return "game." + room + ".cmd.shock" }
 func TopicTornado(room string) string     { return "game." + room + ".cmd.tornado" }
 func TopicExplosion(room string) string   { return "game." + room + ".cmd.explosion" }
-func TopicLightning(room string) string  { return "game." + room + ".cmd.lightning" }
+func TopicLightning(room string) string   { return "game." + room + ".cmd.lightning" }
+func TopicSuperPush(room string) string   { return "game." + room + ".cmd.super_push" }
 func TopicClearAll(room string) string    { return "game." + room + ".cmd.clear_all" }
 func TopicFillPlatform(room string) string       { return "game." + room + ".cmd.fill_platform" }
 func TopicUpdateSceneObjects(room string) string { return "game." + room + ".cmd.update_scene_objects" }
