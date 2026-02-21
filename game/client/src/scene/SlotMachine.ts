@@ -200,7 +200,7 @@ export class SlotMachine {
     this.drawCounter(counter);
   }
 
-  spinReels(results: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean, onComplete?: () => void): void {
+  spinReels(results: [SlotSymbol, SlotSymbol, SlotSymbol], _jackpot: boolean, onComplete?: () => void): void {
     if (this.spinning) return;
     this.spinning = true;
 

@@ -13,8 +13,7 @@ import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 // All toon material names to track
 const TOON_MAT_NAMES = [
   "platformMat", "wallMat", "pinMat", "pusherMat", "rampMat",
-  "doodleWallMat", "doodleOutlineMat", "doodleBlobMat", "doodleBurstMat",
-  "doodleBumpMat", "doodleBumpMat1", "doodleBumpMat2", "doodleBumpMat3", "doodleBumpMat4", "doodleBumpMat5",
+  "pacManMat", "pacManEyeMat", "pacDotMat",
   "slotCabinetMat", "slotTrimMat", "slotWindowMat",
   "slotReelMat0", "slotReelMat1", "slotReelMat2",
   "slotLightMat", "slotPanelMat", "slotOutlineMat",
@@ -115,12 +114,9 @@ export class SceneManager {
       pusherMat: theme.pusher,
       rampMat: theme.platform,
       coinMat: theme.coin,
-      // Doodle decorations follow the wall color
-      doodleWallMat: theme.wall,
-      doodleBumpMat: theme.wall,
-      doodleBlobMat: theme.wall,
-      doodleBurstMat: theme.coin,       // accent matches coin color
-      doodleOutlineMat: new Color3(0.1, 0.1, 0.1),  // always near-black
+      // Pac-Man follows coin color for fun pop
+      pacManMat: theme.coin,
+      pacManEyeMat: new Color3(0.05, 0.05, 0.08),  // always near-black
       bumperRailMat: theme.pin,
       panelDividerMat: theme.pin,
       honeycombWallMat: theme.wall,
