@@ -4,10 +4,17 @@ export class SoundManager {
   private lastCoinDespawnTime = 0;
   private static readonly THROTTLE_MS = 200; // max 5 sounds/sec
 
-  // Pre-decoded audio buffers for coin samples
+  // Pre-decoded audio buffers for samples
   private coinInsertBuf: AudioBuffer | null = null;
   private coinLandBuf: AudioBuffer | null = null;
   private coinDespawnBuf: AudioBuffer | null = null;
+  private slotSpinBuf: AudioBuffer | null = null;
+  private static readonly BGM_COUNT = 3;
+  private bgmBufs: AudioBuffer[] = [];
+  private bgmIndex = 0;
+  private bgmSource: AudioBufferSourceNode | null = null;
+  private bgmGain: GainNode | null = null;
+  private bgmPlaying = false;
   private loaded = false;
   private _muted = false;
 
@@ -15,7 +22,7 @@ export class SoundManager {
   private ensureContext(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext();
-      this.loadSamples();
+      this.loadSamples().then(() => this.startBgm());
     }
     if (this.ctx.state === "suspended") {
       this.ctx.resume();
@@ -28,29 +35,77 @@ export class SoundManager {
     if (this.loaded || !this.ctx) return;
     this.loaded = true;
 
-    const files = ["coin-insert.mp3", "coin-land.mp3", "coin-despawn.mp3"] as const;
-    const [insertBuf, landBuf, despawnBuf] = await Promise.all(
-      files.map(async (f) => {
-        const resp = await fetch(`/sounds/${f}`);
-        const arrayBuf = await resp.arrayBuffer();
-        return this.ctx!.decodeAudioData(arrayBuf);
-      }),
+    const sfxFiles = ["coin-insert.mp3", "coin-land.mp3", "coin-despawn.mp3", "slot-spin.mp3"] as const;
+    const bgmFiles = Array.from({ length: SoundManager.BGM_COUNT }, (_, i) => `bgm-${i}.mp3`);
+
+    const decode = async (f: string) => {
+      const resp = await fetch(`/sounds/${f}`);
+      const arrayBuf = await resp.arrayBuffer();
+      return this.ctx!.decodeAudioData(arrayBuf);
+    };
+
+    const [insertBuf, landBuf, despawnBuf, slotSpinBuf, ...bgmBufs] = await Promise.all(
+      [...sfxFiles, ...bgmFiles].map(decode),
     );
 
     this.coinInsertBuf = insertBuf;
     this.coinLandBuf = landBuf;
     this.coinDespawnBuf = despawnBuf;
+    this.slotSpinBuf = slotSpinBuf;
+    this.bgmBufs = bgmBufs;
   }
 
   get muted(): boolean { return this._muted; }
 
   setMuted(muted: boolean): void {
     this._muted = muted;
+    if (this.bgmGain) {
+      this.bgmGain.gain.value = muted ? 0 : 0.15;
+    }
   }
 
   toggleMute(): boolean {
     this._muted = !this._muted;
+    if (this.bgmGain) {
+      this.bgmGain.gain.value = this._muted ? 0 : 0.15;
+    }
     return this._muted;
+  }
+
+  /** Start background music, rotating through tracks. */
+  startBgm(): void {
+    if (this.bgmPlaying || this.bgmBufs.length === 0) return;
+    this.bgmPlaying = true;
+    this.playNextBgmTrack();
+  }
+
+  private playNextBgmTrack(): void {
+    if (!this.bgmPlaying || this.bgmBufs.length === 0) return;
+    const ctx = this.ensureContext();
+
+    this.bgmSource = ctx.createBufferSource();
+    this.bgmSource.buffer = this.bgmBufs[this.bgmIndex];
+    this.bgmSource.loop = false;
+
+    this.bgmGain = ctx.createGain();
+    this.bgmGain.gain.value = this._muted ? 0 : 0.15;
+
+    this.bgmSource.connect(this.bgmGain).connect(ctx.destination);
+    this.bgmSource.onended = () => {
+      if (!this.bgmPlaying) return;
+      this.bgmIndex = (this.bgmIndex + 1) % this.bgmBufs.length;
+      this.playNextBgmTrack();
+    };
+    this.bgmSource.start();
+  }
+
+  stopBgm(): void {
+    this.bgmPlaying = false;
+    if (this.bgmSource) {
+      this.bgmSource.onended = null;
+      this.bgmSource.stop();
+      this.bgmSource = null;
+    }
   }
 
   /** Play a sample with slight pitch randomization for natural variation. */
@@ -278,24 +333,10 @@ export class SoundManager {
     });
   }
 
-  /** Mechanical clicking — square wave sweep 800→200Hz over 3.5s. */
+  /** Slot reels rolling — sample-based. */
   playSlotSpin(): void {
-    if (this._muted) return;
-    const ctx = this.ensureContext();
-    const t = ctx.currentTime;
-    const duration = 3.5;
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.setValueAtTime(800, t);
-    osc.frequency.exponentialRampToValueAtTime(200, t + duration);
-    gain.gain.setValueAtTime(0.08, t);
-    gain.gain.setValueAtTime(0.08, t + duration - 0.3);
-    gain.gain.linearRampToValueAtTime(0, t + duration);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + duration);
+    this.ensureContext();
+    this.playSampleRandomized(this.slotSpinBuf, 0.5, 0);
   }
 
   /** Ascending arpeggio — C5→E5→G5→C6 triangle waves. */
