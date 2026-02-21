@@ -377,20 +377,20 @@ export class SoundManager {
     chargeNoise.start(t);
     chargeNoise.stop(t + 0.45);
 
-    // Layer 3: Thrust impact — sub-bass thump at 0.4s
+    // Layer 3: Thrust impact — sub-bass thump at 0.4s (deeper, louder, longer)
     const thumpOsc = ctx.createOscillator();
     const thumpGain = ctx.createGain();
     thumpOsc.type = "sine";
-    thumpOsc.frequency.setValueAtTime(40, t + 0.4);
-    thumpOsc.frequency.exponentialRampToValueAtTime(15, t + 0.8);
+    thumpOsc.frequency.setValueAtTime(35, t + 0.4);
+    thumpOsc.frequency.exponentialRampToValueAtTime(12, t + 1.0);
     thumpGain.gain.setValueAtTime(0, t);
-    thumpGain.gain.setValueAtTime(0.35, t + 0.4);
-    thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+    thumpGain.gain.setValueAtTime(0.5, t + 0.4);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 1.05);
     thumpOsc.connect(thumpGain).connect(ctx.destination);
     thumpOsc.start(t + 0.4);
-    thumpOsc.stop(t + 0.9);
+    thumpOsc.stop(t + 1.1);
 
-    // Layer 4: Whoosh — bandpass noise burst at 0.4s
+    // Layer 4: Whoosh — bandpass noise burst at 0.4s (louder)
     const whooshSize = ctx.sampleRate * 0.4;
     const whooshBuf = ctx.createBuffer(1, whooshSize, ctx.sampleRate);
     const whooshData = whooshBuf.getChannelData(0);
@@ -408,12 +408,25 @@ export class SoundManager {
 
     const whooshGain = ctx.createGain();
     whooshGain.gain.setValueAtTime(0, t);
-    whooshGain.gain.setValueAtTime(0.2, t + 0.4);
+    whooshGain.gain.setValueAtTime(0.28, t + 0.4);
     whooshGain.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
 
     whoosh.connect(whooshBp).connect(whooshGain).connect(ctx.destination);
     whoosh.start(t + 0.4);
     whoosh.stop(t + 0.8);
+
+    // Layer 5: Mid-freq metallic collision — sawtooth 150→40Hz at 0.4s
+    const collisionOsc = ctx.createOscillator();
+    const collisionGain = ctx.createGain();
+    collisionOsc.type = "sawtooth";
+    collisionOsc.frequency.setValueAtTime(150, t + 0.4);
+    collisionOsc.frequency.exponentialRampToValueAtTime(40, t + 0.7);
+    collisionGain.gain.setValueAtTime(0, t);
+    collisionGain.gain.setValueAtTime(0.12, t + 0.4);
+    collisionGain.gain.exponentialRampToValueAtTime(0.001, t + 0.72);
+    collisionOsc.connect(collisionGain).connect(ctx.destination);
+    collisionOsc.start(t + 0.4);
+    collisionOsc.stop(t + 0.75);
   }
 
   /** Slot reels rolling — sample-based. */

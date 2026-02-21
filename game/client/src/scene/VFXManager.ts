@@ -815,7 +815,7 @@ export class VFXManager {
       const pushMat = pushRing.material as StandardMaterial;
       pushMat.alpha = 0.9;
       pushMat.emissiveColor = new Color3(1.0, 0.2, 0.05);
-      this.activeRings.push({ mesh: pushRing, age: 0, maxAge: 0.4, startScale: 0.3, endScale: 3.0 });
+      this.activeRings.push({ mesh: pushRing, age: 0, maxAge: 0.5, startScale: 0.3, endScale: 4.0 });
 
       // 2. Red energy trail particles
       const trail = new ParticleSystem("superPushTrail", 200, this.scene);
@@ -825,14 +825,14 @@ export class VFXManager {
       trail.maxEmitBox = new Vector3(0.5, 0.1, 0.1);
       trail.minLifeTime = 0.2;
       trail.maxLifeTime = 0.5;
-      trail.minSize = 0.02;
-      trail.maxSize = 0.06;
+      trail.minSize = 0.03;
+      trail.maxSize = 0.08;
       trail.minEmitPower = 2;
       trail.maxEmitPower = 5;
       trail.direction1 = new Vector3(-0.5, 0.2, 0.5);
       trail.direction2 = new Vector3(0.5, 1.0, 2.0);
       trail.gravity = new Vector3(0, -2, 0);
-      trail.emitRate = 800;
+      trail.emitRate = 1200;
       trail.blendMode = ParticleSystem.BLENDMODE_ADD;
       trail.billboardMode = ParticleSystem.BILLBOARDMODE_STRETCHED;
       trail.minScaleX = 1.0;
@@ -854,7 +854,7 @@ export class VFXManager {
       // 3. Impact sparks at full extension
       const impactDelay = THRUST_DURATION;
       const sparkTimer = setTimeout(() => {
-        const sparks = new ParticleSystem("superPushSparks", 80, this.scene);
+        const sparks = new ParticleSystem("superPushSparks", 120, this.scene);
         sparks.particleTexture = this.particleTexture!;
         sparks.emitter = thrustPos.clone();
         sparks.minLifeTime = 0.1;
@@ -866,7 +866,7 @@ export class VFXManager {
         sparks.direction1 = new Vector3(-1.5, 0.5, -0.5);
         sparks.direction2 = new Vector3(1.5, 3, 1.5);
         sparks.gravity = new Vector3(0, -5, 0);
-        sparks.emitRate = 600;
+        sparks.emitRate = 1000;
         sparks.blendMode = ParticleSystem.BLENDMODE_ADD;
 
         // Gold/white sparks
@@ -882,8 +882,38 @@ export class VFXManager {
       }, impactDelay);
       this.activeTimers.push(sparkTimer as unknown as ReturnType<typeof setInterval>);
 
-      // 4. Screen flash — red tinted
-      this.comboFlashAlpha = 0.12;
+      // 4. Ground impact debris — low brown/grey particles at impact point
+      const debris = new ParticleSystem("superPushDebris", 60, this.scene);
+      debris.particleTexture = this.particleTexture!;
+      debris.emitter = thrustPos.clone();
+      debris.minEmitBox = new Vector3(-0.4, -0.02, -0.05);
+      debris.maxEmitBox = new Vector3(0.4, 0.02, 0.05);
+      debris.minLifeTime = 0.3;
+      debris.maxLifeTime = 0.6;
+      debris.minSize = 0.01;
+      debris.maxSize = 0.03;
+      debris.minEmitPower = 0.5;
+      debris.maxEmitPower = 1.5;
+      debris.direction1 = new Vector3(-1.0, 0.1, -0.5);
+      debris.direction2 = new Vector3(1.0, 0.6, 1.0);
+      debris.gravity = new Vector3(0, -3, 0);
+      debris.emitRate = 400;
+      debris.minAngularSpeed = -6;
+      debris.maxAngularSpeed = 6;
+
+      // Brown/grey debris colors
+      debris.color1 = new Color4(0.45, 0.35, 0.25, 0.9);
+      debris.color2 = new Color4(0.55, 0.5, 0.45, 0.7);
+      debris.colorDead = new Color4(0.3, 0.25, 0.2, 0);
+
+      debris.targetStopDuration = 0.15;
+      debris.disposeOnStop = true;
+      this.protectSharedTextures(debris);
+      debris.start();
+      this.trackBurst(debris);
+
+      // 5. Screen flash — red tinted
+      this.comboFlashAlpha = 0.18;
       if (this.comboFlashMesh) {
         const mat = this.comboFlashMesh.material as StandardMaterial;
         mat.diffuseColor = new Color3(1.0, 0.15, 0.05);
