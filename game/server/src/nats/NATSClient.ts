@@ -1,6 +1,6 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
 import * as msgpack from "@msgpack/msgpack";
-import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage } from "@coin-pusher/shared";
+import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage } from "@coin-pusher/shared";
 
 const sc = StringCodec();
 
@@ -225,6 +225,12 @@ export class NATSClient {
   publishSlotCounter(msg: SlotMachineCounterMessage): void {
     const encoded = msgpack.encode(msg);
     this.nc!.publish(`game.${this.room}.slot_counter`, encoded);
+  }
+
+  // Publish ability event (msgpack encoded, broadcast to all clients)
+  publishAbilityEvent(msg: AbilityEventMessage): void {
+    const encoded = msgpack.encode(msg);
+    this.nc!.publish(`game.${this.room}.ability`, encoded);
   }
 
   // Publish full world snapshot for caching (msgpack encoded)

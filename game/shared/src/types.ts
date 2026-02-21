@@ -170,6 +170,16 @@ export type SlotMachineCounterMessage = {
   counter: number;
 };
 
+// Server → Client: Ability VFX event (broadcast to all clients)
+export type AbilityType = "shock" | "tornado" | "explosion" | "lightning";
+
+export type AbilityEventMessage = {
+  op: "ability";
+  ability: AbilityType;
+  x?: number;  // position for tornado/explosion
+  z?: number;
+};
+
 // Union of all server-to-client messages
 export type ServerMessage =
   | WorldSnapshotMessage
@@ -177,7 +187,8 @@ export type ServerMessage =
   | DespawnMessage
   | PongMessage
   | SlotMachineSpinMessage
-  | SlotMachineCounterMessage;
+  | SlotMachineCounterMessage
+  | AbilityEventMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {

@@ -80,6 +80,15 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// ability: broadcast raw msgpack bytes to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicAbility(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	rl.log.Infow("nats relay started", "room", rl.room)
 	return nil
 }
