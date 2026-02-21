@@ -212,8 +212,6 @@ export class SceneManager {
     rot: [number, number, number, number]
   ): void {
     this.coinManager.addCoin(id, pos, rot);
-    // VFX: landing ring at coin position
-    this.vfxManager.playCoinLand(new Vector3(pos[0], pos[1], pos[2]));
   }
 
   updateCoin(
@@ -245,7 +243,10 @@ export class SceneManager {
     this.coinManager.clear();
   }
 
-  updateCoinBuffers(): void {
+  /** Finalize pending coins (batch detection) + advance animations + push to GPU. */
+  updateCoinBuffers(dt: number): void {
+    this.coinManager.commitNewCoins();
+    this.coinManager.updateAnimations(dt);
     this.coinManager.updateInstances();
   }
 

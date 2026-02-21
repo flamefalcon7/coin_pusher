@@ -163,7 +163,7 @@ export class StackSpawner {
     startZ: number
   ): CoinSpawnData[] {
     const coins: CoinSpawnData[] = [];
-    const levels = 10;
+    const levels = 30;
     const coinsPerLevel = 8;
     const radius = COIN_CONFIG.RADIUS * 2.5; // Ring radius
     const spacingY = COIN_CONFIG.THICKNESS * 1.0; // Tight stacking
