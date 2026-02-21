@@ -164,10 +164,11 @@ export class SlotMachine {
     ctx.clearRect(0, 0, size, size);
 
     const info = SYMBOL_MAP[symbol];
-    ctx.fillStyle = info.color;
-    ctx.font = `bold ${Math.floor(size * 0.6)}px Arial, sans-serif`;
+    const fontSize = Math.floor(size * 0.85);
+    ctx.font = `900 ${fontSize}px Arial, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.fillStyle = info.color;
     ctx.fillText(info.char, size / 2, size / 2);
 
     tex.update();
@@ -185,10 +186,11 @@ export class SlotMachine {
     const h = tex.getSize().height;
     ctx.clearRect(0, 0, w, h);
 
-    ctx.fillStyle = "#FFD700";
-    ctx.font = `bold ${Math.floor(h * 0.6)}px monospace`;
+    const fontSize = Math.floor(h * 0.85);
+    ctx.font = `900 ${fontSize}px monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FFD700";
     ctx.fillText(`${count}/${SLOT_MACHINE_CONFIG.TRIGGER_COUNT}`, w / 2, h / 2);
 
     tex.update();

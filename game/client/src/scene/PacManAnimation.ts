@@ -29,6 +29,8 @@ const WALL_TOP_OFFSET = 0.04;  // hover above wall top
 const DOT_RADIUS = 0.015;      // small pellet size
 const DOT_SPACING = 0.08;      // distance between dots
 const EAT_DISTANCE = 0.04;     // how close pac-man must be to eat a dot
+const DOT_SPAWN_DURATION = 0.25; // seconds for each dot to scale up
+const DOT_SPAWN_STAGGER = 0.03;  // seconds delay between each dot's animation start
 
 export class PacManAnimation {
   private scene: Scene;
@@ -49,6 +51,7 @@ export class PacManAnimation {
   // Dots
   private dots: Mesh[] = [];
   private dotDistances: number[] = [];  // distance along path for each dot
+  private dotSpawnTimers: number[] = []; // elapsed time since each dot started spawning (-ve = waiting)
   private dotMat: ReturnType<typeof createToonMat>;
 
   private observer: Observer<Scene> | null = null;
@@ -180,13 +183,14 @@ export class PacManAnimation {
     this.group.rotation.y = Math.atan2(dir.x * sign, dir.z * sign);
   }
 
-  /** Create dots along the entire path. */
+  /** Create dots along the entire path with staggered scale-in animation. */
   private spawnDots(): void {
     for (const dot of this.dots) {
       if (!dot.isDisposed()) dot.dispose();
     }
     this.dots = [];
     this.dotDistances = [];
+    this.dotSpawnTimers = [];
 
     const count = Math.floor(this.totalLength / DOT_SPACING);
     const startOffset = (this.totalLength - (count - 1) * DOT_SPACING) / 2;
@@ -202,9 +206,13 @@ export class PacManAnimation {
       dot.position = pos;
       dot.material = this.dotMat;
       dot.isPickable = false;
+      // Start invisible, will scale up via animation
+      dot.scaling.setAll(0);
 
       this.dots.push(dot);
       this.dotDistances.push(d);
+      // Negative timer = stagger delay before animation begins
+      this.dotSpawnTimers.push(-i * DOT_SPAWN_STAGGER);
     }
   }
 
@@ -241,6 +249,20 @@ export class PacManAnimation {
           dot.dispose();
           this.dots.splice(i, 1);
           this.dotDistances.splice(i, 1);
+        }
+      }
+    }
+
+    // ── Dot spawn animation (scale up with ease-out) ─────────────────
+    for (let i = 0; i < this.dots.length; i++) {
+      const timer = this.dotSpawnTimers[i];
+      if (timer < DOT_SPAWN_DURATION) {
+        this.dotSpawnTimers[i] = timer + dt;
+        if (this.dotSpawnTimers[i] > 0) {
+          const t = Math.min(this.dotSpawnTimers[i] / DOT_SPAWN_DURATION, 1);
+          // Ease-out: overshoot then settle (back-out)
+          const s = 1 - Math.pow(1 - t, 3);
+          this.dots[i].scaling.setAll(s);
         }
       }
     }
