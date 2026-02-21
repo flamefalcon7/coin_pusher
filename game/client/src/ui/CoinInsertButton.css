@@ -2,7 +2,7 @@
 
 .coin-panel {
   position: absolute;
-  bottom: 24px;
+  bottom: calc(clamp(12px, 3vw, 24px) + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   user-select: none;
@@ -11,12 +11,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: clamp(6px, 1.5vw, 10px);
 
   background: rgba(26, 14, 46, 0.85);
   border: 2px solid rgba(232, 150, 32, 0.5);
-  border-radius: 16px;
-  padding: 14px 24px 16px;
+  border-radius: clamp(12px, 2.5vw, 16px);
+  padding: clamp(10px, 2.5vw, 14px) clamp(16px, 4vw, 24px) clamp(12px, 3vw, 16px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5),
               inset 0 1px 0 rgba(245, 230, 184, 0.08);
 }
@@ -26,7 +26,7 @@
 .coin-panel-selector {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: clamp(8px, 2vw, 12px);
 }
 
 /* Arrow buttons */
@@ -34,8 +34,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: clamp(28px, 6vw, 36px);
+  height: clamp(28px, 6vw, 36px);
   border: none;
   background: none;
   padding: 0;
@@ -68,13 +68,13 @@
 
 .coin-slot-dots {
   display: flex;
-  gap: 10px;
+  gap: clamp(7px, 1.5vw, 10px);
   align-items: center;
 }
 
 .coin-dot {
-  width: 14px;
-  height: 14px;
+  width: clamp(11px, 2.5vw, 14px);
+  height: clamp(11px, 2.5vw, 14px);
   border-radius: 50%;
   border: 2px solid rgba(232, 150, 32, 0.5);
   background: rgba(232, 150, 32, 0.15);
@@ -104,8 +104,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 220px;
-  height: 56px;
+  width: clamp(170px, 40vw, 220px);
+  height: clamp(44px, 10vw, 56px);
   border: none;
   background: none;
   padding: 0;
@@ -153,10 +153,10 @@
   position: relative;
   z-index: 1;
   font-family: 'Baloo 2', cursive, sans-serif;
-  font-size: 18px;
+  font-size: clamp(14px, 3.5vw, 18px);
   font-weight: 800;
   color: #5A3800;
-  letter-spacing: 3px;
+  letter-spacing: clamp(2px, 0.5vw, 3px);
   text-transform: uppercase;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
   pointer-events: none;
