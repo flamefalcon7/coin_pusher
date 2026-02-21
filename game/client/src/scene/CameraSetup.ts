@@ -11,7 +11,7 @@ export class CameraSetup {
     this.camera = new ArcRotateCamera(
       "camera",
       Math.PI / 2,
-      Math.PI / 2.5,
+      Math.PI / 3,
       BASE_RADIUS,
       new Vector3(0, 1, 0),
       scene
