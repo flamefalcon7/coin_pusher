@@ -1,5 +1,6 @@
 import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, Vector3 } from "@babylonjs/core";
 import type { SlotSymbol } from "@coin-pusher/shared";
+import { SLOT_MACHINE_CONFIG } from "@coin-pusher/shared";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
@@ -96,6 +97,13 @@ export class SceneManager {
 
     // Start VFX after theme is applied so wall colors are cached correctly
     this.vfxManager.init();
+
+    // Initialize hole portal VFX (must be after StaticMeshes + VFXManager init)
+    const leftWallParent = this.staticMeshes.getLeftWallFrontParent();
+    const rightWallParent = this.staticMeshes.getRightWallFrontParent();
+    if (leftWallParent && rightWallParent) {
+      this.vfxManager.initHolePortals(leftWallParent, rightWallParent);
+    }
 
     console.log("Scene initialized successfully");
 
@@ -449,6 +457,7 @@ export class SceneManager {
   updateSlotCounter(counter: number): void {
     const slotMachine = this.staticMeshes.getSlotMachine();
     slotMachine?.updateCounter(counter);
+    this.vfxManager.updateHoleProgress(counter, SLOT_MACHINE_CONFIG.TRIGGER_COUNT);
   }
 
   // ── VFX Triggers (called from App) ─────────────────────────────────────

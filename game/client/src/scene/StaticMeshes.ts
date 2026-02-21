@@ -18,6 +18,8 @@ import { createHoneycombWallMaterial } from "./HoneycombWallMaterial";
 export class StaticMeshes {
   private scene: Scene;
   private slotMachine: SlotMachine | null = null;
+  private leftWallFrontParent: TransformNode | null = null;
+  private rightWallFrontParent: TransformNode | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -26,6 +28,14 @@ export class StaticMeshes {
 
   getSlotMachine(): SlotMachine | null {
     return this.slotMachine;
+  }
+
+  getLeftWallFrontParent(): TransformNode | null {
+    return this.leftWallFrontParent;
+  }
+
+  getRightWallFrontParent(): TransformNode | null {
+    return this.rightWallFrontParent;
   }
 
   private createStaticScene(): void {
@@ -301,7 +311,7 @@ export class StaticMeshes {
     const frontCenterXOff = (hw + fhw) / 2;
 
     // Left front wall with square opening
-    this.createWallMeshWithOpening(
+    this.leftWallFrontParent = this.createWallMeshWithOpening(
       "leftWallFront", material,
       -frontCenterXOff, centerY, frontCenterZ,
       THICKNESS, HEIGHT, frontLen,
@@ -309,7 +319,7 @@ export class StaticMeshes {
     );
 
     // Right front wall with square opening
-    this.createWallMeshWithOpening(
+    this.rightWallFrontParent = this.createWallMeshWithOpening(
       "rightWallFront", material,
       frontCenterXOff, centerY, frontCenterZ,
       THICKNESS, HEIGHT, frontLen,
@@ -323,7 +333,7 @@ export class StaticMeshes {
     x: number, y: number, z: number,
     width: number, height: number, depth: number,
     yRot: number, zRot: number
-  ): void {
+  ): TransformNode {
     const { FRONT_OPENING_SIZE, FRONT_OPENING_CENTER, FRONT_OPENING_Y } =
       SCENE_CONFIG.SIDE_WALLS;
     const hs = FRONT_OPENING_SIZE / 2;
@@ -365,6 +375,8 @@ export class StaticMeshes {
     const rightLen = hl - (holeLocalZ + hs);
     makeBox(`${name}_right`, width, FRONT_OPENING_SIZE, rightLen,
       0, holeLocalY, hl - rightLen / 2);
+
+    return parent;
   }
 
   private createBackWallWithPins(wallMaterial: Material): void {
