@@ -12,7 +12,11 @@ import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 // All toon material names to track
 const TOON_MAT_NAMES = [
   "platformMat", "wallMat", "pinMat", "pusherMat", "rampMat",
-  "castleWallMat", "castleDecoMat", "castleRoofMat",
+  "doodleWallMat", "doodleOutlineMat", "doodleBlobMat", "doodleBurstMat",
+  "doodleBumpMat", "doodleBumpMat1", "doodleBumpMat2", "doodleBumpMat3", "doodleBumpMat4", "doodleBumpMat5",
+  "slotCabinetMat", "slotTrimMat", "slotWindowMat",
+  "slotReelMat0", "slotReelMat1", "slotReelMat2",
+  "slotLightMat", "slotPanelMat", "slotOutlineMat",
   "bumperRailMat", "panelDividerMat", "coinMat",
 ] as const;
 
@@ -35,6 +39,11 @@ export class SceneManager {
 
   // Pin flash: cache original color for fade-back
   private pinOrigColor: Color3 = new Color3(0.7, 0.7, 0.85);
+
+  // Observable + timer tracking for cleanup
+  private toonObserver: ReturnType<Scene["onBeforeRenderObservable"]["add"]> | null = null;
+  private activeTimers: ReturnType<typeof setInterval>[] = [];
+  private resizeHandler = () => this.engine.resize();
 
   constructor(canvas: HTMLCanvasElement) {
     console.log("Initializing BabylonJS scene...");
@@ -68,7 +77,7 @@ export class SceneManager {
 
     // Per-frame uniform updates (time + cameraPosition)
     const camera = this.scene.activeCamera;
-    this.scene.onBeforeRenderObservable.add(() => {
+    this.toonObserver = this.scene.onBeforeRenderObservable.add(() => {
       const t = performance.now() / 1000;
       const camPos = camera ? (camera as ArcRotateCamera).position : Vector3.Zero();
       for (const mat of this.allToonMats) {
@@ -88,9 +97,7 @@ export class SceneManager {
 
     console.log("Scene initialized successfully");
 
-    window.addEventListener("resize", () => {
-      this.engine.resize();
-    });
+    window.addEventListener("resize", this.resizeHandler);
   }
 
   // ── Theme ────────────────────────────────────────────────────────────────
@@ -105,10 +112,12 @@ export class SceneManager {
       pusherMat: theme.pusher,
       rampMat: theme.platform,
       coinMat: theme.coin,
-      // Castle + wall decorations get the wall color by default
-      castleWallMat: theme.wall,
-      castleDecoMat: theme.wall,
-      castleRoofMat: theme.pusher,
+      // Doodle decorations follow the wall color
+      doodleWallMat: theme.wall,
+      doodleBumpMat: theme.wall,
+      doodleBlobMat: theme.wall,
+      doodleBurstMat: theme.coin,       // accent matches coin color
+      doodleOutlineMat: new Color3(0.1, 0.1, 0.1),  // always near-black
       bumperRailMat: theme.pin,
       panelDividerMat: theme.pin,
     };
@@ -248,7 +257,21 @@ export class SceneManager {
 
   dispose(): void {
     this.stopRenderLoop();
+
+    // Clear tracked timers from camera effects
+    for (const t of this.activeTimers) clearInterval(t);
+    this.activeTimers = [];
+
+    // Remove render observable before scene dispose
+    if (this.toonObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.toonObserver);
+      this.toonObserver = null;
+    }
+
+    window.removeEventListener("resize", this.resizeHandler);
+
     this.vfxManager.dispose();
+    this.postProcessing.dispose();
     this.soundManager.dispose();
     this.scene.dispose();
     this.engine.dispose();
@@ -277,6 +300,7 @@ export class SceneManager {
         camera.target.x = origTarget.x + (Math.random() - 0.5) * shakeIntensity * t;
         camera.target.y = origTarget.y + (Math.random() - 0.5) * shakeIntensity * t;
       }, shakeInterval);
+      this.activeTimers.push(shakeTimer);
     }
 
     // 2. Pin flash — modify baseColor uniform on ShaderMaterial
@@ -301,6 +325,7 @@ export class SceneManager {
         const t = fadeElapsed / fadeDuration;
         pinMat.setColor3("baseColor", Color3.Lerp(flashColor, origColor, t));
       }, fadeInterval);
+      this.activeTimers.push(fadeTimer);
     }
 
     // 3. VFX: ground wave + pin particles
@@ -334,6 +359,7 @@ export class SceneManager {
         camera.target.x = origTarget.x + (Math.random() - 0.5) * wobbleIntensity * t;
         camera.target.y = origTarget.y + (Math.random() - 0.5) * wobbleIntensity * t;
       }, wobbleInterval);
+      this.activeTimers.push(wobbleTimer);
     }
   }
 
@@ -364,6 +390,7 @@ export class SceneManager {
         camera.target.x = origTarget.x + (Math.random() - 0.5) * shakeIntensity * t;
         camera.target.y = origTarget.y + (Math.random() - 0.5) * shakeIntensity * t;
       }, shakeInterval);
+      this.activeTimers.push(shakeTimer);
     }
   }
 
@@ -393,6 +420,7 @@ export class SceneManager {
         camera.target.x = origTarget.x + (Math.random() - 0.5) * wobbleIntensity * t;
         camera.target.y = origTarget.y + (Math.random() - 0.5) * wobbleIntensity * t;
       }, wobbleInterval);
+      this.activeTimers.push(wobbleTimer);
     }
   }
 

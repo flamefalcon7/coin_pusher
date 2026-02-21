@@ -70,6 +70,12 @@ export class VFXManager {
   // Lightning bolt meshes (tubes with emissive material, fade and dispose)
   private activeBolts: { meshes: Mesh[]; age: number; maxAge: number }[] = [];
 
+  // Active timers (setInterval/setTimeout) — tracked for cleanup on dispose
+  private activeTimers: ReturnType<typeof setInterval>[] = [];
+
+  // Max pooled rings — excess rings are disposed instead of pooled
+  private static MAX_RING_POOL = 16;
+
   // Render observer
   private renderObserver: ReturnType<Scene["onBeforeRenderObservable"]["add"]> | null = null;
   private lastTime: number = 0;
@@ -111,6 +117,8 @@ export class VFXManager {
     this.activeRings = [];
     for (const r of this.tornadoRings) r.mesh.dispose();
     this.tornadoRings = [];
+    for (const t of this.activeTimers) clearInterval(t);
+    this.activeTimers = [];
     for (const b of this.activeBolts) {
       for (const m of b.meshes) { m.material?.dispose(); m.dispose(); }
     }
@@ -134,6 +142,10 @@ export class VFXManager {
 
   getActiveRingCount(): number {
     return this.activeRings.length;
+  }
+
+  getRingPoolSize(): number {
+    return this.ringPool.length;
   }
 
   getComboFlashAlpha(): number {
@@ -442,7 +454,7 @@ export class VFXManager {
   }
 
   /** Explosion VFX: white-hot flash → fireball → embers → thick smoke */
-  playExplosion(position: Vector3, radius: number = 0.5): void {
+  playExplosion(position: Vector3, _radius: number = 0.5): void {
     // 1. White-hot flash ring — fast, bright, sells the initial "bang"
     const flashRing = this.getRingMesh();
     flashRing.position.set(position.x, position.y + 0.02, position.z);
@@ -677,9 +689,11 @@ export class VFXManager {
 
       boltIndex++;
     }, intervalMs);
+    this.activeTimers.push(timer);
 
     // Stop spawning after duration
-    setTimeout(() => clearInterval(timer), duration * 1000);
+    const stopTimer = setTimeout(() => clearInterval(timer), duration * 1000);
+    this.activeTimers.push(stopTimer as unknown as ReturnType<typeof setInterval>);
   }
 
   /** Celebration: gold coins raining from above (no physics).
@@ -887,10 +901,14 @@ export class VFXManager {
 
       if (t >= 1) {
         ring.mesh.isVisible = false;
-        // Reset emissive for reuse
-        const mat = ring.mesh.material as StandardMaterial;
-        mat.emissiveColor = new Color3(0.6, 0.48, 0.25);
-        this.ringPool.push(ring.mesh);
+        if (this.ringPool.length >= VFXManager.MAX_RING_POOL) {
+          (ring.mesh.material as StandardMaterial)?.dispose?.();
+          ring.mesh.dispose();
+        } else {
+          const mat = ring.mesh.material as StandardMaterial;
+          mat.emissiveColor = new Color3(0.6, 0.48, 0.25);
+          this.ringPool.push(ring.mesh);
+        }
         this.activeRings.splice(i, 1);
         continue;
       }
@@ -910,9 +928,14 @@ export class VFXManager {
 
       if (tr.elapsed >= tr.duration) {
         tr.mesh.isVisible = false;
-        const mat = tr.mesh.material as StandardMaterial;
-        mat.emissiveColor = new Color3(0.6, 0.48, 0.25);
-        this.ringPool.push(tr.mesh);
+        if (this.ringPool.length >= VFXManager.MAX_RING_POOL) {
+          (tr.mesh.material as StandardMaterial)?.dispose?.();
+          tr.mesh.dispose();
+        } else {
+          const mat = tr.mesh.material as StandardMaterial;
+          mat.emissiveColor = new Color3(0.6, 0.48, 0.25);
+          this.ringPool.push(tr.mesh);
+        }
         this.tornadoRings.splice(i, 1);
         continue;
       }

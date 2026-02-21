@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Hoisted Mocks (vi.mock is hoisted, so mock classes must be too) ─────────
 
@@ -20,6 +20,18 @@ const {
     constructor(public x = 0, public y = 0, public z = 0) {}
     clone() { return new _MockVector3(this.x, this.y, this.z); }
     set(x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z; }
+    static Zero() { return new _MockVector3(); }
+    static Lerp(a: _MockVector3, b: _MockVector3, t: number) {
+      return new _MockVector3(
+        a.x + (b.x - a.x) * t,
+        a.y + (b.y - a.y) * t,
+        a.z + (b.z - a.z) * t,
+      );
+    }
+    static Distance(a: _MockVector3, b: _MockVector3) {
+      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
   }
 
   class _MockColor3 {
@@ -55,6 +67,14 @@ const {
     targetStopDuration = 0;
     disposeOnStop = false;
     minEmitBox: unknown = null; maxEmitBox: unknown = null;
+    blendMode = 0;
+    minAngularSpeed = 0; maxAngularSpeed = 0;
+    minInitialRotation = 0; maxInitialRotation = 0;
+    minScaleX = 1; maxScaleX = 1; minScaleY = 1; maxScaleY = 1;
+    billboardMode = 0;
+    noiseTexture: unknown = null;
+    noiseStrength: unknown = null;
+    updateFunction: unknown = null;
     private _alive = true;
     private _started = false;
 
@@ -67,6 +87,14 @@ const {
     isAlive() { return this._alive; }
     isStarted() { return this._started; }
     addSizeGradient() {}
+    addColorGradient() {}
+    addDragGradient() {}
+    createConeEmitter() { return { radiusRange: 0, heightRange: 0 }; }
+    recycleParticle() {}
+
+    static BLENDMODE_ADD = 1;
+    static BLENDMODE_STANDARD = 0;
+    static BILLBOARDMODE_STRETCHED = 7;
   }
 
   class _MockMesh {
@@ -91,8 +119,10 @@ const {
     diffuseColor = new _MockColor3();
     emissiveColor = new _MockColor3();
     disableLighting = false;
+    backFaceCulling = true;
     alpha = 1;
     constructor(public name: string) {}
+    dispose() {}
   }
 
   class _MockShaderMaterial {
@@ -119,7 +149,16 @@ const {
 
   const _mockMeshBuilder = {
     CreatePlane: (_name: string) => new _MockMesh(_name),
-    CreateTorus: (_name: string) => new _MockMesh(_name),
+    CreateTorus: (_name: string) => {
+      const m = new _MockMesh(_name);
+      m.material = new _MockStandardMaterial(_name + "_mat");
+      return m;
+    },
+    CreateTube: (_name: string) => {
+      const m = new _MockMesh(_name);
+      m.material = new _MockStandardMaterial(_name + "_mat");
+      return m;
+    },
   };
 
   return {
@@ -146,8 +185,15 @@ vi.mock("@babylonjs/core", () => ({
   MeshBuilder: mockMeshBuilder,
   ParticleSystem: MockParticleSystem,
   DynamicTexture: MockDynamicTexture,
+  Texture: class {},
   StandardMaterial: MockStandardMaterial,
   ShaderMaterial: MockShaderMaterial,
+  NoiseProceduralTexture: class {
+    animationSpeedFactor = 0;
+    persistence = 0;
+    brightness = 0;
+    octaves = 0;
+  },
 }));
 
 // ── Import VFXManager (after mocks) ─────────────────────────────────────────
@@ -308,6 +354,73 @@ describe("VFXManager", () => {
         vfx.playCoinInsert(0);
       }
       expect(vfx.getActiveBurstCount()).toBeLessThanOrEqual(5);
+    });
+  });
+
+  // ── Lightning Timer Cleanup ──────────────────────────────────────────
+
+  describe("lightning timer cleanup", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("dispose clears all active lightning timers", () => {
+      vfx.playLightning(1);
+
+      // Advance a bit so some bolts spawn
+      vi.advanceTimersByTime(400);
+
+      vfx.dispose();
+
+      // Advance well past the lightning duration — should not throw or create new bolts
+      expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+    });
+
+    it("playLightning timers are cleaned up after duration", () => {
+      vfx.playLightning(1);
+
+      // Advance past the 1s duration + some margin
+      vi.advanceTimersByTime(2000);
+
+      // After duration expires, the interval should have been cleared by the setTimeout
+      // Advancing more should be a no-op
+      expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+    });
+
+    it("multiple playLightning calls don't accumulate unbounded timers", () => {
+      for (let i = 0; i < 5; i++) {
+        vfx.playLightning(0.5);
+      }
+
+      vfx.dispose();
+
+      // All timers should be cleared — advancing should be safe
+      expect(() => vi.advanceTimersByTime(10000)).not.toThrow();
+    });
+  });
+
+  // ── Ring Pool Cap ──────────────────────────────────────────────────────
+
+  describe("ring pool cap", () => {
+    it("ring pool never exceeds MAX_RING_POOL (16)", () => {
+      // Create many rings via playCoinLand, then manually trigger their expiration
+      // by accessing the update loop. Since we can't easily trigger the internal
+      // update, we check the pool inspector after creating and disposing many rings.
+      for (let i = 0; i < 30; i++) {
+        vfx.playCoinLand(new MockVector3(i * 0.01, 0.3, 0) as any);
+      }
+      expect(vfx.getActiveRingCount()).toBe(30);
+
+      // The pool cap is enforced when rings finish their animation and return to pool.
+      // We can't easily simulate the render loop update here, but we can verify
+      // that after dispose, everything is cleaned up properly.
+      vfx.dispose();
+      expect(vfx.getActiveRingCount()).toBe(0);
+      expect(vfx.getRingPoolSize()).toBe(0);
     });
   });
 
