@@ -8,8 +8,9 @@ import type {
   StateDeltaMessage,
   DespawnMessage,
   StateUpdate,
+  SlotSymbol,
 } from "@coin-pusher/shared";
-import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG, SLOT_MACHINE_CONFIG } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
 
 export class GameLoop {
@@ -43,6 +44,10 @@ export class GameLoop {
   private lightningStartTime: number = 0;
   private lightningTickCounter: number = 0;
   private static readonly LIGHTNING_DURATION = 3000; // ms
+
+  // Slot machine state
+  private slotCounter: number = 0;
+  private slotSpinning: boolean = false;
 
   // Tick timing stats
   private tickTimings: number[] = [];
@@ -132,6 +137,11 @@ export class GameLoop {
 
     this.coins.forEach((coin, id) => {
       if (coin.shouldDespawn()) {
+        // Check if coin fell through left wall opening
+        const despawnPos = coin.getPosition();
+        if (despawnPos.x < SLOT_MACHINE_CONFIG.X_THRESHOLD && despawnPos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+          this.onLeftWallCoinDespawn();
+        }
         despawnIds.push(id);
         return;
       }
@@ -670,6 +680,88 @@ export class GameLoop {
 
     if (affected > 0) {
       console.log(`⚡ Lightning strike at (${sx.toFixed(2)}, ${sz.toFixed(2)}): ${affected} coins`);
+    }
+  }
+
+  // ── Slot Machine ──────────────────────────────────────────────────────
+
+  private onLeftWallCoinDespawn(): void {
+    if (this.slotSpinning) return;
+
+    this.slotCounter++;
+    this.natsClient.publishSlotCounter({
+      op: "slot_counter",
+      counter: this.slotCounter,
+    });
+
+    console.log(`🎰 Left wall coin #${this.slotCounter}/${SLOT_MACHINE_CONFIG.TRIGGER_COUNT}`);
+
+    if (this.slotCounter >= SLOT_MACHINE_CONFIG.TRIGGER_COUNT) {
+      this.triggerSlotSpin();
+    }
+  }
+
+  private triggerSlotSpin(): void {
+    this.slotSpinning = true;
+    this.slotCounter = 0;
+
+    // Pick 3 random symbols
+    const symbols = SLOT_MACHINE_CONFIG.SYMBOLS;
+    const reels: [SlotSymbol, SlotSymbol, SlotSymbol] = [
+      symbols[Math.floor(Math.random() * symbols.length)],
+      symbols[Math.floor(Math.random() * symbols.length)],
+      symbols[Math.floor(Math.random() * symbols.length)],
+    ];
+    const jackpot = reels[0] === reels[1] && reels[1] === reels[2];
+
+    // Publish counter reset
+    this.natsClient.publishSlotCounter({ op: "slot_counter", counter: 0 });
+
+    // Publish spin result
+    this.natsClient.publishSlotSpin({
+      op: "slot_spin",
+      reels,
+      jackpot,
+    });
+
+    console.log(`🎰 Spin: [${reels.join(", ")}] ${jackpot ? "🎉 JACKPOT!" : ""}`);
+
+    if (jackpot) {
+      // Wait for reel animation to finish, then spawn bonus coins
+      setTimeout(() => {
+        this.spawnBonusCoins();
+        this.slotSpinning = false;
+      }, SLOT_MACHINE_CONFIG.BONUS_SPAWN_DELAY);
+    } else {
+      // Allow next spin after animation completes
+      setTimeout(() => {
+        this.slotSpinning = false;
+      }, SLOT_MACHINE_CONFIG.SPIN_DURATION);
+    }
+  }
+
+  private spawnBonusCoins(): void {
+    const count = SLOT_MACHINE_CONFIG.BONUS_AMOUNT;
+    const interval = SLOT_MACHINE_CONFIG.BONUS_SPAWN_INTERVAL;
+
+    console.log(`🎰 Spawning ${count} bonus coins...`);
+
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => {
+        // Random X across platform width, high Y for rain effect
+        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
+        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
+        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
+
+        const angle = (Math.random() - 0.5) * Math.PI;
+        const rot: { x: number; y: number; z: number; w: number } = {
+          x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
+        };
+
+        const coinId = this.coinManager.spawnCoinUnchecked(x, y, z, [rot.x, rot.y, rot.z, rot.w]);
+        const coin = new Coin(this.physicsWorld, coinId, x, y, z, rot);
+        this.addCoin(coin);
+      }, i * interval);
     }
   }
 

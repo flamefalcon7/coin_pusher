@@ -1,6 +1,6 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
 import * as msgpack from "@msgpack/msgpack";
-import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage } from "@coin-pusher/shared";
+import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage } from "@coin-pusher/shared";
 
 const sc = StringCodec();
 
@@ -213,6 +213,18 @@ export class NATSClient {
   // Publish reward event (JSON encoded)
   publishReward(reward: RewardEvent): void {
     this.nc!.publish(`game.${this.room}.reward`, sc.encode(JSON.stringify(reward)));
+  }
+
+  // Publish slot machine spin result (msgpack encoded)
+  publishSlotSpin(msg: SlotMachineSpinMessage): void {
+    const encoded = msgpack.encode(msg);
+    this.nc!.publish(`game.${this.room}.slot_spin`, encoded);
+  }
+
+  // Publish slot machine counter update (msgpack encoded)
+  publishSlotCounter(msg: SlotMachineCounterMessage): void {
+    const encoded = msgpack.encode(msg);
+    this.nc!.publish(`game.${this.room}.slot_counter`, encoded);
   }
 
   // Publish full world snapshot for caching (msgpack encoded)

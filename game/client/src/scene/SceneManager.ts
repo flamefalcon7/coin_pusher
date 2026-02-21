@@ -1,4 +1,5 @@
 import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, Vector3 } from "@babylonjs/core";
+import type { SlotSymbol } from "@coin-pusher/shared";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
@@ -23,6 +24,7 @@ const TOON_MAT_NAMES = [
 export class SceneManager {
   private engine: Engine;
   private scene: Scene;
+  private staticMeshes: StaticMeshes;
   private pusherMesh: PusherMesh;
   private coinManager: CoinMeshManager;
   private soundManager: SoundManager;
@@ -59,7 +61,7 @@ export class SceneManager {
 
     new CameraSetup(this.scene, canvas);
     new Lighting(this.scene);
-    new StaticMeshes(this.scene);
+    this.staticMeshes = new StaticMeshes(this.scene);
     this.pusherMesh = new PusherMesh(this.scene);
     this.coinManager = new CoinMeshManager(this.scene);
     this.soundManager = new SoundManager();
@@ -422,6 +424,26 @@ export class SceneManager {
       }, wobbleInterval);
       this.activeTimers.push(wobbleTimer);
     }
+  }
+
+  // ── Slot Machine ─────────────────────────────────────────────────────────
+
+  playSlotSpin(reels: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean): void {
+    const slotMachine = this.staticMeshes.getSlotMachine();
+    if (!slotMachine) return;
+
+    this.soundManager.playSlotSpin();
+    slotMachine.spinReels(reels, jackpot, () => {
+      if (jackpot) {
+        this.soundManager.playJackpot();
+        this.vfxManager.playRewardCoinRain(3.0);
+      }
+    });
+  }
+
+  updateSlotCounter(counter: number): void {
+    const slotMachine = this.staticMeshes.getSlotMachine();
+    slotMachine?.updateCounter(counter);
   }
 
   // ── VFX Triggers (called from App) ─────────────────────────────────────

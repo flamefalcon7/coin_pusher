@@ -1,6 +1,9 @@
 dev:
 	pnpm dev
 
+client_local:
+	pnpm --filter @coin-pusher/client dev
+
 # docker compose locally
 up_local:
 	docker compose -f docker-compose.dev.yml up --build

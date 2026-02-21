@@ -5,12 +5,11 @@ import {
   Vector3,
   Color3,
   TransformNode,
-  StandardMaterial,
-  FloatArray,
+  ShaderMaterial,
 } from "@babylonjs/core";
-import { CellMaterial } from "@babylonjs/materials/cell/cellMaterial";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
 import { createStoneWallTexture } from "./WallTexture";
+import { createToonMat } from "./ToonMaterial";
 
 // ── Merlon (battlement tooth) dimensions ────────────────────────────────────
 const MERLON_W = 0.055;
@@ -34,33 +33,26 @@ const STONE_COLOR = new Color3(0.68, 0.60, 0.50);
 
 export class CastleDecorations {
   private scene: Scene;
-  private wallMat: StandardMaterial;  // textured — for walls (StandardMaterial avoids cel dark-banding)
-  private decoMat: CellMaterial;      // solid stone — for merlons, turrets, arches
-  private roofMat: CellMaterial;
+  private wallMat: ShaderMaterial;    // textured toon — for walls
+  private decoMat: ShaderMaterial;    // solid stone — for merlons, turrets, arches
+  private roofMat: ShaderMaterial;
   private group: TransformNode;
 
   constructor(scene: Scene) {
     this.scene = scene;
     this.group = new TransformNode("castleDecorations", scene);
 
-    // ── Wall material: StandardMaterial + procedural cartoon texture ──────
-    // StandardMaterial gives smooth shading (no dark banding on side walls).
-    // emissiveColor ensures walls are visible even when not lit directly.
-    this.wallMat = new StandardMaterial("castleWallMat", scene);
-    this.wallMat.diffuseColor = new Color3(0.9, 0.85, 0.78);
-    this.wallMat.emissiveColor = new Color3(0.35, 0.30, 0.25);
-    this.wallMat.specularColor = new Color3(0.08, 0.08, 0.08);
-    this.wallMat.diffuseTexture = createStoneWallTexture(scene, "castleWallTex", 77777);
+    // ── Wall material: toon shader + procedural cartoon texture ───────
+    const castleWallTex = createStoneWallTexture(scene, "castleWallTex", 77777);
+    this.wallMat = createToonMat("castleWallMat", new Color3(0.9, 0.85, 0.78), scene, {
+      diffuseTexture: castleWallTex,
+    });
 
     // ── Decoration material: solid stone (merlons, turrets, arches) ───────
-    this.decoMat = new CellMaterial("castleDecoMat", scene);
-    this.decoMat.diffuseColor = STONE_COLOR;
-    this.decoMat.computeHighLevel = true;
+    this.decoMat = createToonMat("castleDecoMat", STONE_COLOR, scene);
 
     // ── Roof material for turret cones (warm brown) ───────────────────────
-    this.roofMat = new CellMaterial("castleRoofMat", scene);
-    this.roofMat.diffuseColor = new Color3(0.55, 0.40, 0.30);
-    this.roofMat.computeHighLevel = true;
+    this.roofMat = createToonMat("castleRoofMat", new Color3(0.55, 0.40, 0.30), scene);
 
     this.reskinWalls();
     this.build();

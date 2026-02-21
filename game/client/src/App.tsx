@@ -75,6 +75,15 @@ function App() {
       setPing(ping);
     });
 
+    // Set slot machine callbacks
+    gameClient.onSlotSpin((reels, jackpot) => {
+      sceneManager.playSlotSpin(reels, jackpot);
+    });
+
+    gameClient.onSlotCounter((counter) => {
+      sceneManager.updateSlotCounter(counter);
+    });
+
     // Connect to server
     gameClient.connect();
 

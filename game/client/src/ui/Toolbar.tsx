@@ -119,58 +119,35 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </span>
       </button>
 
-      {/* Tornado button */}
-      <button
-        className={`toolbar-action-btn tornado ${tornadoTargeting ? 'targeting' : ''}`}
-        onClick={onTornado}
-        disabled={tornadoDisabled || tornadoCooldown}
-        title="Tornado — click platform to place"
-      >
-        <img
-          className="toolbar-action-bg"
-          src="/ui/kenney-ui-pack/PNG/Blue/Default/button_rectangle_depth_flat.png"
-          alt=""
-          draggable={false}
-        />
-        <span className="toolbar-action-text">
-          {tornadoCooldown ? '...' : tornadoTargeting ? 'AIM' : 'TORNADO'}
-        </span>
-      </button>
+      {/* Ability buttons — vertical stack on the right */}
+      <div className="toolbar-abilities">
+        <button
+          className={`toolbar-action-btn toolbar-action-img tornado ${tornadoTargeting ? 'targeting' : ''} ${tornadoCooldown ? 'cooldown' : ''}`}
+          onClick={onTornado}
+          disabled={tornadoDisabled || tornadoCooldown}
+          title="Tornado — click platform to place"
+        >
+          <img className="toolbar-action-icon" src="/ui/abilities/tornado.png" alt="Tornado" draggable={false} />
+        </button>
 
-      {/* Explosion button */}
-      <button
-        className={`toolbar-action-btn explosion ${explosionTargeting ? 'targeting' : ''}`}
-        onClick={onExplosion}
-        disabled={explosionDisabled || explosionCooldown}
-        title="Explosion — click platform to place"
-      >
-        <img
-          className="toolbar-action-bg"
-          src="/ui/kenney-ui-pack/PNG/Yellow/Default/button_rectangle_depth_flat.png"
-          alt=""
-          draggable={false}
-        />
-        <span className="toolbar-action-text">
-          {explosionCooldown ? '...' : explosionTargeting ? 'AIM' : 'BOOM'}
-        </span>
-      </button>
-      {/* Lightning button */}
-      <button
-        className="toolbar-action-btn lightning"
-        onClick={onLightning}
-        disabled={lightningDisabled || lightningCooldown}
-        title="Lightning — random bolts rain down"
-      >
-        <img
-          className="toolbar-action-bg"
-          src="/ui/kenney-ui-pack/PNG/Purple/Default/button_rectangle_depth_flat.png"
-          alt=""
-          draggable={false}
-        />
-        <span className="toolbar-action-text">
-          {lightningCooldown ? '...' : 'BOLT'}
-        </span>
-      </button>
+        <button
+          className={`toolbar-action-btn toolbar-action-img explosion ${explosionTargeting ? 'targeting' : ''} ${explosionCooldown ? 'cooldown' : ''}`}
+          onClick={onExplosion}
+          disabled={explosionDisabled || explosionCooldown}
+          title="Explosion — click platform to place"
+        >
+          <img className="toolbar-action-icon" src="/ui/abilities/blast.png" alt="Explosion" draggable={false} />
+        </button>
+
+        <button
+          className={`toolbar-action-btn toolbar-action-img lightning ${lightningCooldown ? 'cooldown' : ''}`}
+          onClick={onLightning}
+          disabled={lightningDisabled || lightningCooldown}
+          title="Lightning — random bolts rain down"
+        >
+          <img className="toolbar-action-icon" src="/ui/abilities/thunder.png" alt="Lightning" draggable={false} />
+        </button>
+      </div>
     </div>
   );
 };

@@ -22,6 +22,9 @@ importers:
       '@msgpack/msgpack':
         specifier: ^3.1.2
         version: 3.1.2
+      lil-gui:
+        specifier: ^0.21.0
+        version: 0.21.0
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -932,6 +935,9 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  lil-gui@0.21.0:
+    resolution: {integrity: sha512-tpvxN7v1GvE/Tv+GRopfOp0W7fVEjF4PltkuX8vOCIfim22rD1ztvfkoEMcv9lzQeuNUSeIrUmUjBwmlW/oUew==}
+
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
@@ -1840,6 +1846,8 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
+
+  lil-gui@0.21.0: {}
 
   loose-envify@1.4.0:
     dependencies:
