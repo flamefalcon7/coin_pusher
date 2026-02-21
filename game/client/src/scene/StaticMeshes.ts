@@ -10,8 +10,8 @@ import {
   Material,
 } from "@babylonjs/core";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
-import { DoodleDecorations } from "./DoodleDecorations";
 import { SlotMachine } from "./SlotMachine";
+import { PacManAnimation } from "./PacManAnimation";
 import { createToonMat } from "./ToonMaterial";
 import { createHoneycombWallMaterial } from "./HoneycombWallMaterial";
 
@@ -51,9 +51,8 @@ export class StaticMeshes {
     // Angled side walls
     this.createAngledSideWalls(honeycombWallMat);
 
-    // Doodle decorations (wavy edges + blob corners + starburst frames)
-    // Also applies doodle texture to wall meshes
-    new DoodleDecorations(this.scene);
+    // Pac-Man animation running along wall tops
+    new PacManAnimation(this.scene);
 
     // Slot machine embedded in the front-left side wall (above coin opening)
     this.createEmbeddedSlotMachine();
