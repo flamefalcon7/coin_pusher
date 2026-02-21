@@ -11,8 +11,10 @@ import {
   StandardMaterial,
   ShaderMaterial,
   NoiseProceduralTexture,
+  TransformNode,
 } from "@babylonjs/core";
 import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
+import { HolePortalVFX } from "./HolePortalVFX";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -70,6 +72,9 @@ export class VFXManager {
   // Lightning bolt meshes (tubes with emissive material, fade and dispose)
   private activeBolts: { meshes: Mesh[]; age: number; maxAge: number }[] = [];
 
+  // Hole portal effects
+  private holePortalVFX: HolePortalVFX | null = null;
+
   // Active timers (setInterval/setTimeout) — tracked for cleanup on dispose
   private activeTimers: ReturnType<typeof setInterval>[] = [];
 
@@ -102,11 +107,21 @@ export class VFXManager {
     });
   }
 
+  initHolePortals(leftParent: TransformNode, rightParent: TransformNode): void {
+    this.holePortalVFX = new HolePortalVFX(this.scene, leftParent, rightParent);
+  }
+
+  updateHoleProgress(counter: number, triggerCount: number): void {
+    this.holePortalVFX?.setProgress(counter, triggerCount);
+  }
+
   dispose(): void {
     if (this.renderObserver) {
       this.scene.onBeforeRenderObservable.remove(this.renderObserver);
       this.renderObserver = null;
     }
+    this.holePortalVFX?.dispose();
+    this.holePortalVFX = null;
     this.comboFlashMesh?.dispose();
     this.comboFlashMesh = null;
     for (const ps of this.burstSystems) ps.dispose();
@@ -874,6 +889,7 @@ export class VFXManager {
     this.updateTornadoRings(dt);
     this.updateBolts(dt);
     this.updateComboFlash(dt);
+    this.holePortalVFX?.update(dt);
     this.cleanupBurstSystems();
   }
 

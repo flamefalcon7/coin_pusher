@@ -4,6 +4,7 @@ import { HUD } from "./ui/HUD";
 import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { Toolbar } from "./ui/Toolbar";
+import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -14,7 +15,8 @@ import { EditorManager, GizmoMode } from "./editor/EditorManager";
 import { EditorPanel } from "./editor/EditorPanel";
 import { EditorObjectData } from "./editor/EditorObject";
 
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:4000/ws";
+// Auto-detect WS host from browser location so mobile on same WiFi works
+const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:4000/ws`;
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,7 +42,9 @@ function App() {
   const [celShading, setCelShading] = useState(true);
   const [muted, setMuted] = useState(false);
   const [devToolsOpen, setDevToolsOpen] = useState(false);
-
+  const [slotCounter, setSlotCounter] = useState(0);
+  const [holeTooltip, setHoleTooltip] = useState<HoleTooltipData | null>(null);
+  const lastHolePickTime = useRef(0);
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -82,6 +86,7 @@ function App() {
 
     gameClient.onSlotCounter((counter) => {
       sceneManager.updateSlotCounter(counter);
+      setSlotCounter(counter);
     });
 
     // Connect to server
@@ -372,6 +377,27 @@ function App() {
     }
   };
 
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Throttle to ~30fps
+    const now = performance.now();
+    if (now - lastHolePickTime.current < 33) return;
+    lastHolePickTime.current = now;
+
+    const scene = sceneManagerRef.current?.getScene();
+    if (!scene) return;
+
+    const pickResult = scene.pick(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+    if (pickResult?.hit && pickResult.pickedMesh?.metadata?.holeId) {
+      setHoleTooltip({
+        holeId: pickResult.pickedMesh.metadata.holeId,
+        x: e.clientX,
+        y: e.clientY,
+      });
+    } else {
+      setHoleTooltip(null);
+    }
+  };
+
   const handleCycleTheme = () => {
     const label = sceneManagerRef.current?.cycleTheme();
     if (label) setThemeName(label);
@@ -480,6 +506,8 @@ function App() {
           ref={canvasRef}
           id="babylon-canvas"
           onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerLeave={() => setHoleTooltip(null)}
           style={tornadoTargeting || explosionTargeting ? { cursor: "crosshair" } : undefined}
         />
       </div>
@@ -542,6 +570,10 @@ function App() {
         onClick={handleInsertCoin}
         disabled={buttonDisabled || connectionStatus !== "connected"}
       />
+
+      {holeTooltip && (
+        <HoleTooltip data={holeTooltip} slotCounter={slotCounter} />
+      )}
     </div>
   );
 }
