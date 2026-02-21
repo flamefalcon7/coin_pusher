@@ -451,7 +451,7 @@ export class SceneManager {
     // 1. Camera zoom-in during charge phase (0 - PULLBACK_DURATION ms)
     if (camera) {
       const origRadius = camera.radius;
-      const zoomAmount = 0.15;
+      const zoomAmount = 0.25;
       const zoomInterval = 30;
       let zoomElapsed = 0;
 
@@ -470,8 +470,8 @@ export class SceneManager {
       // 2. Camera shake at thrust moment
       const shakeTimer = setTimeout(() => {
         const origTarget = camera.target.clone();
-        const shakeIntensity = 0.06;
-        const shakeDuration = 350;
+        const shakeIntensity = 0.10;
+        const shakeDuration = 450;
         const shakeInterval = 16;
         let shakeElapsed = 0;
 
@@ -500,7 +500,7 @@ export class SceneManager {
             this.activeTimers.push(snapTimer);
             return;
           }
-          const t = Math.exp(-shakeElapsed / 70);
+          const t = Math.exp(-shakeElapsed / 100);
           camera.target.x = origTarget.x + (Math.random() - 0.5) * shakeIntensity * t;
           camera.target.y = origTarget.y + (Math.random() - 0.5) * shakeIntensity * t;
         }, shakeInterval);

@@ -370,11 +370,11 @@ export const SCENE_CONFIG = {
 // Super push configuration
 export const SUPER_PUSH_CONFIG = {
   PULLBACK_Z: -0.05,       // currentZ during wind-up (behind normal min 0.02)
-  THRUST_Z: 0.7,           // currentZ at full extension (front face at lip back edge Z=0.6)
+  THRUST_Z: 0.6,           // currentZ at full extension (stop 10cm before front lip)
   PULLBACK_DURATION: 400,  // ms - slow retract, builds tension
-  THRUST_DURATION: 120,    // ms - explosive forward slam
-  HOLD_DURATION: 100,      // ms - brief pause at full extension
-  RECOVERY_DURATION: 500,  // ms - smooth return to oscillation
+  THRUST_DURATION: 350,    // ms - powerful forward slam
+  HOLD_DURATION: 250,      // ms - heavy pause at full extension (weight feel)
+  RECOVERY_DURATION: 700,  // ms - slow return to oscillation (inertia)
 } as const;
 
 // Slot machine configuration
