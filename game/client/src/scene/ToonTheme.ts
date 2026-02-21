@@ -43,7 +43,7 @@ const PSYCHEDELIC_POP: ToonTheme = {
   rim: new Color3(0.8, 0.4, 0.9),                     // Purple rim
   coin: new Color3(0.910, 0.588, 0.125),               // #E89620 Amber Orange
   platform: new Color3(0.169, 0.082, 0.282),           // #2B1548 Dark Plum
-  wall: new Color3(1.0, 1.0, 1.0),                       // White — doodle texture carries color
+  wall: new Color3(1.0, 1.0, 1.0),                       // White
   pin: new Color3(0.910, 0.224, 0.420),                 // #E8396B Hot Pink
   pusher: new Color3(0.478, 0.188, 0.412),              // #7A3069 Deep Plum
 };

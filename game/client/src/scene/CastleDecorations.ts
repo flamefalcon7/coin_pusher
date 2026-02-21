@@ -1,6 +1,5 @@
 import {
   Scene,
-  Mesh,
   MeshBuilder,
   Vector3,
   Color3,
@@ -8,7 +7,6 @@ import {
   ShaderMaterial,
 } from "@babylonjs/core";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
-import { createStoneWallTexture } from "./WallTexture";
 import { createToonMat } from "./ToonMaterial";
 
 // ── Merlon (battlement tooth) dimensions ────────────────────────────────────
@@ -33,7 +31,6 @@ const STONE_COLOR = new Color3(0.68, 0.60, 0.50);
 
 export class CastleDecorations {
   private scene: Scene;
-  private wallMat: ShaderMaterial;    // textured toon — for walls
   private decoMat: ShaderMaterial;    // solid stone — for merlons, turrets, arches
   private roofMat: ShaderMaterial;
   private group: TransformNode;
@@ -42,59 +39,13 @@ export class CastleDecorations {
     this.scene = scene;
     this.group = new TransformNode("castleDecorations", scene);
 
-    // ── Wall material: toon shader + procedural cartoon texture ───────
-    const castleWallTex = createStoneWallTexture(scene, "castleWallTex", 77777);
-    this.wallMat = createToonMat("castleWallMat", new Color3(0.9, 0.85, 0.78), scene, {
-      diffuseTexture: castleWallTex,
-    });
-
     // ── Decoration material: solid stone (merlons, turrets, arches) ───────
     this.decoMat = createToonMat("castleDecoMat", STONE_COLOR, scene);
 
     // ── Roof material for turret cones (warm brown) ───────────────────────
     this.roofMat = createToonMat("castleRoofMat", new Color3(0.55, 0.40, 0.30), scene);
 
-    this.reskinWalls();
     this.build();
-  }
-
-  /** Apply stone texture to existing wall meshes + fix UV direction on side walls. */
-  private reskinWalls(): void {
-    // Back wall — texture direction is correct as-is
-    const backWall = this.scene.getMeshByName("backWall");
-    if (backWall) backWall.material = this.wallMat;
-
-    // Side walls — need UV rotation so bricks run horizontally along the wall
-    const sideWallNames = [
-      "leftWallBack", "rightWallBack",
-      "leftWallFront_bottom", "leftWallFront_top", "leftWallFront_left", "leftWallFront_right",
-      "rightWallFront_bottom", "rightWallFront_top", "rightWallFront_left", "rightWallFront_right",
-    ];
-    for (const name of sideWallNames) {
-      const mesh = this.scene.getMeshByName(name);
-      if (mesh) {
-        mesh.material = this.wallMat;
-        this.rotateSideWallUVs(mesh as Mesh);
-      }
-    }
-  }
-
-  /**
-   * Swap U↔V on a box mesh so the brick texture runs horizontally on side faces.
-   * CreateBox maps side faces with U along Z, V along Y.
-   * We swap them so bricks (horizontal in texture) appear horizontal on the wall.
-   */
-  private rotateSideWallUVs(mesh: Mesh): void {
-    const uvs = mesh.getVerticesData("uv");
-    if (!uvs) return;
-
-    const rotated = new Float32Array(uvs.length);
-    for (let i = 0; i < uvs.length; i += 2) {
-      // Swap U and V → rotates texture 90°
-      rotated[i] = uvs[i + 1];
-      rotated[i + 1] = uvs[i];
-    }
-    mesh.setVerticesData("uv", rotated);
   }
 
   private build(): void {
