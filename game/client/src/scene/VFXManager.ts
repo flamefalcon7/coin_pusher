@@ -13,7 +13,7 @@ import {
   NoiseProceduralTexture,
   TransformNode,
 } from "@babylonjs/core";
-import { SCENE_CONFIG, SLOT_CONFIG } from "@coin-pusher/shared";
+import { SCENE_CONFIG, SLOT_CONFIG, SUPER_PUSH_CONFIG } from "@coin-pusher/shared";
 import { HolePortalVFX } from "./HolePortalVFX";
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -709,6 +709,194 @@ export class VFXManager {
     // Stop spawning after duration
     const stopTimer = setTimeout(() => clearInterval(timer), duration * 1000);
     this.activeTimers.push(stopTimer as unknown as ReturnType<typeof setInterval>);
+  }
+
+  /** Super push VFX: charge phase (converging particles + contracting rings)
+   *  then thrust phase (red push wave + energy trail + impact sparks + flash). */
+  playSuperPush(): void {
+    if (!this.particleTexture) return;
+
+    const pusherPos = SCENE_CONFIG.PUSHER.POSITION;
+    const platformY = SCENE_CONFIG.PLATFORM.POSITION.y + SCENE_CONFIG.PLATFORM.THICKNESS / 2;
+    const chargeCenter = new Vector3(pusherPos.x, platformY + 0.15, pusherPos.z);
+    const { PULLBACK_DURATION, THRUST_DURATION } = SUPER_PUSH_CONFIG;
+
+    // ── CHARGE PHASE (0 - PULLBACK_DURATION ms) ──
+
+    // 1. Converging energy particles — spiral inward toward pusher center
+    const charge = new ParticleSystem("superPushCharge", 150, this.scene);
+    charge.particleTexture = this.particleTexture;
+    charge.emitter = chargeCenter.clone();
+    charge.minEmitBox = new Vector3(-0.8, -0.3, -0.5);
+    charge.maxEmitBox = new Vector3(0.8, 0.3, 0.5);
+    charge.minLifeTime = 0.3;
+    charge.maxLifeTime = 0.5;
+    charge.minSize = 0.015;
+    charge.maxSize = 0.04;
+    charge.minEmitPower = 0.1;
+    charge.maxEmitPower = 0.3;
+    charge.emitRate = 350;
+    charge.blendMode = ParticleSystem.BLENDMODE_ADD;
+
+    // Cyan/white colors
+    charge.addColorGradient(0, new Color4(0.3, 0.9, 1.0, 0.9));
+    charge.addColorGradient(0.5, new Color4(0.6, 0.95, 1.0, 0.7));
+    charge.addColorGradient(1.0, new Color4(1.0, 1.0, 1.0, 0.0));
+
+    const cx = chargeCenter.x;
+    const cz = chargeCenter.z;
+    charge.updateFunction = (particles) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const scaledSpeed = (charge as any)._scaledUpdateSpeed as number;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.age += scaledSpeed;
+        if (p.age >= p.lifeTime) {
+          charge.recycleParticle(p);
+          i--;
+          continue;
+        }
+        const t = p.age / p.lifeTime;
+        // Pull toward center with increasing force
+        const dx = cx - p.position.x;
+        const dz = cz - p.position.z;
+        const dy = chargeCenter.y - p.position.y;
+        const pull = 2.0 + t * 4.0;
+        p.position.x += dx * pull * scaledSpeed;
+        p.position.y += dy * pull * scaledSpeed;
+        p.position.z += dz * pull * scaledSpeed;
+        // Slight spiral
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.01) {
+          p.position.x += (-dz / dist) * 0.5 * scaledSpeed;
+          p.position.z += (dx / dist) * 0.5 * scaledSpeed;
+        }
+        p.color.a = (1 - t) * 0.8;
+        p.size = 0.02 + (1 - t) * 0.03;
+      }
+    };
+
+    charge.targetStopDuration = PULLBACK_DURATION / 1000;
+    charge.disposeOnStop = true;
+    this.protectSharedTextures(charge);
+    charge.start();
+    this.trackBurst(charge);
+
+    // 2. Converging rings (reverse shockwave) — 2 rings
+    for (let i = 0; i < 2; i++) {
+      const delay = i * 150;
+      const ringTimer = setTimeout(() => {
+        const ring = this.getRingMesh();
+        ring.position.set(chargeCenter.x, platformY + 0.03, chargeCenter.z);
+        ring.scaling.set(2.0, 1, 2.0); // Start large
+        ring.isVisible = true;
+        const mat = ring.material as StandardMaterial;
+        mat.alpha = 0.6;
+        mat.emissiveColor = new Color3(0.3, 0.85, 0.95);
+        // Contracting ring: large → small
+        this.activeRings.push({ mesh: ring, age: 0, maxAge: 0.35, startScale: 2.0, endScale: 0.1 });
+      }, delay);
+      this.activeTimers.push(ringTimer as unknown as ReturnType<typeof setInterval>);
+    }
+
+    // ── THRUST PHASE (after PULLBACK_DURATION ms) ──
+
+    const thrustDelay = PULLBACK_DURATION;
+    const thrustTimer = setTimeout(() => {
+      // Front face Z during thrust
+      const thrustFrontZ = SCENE_CONFIG.PUSHER.POSITION.z + SUPER_PUSH_CONFIG.THRUST_Z + SCENE_CONFIG.PUSHER.DEPTH / 2;
+      const thrustPos = new Vector3(0, platformY + 0.05, thrustFrontZ);
+
+      // 1. Red push wave ring
+      const pushRing = this.getRingMesh();
+      pushRing.position.set(0, platformY + 0.03, thrustPos.z);
+      pushRing.scaling.set(0.3, 1, 0.3);
+      pushRing.isVisible = true;
+      const pushMat = pushRing.material as StandardMaterial;
+      pushMat.alpha = 0.9;
+      pushMat.emissiveColor = new Color3(1.0, 0.2, 0.05);
+      this.activeRings.push({ mesh: pushRing, age: 0, maxAge: 0.4, startScale: 0.3, endScale: 3.0 });
+
+      // 2. Red energy trail particles
+      const trail = new ParticleSystem("superPushTrail", 200, this.scene);
+      trail.particleTexture = this.particleTexture;
+      trail.emitter = thrustPos.clone();
+      trail.minEmitBox = new Vector3(-0.5, -0.05, -0.1);
+      trail.maxEmitBox = new Vector3(0.5, 0.1, 0.1);
+      trail.minLifeTime = 0.2;
+      trail.maxLifeTime = 0.5;
+      trail.minSize = 0.02;
+      trail.maxSize = 0.06;
+      trail.minEmitPower = 2;
+      trail.maxEmitPower = 5;
+      trail.direction1 = new Vector3(-0.5, 0.2, 0.5);
+      trail.direction2 = new Vector3(0.5, 1.0, 2.0);
+      trail.gravity = new Vector3(0, -2, 0);
+      trail.emitRate = 800;
+      trail.blendMode = ParticleSystem.BLENDMODE_ADD;
+      trail.billboardMode = ParticleSystem.BILLBOARDMODE_STRETCHED;
+      trail.minScaleX = 1.0;
+      trail.maxScaleX = 1.0;
+      trail.minScaleY = 2.0;
+      trail.maxScaleY = 4.0;
+
+      // Red-orange colors
+      trail.addColorGradient(0, new Color4(1.0, 0.4, 0.1, 1.0));
+      trail.addColorGradient(0.3, new Color4(1.0, 0.2, 0.0, 0.8));
+      trail.addColorGradient(1.0, new Color4(0.5, 0.05, 0.0, 0.0));
+
+      trail.targetStopDuration = 0.3;
+      trail.disposeOnStop = true;
+      this.protectSharedTextures(trail);
+      trail.start();
+      this.trackBurst(trail);
+
+      // 3. Impact sparks at full extension
+      const impactDelay = THRUST_DURATION;
+      const sparkTimer = setTimeout(() => {
+        const sparks = new ParticleSystem("superPushSparks", 80, this.scene);
+        sparks.particleTexture = this.particleTexture!;
+        sparks.emitter = thrustPos.clone();
+        sparks.minLifeTime = 0.1;
+        sparks.maxLifeTime = 0.25;
+        sparks.minSize = 0.01;
+        sparks.maxSize = 0.03;
+        sparks.minEmitPower = 3;
+        sparks.maxEmitPower = 7;
+        sparks.direction1 = new Vector3(-1.5, 0.5, -0.5);
+        sparks.direction2 = new Vector3(1.5, 3, 1.5);
+        sparks.gravity = new Vector3(0, -5, 0);
+        sparks.emitRate = 600;
+        sparks.blendMode = ParticleSystem.BLENDMODE_ADD;
+
+        // Gold/white sparks
+        sparks.addColorGradient(0, new Color4(1.0, 0.95, 0.7, 1.0));
+        sparks.addColorGradient(0.4, new Color4(1.0, 0.8, 0.3, 0.8));
+        sparks.addColorGradient(1.0, new Color4(0.8, 0.4, 0.1, 0.0));
+
+        sparks.targetStopDuration = 0.1;
+        sparks.disposeOnStop = true;
+        this.protectSharedTextures(sparks);
+        sparks.start();
+        this.trackBurst(sparks);
+      }, impactDelay);
+      this.activeTimers.push(sparkTimer as unknown as ReturnType<typeof setInterval>);
+
+      // 4. Screen flash — red tinted
+      this.comboFlashAlpha = 0.12;
+      if (this.comboFlashMesh) {
+        const mat = this.comboFlashMesh.material as StandardMaterial;
+        mat.diffuseColor = new Color3(1.0, 0.15, 0.05);
+        mat.emissiveColor = new Color3(1.0, 0.15, 0.05);
+        // Restore gold color after flash fades
+        const restoreTimer = setTimeout(() => {
+          mat.diffuseColor = new Color3(1.0, 0.85, 0.4);
+          mat.emissiveColor = new Color3(1.0, 0.85, 0.4);
+        }, 200);
+        this.activeTimers.push(restoreTimer as unknown as ReturnType<typeof setInterval>);
+      }
+    }, thrustDelay);
+    this.activeTimers.push(thrustTimer as unknown as ReturnType<typeof setInterval>);
   }
 
   /** Celebration: gold coins raining from above (no physics).

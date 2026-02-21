@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --filter @coin-pusher/shared build:*)",
+      "Bash(pnpm --filter @coin-pusher/server build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(pnpm build:*)",
+      "Bash(go build:*)",
+      "Bash(pnpm --filter @coin-pusher/game exec tsc:*)",
+      "Bash(pnpm --filter @coin-pusher/game run build:*)",
+      "Bash(pnpm --filter @coin-pusher/client build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Remove coin freeze system that caused coins to float on pusher\n\nFrozen coins were converted to Fixed bodies, which the kinematic pusher\ncouldn''t move — causing them to hang in mid-air. Rapier''s built-in sleep\nsystem is sufficient for performance.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(pnpm --filter @coin-pusher/game build:*)",
+      "Bash(pnpm -r build:*)",
+      "WebSearch",
+      "Bash(node:*)",
+      "Bash(pnpm add:*)",
+      "Bash(cd /Users/rickyeh/flamefalcon/coin_pusher/game/client && npx vitest run 2>&1)",
+      "Bash(head:*)",
+      "Bash(tail:*)"
+    ]
+  }
+}

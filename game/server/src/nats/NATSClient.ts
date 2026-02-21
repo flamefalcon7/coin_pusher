@@ -39,6 +39,10 @@ export type LightningCommand = {
   user_id: string;
 };
 
+export type SuperPushCommand = {
+  user_id: string;
+};
+
 export type ClearAllCommand = {
   user_id: string;
 };
@@ -144,6 +148,18 @@ export class NATSClient {
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as LightningCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to super_push commands (JSON encoded)
+  subscribeSuperPush(handler: (cmd: SuperPushCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.super_push`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as SuperPushCommand;
         handler(cmd);
       }
     })();

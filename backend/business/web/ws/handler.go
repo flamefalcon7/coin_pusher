@@ -143,6 +143,8 @@ func (h *Handler) readPump(c *Connection) {
 			h.handleExplosion(c, msg)
 		case "lightning":
 			h.handleLightning(c)
+		case "super_push":
+			h.handleSuperPush(c)
 		case "clear_all":
 			h.handleClearAll(c)
 		case "fill_platform":
@@ -335,6 +337,24 @@ func (h *Handler) handleLightning(c *Connection) {
 	}
 
 	h.nc.Publish(TopicLightning(h.room), data)
+}
+
+func (h *Handler) handleSuperPush(c *Connection) {
+	if !c.CanSuperPush() {
+		return
+	}
+
+	cmd := NATSSuperPushCmd{
+		UserID: c.userID,
+	}
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal super_push", "error", err)
+		return
+	}
+
+	h.nc.Publish(TopicSuperPush(h.room), data)
 }
 
 func (h *Handler) handleClearAll(c *Connection) {

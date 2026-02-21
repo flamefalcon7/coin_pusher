@@ -26,6 +26,7 @@ type Connection struct {
 	lastTornado    time.Time
 	lastExplosion  time.Time
 	lastLightning  time.Time
+	lastSuperPush  time.Time
 	mu             sync.Mutex
 	closed         bool
 }
@@ -156,6 +157,19 @@ func (c *Connection) CanLightning() bool {
 		return false
 	}
 	c.lastLightning = now
+	return true
+}
+
+// CanSuperPush checks rate limit (12s cooldown).
+func (c *Connection) CanSuperPush() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastSuperPush) < 12*time.Second {
+		return false
+	}
+	c.lastSuperPush = now
 	return true
 }
 

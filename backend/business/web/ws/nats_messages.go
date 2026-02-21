@@ -41,6 +41,11 @@ type NATSLightningCmd struct {
 	UserID string `json:"user_id"`
 }
 
+// NATSSuperPushCmd is published to game.{room}.cmd.super_push.
+type NATSSuperPushCmd struct {
+	UserID string `json:"user_id"`
+}
+
 // NATSClearAllCmd is published to game.{room}.cmd.clear_all.
 type NATSClearAllCmd struct {
 	UserID string `json:"user_id"`

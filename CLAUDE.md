@@ -26,24 +26,12 @@
 
 ## Skills
 
-This project has skills in `.agents/skills/`. When working on tasks, auto-detect and load relevant skills based on the task context and each skill's triggers.
-
-| Skill | Path | Triggers | Use When |
-|-------|------|----------|----------|
-| game-developer | `.agents/skills/game-developer/SKILL.md` | game physics, networking, optimization, ECS, performance | Game systems, physics tuning, performance optimization, multiplayer networking |
-| microservices-architect | `.agents/skills/microservices-architect/SKILL.md` | distributed systems, service mesh, observability, event sourcing | Server architecture, scaling, observability, deployment patterns |
-| frontend-design | `.agents/skills/frontend-design/SKILL.md` | web UI, components, styling, layout | Client UI design, HUD, visual polish |
-| golang-pro | `.agents/skills/golang-pro/SKILL.md` | Go, goroutines, channels, gRPC | Go language tasks (if applicable) |
-| architecture-designer | `.agents/skills/architecture-designer/SKILL.md` | architecture, system design, design pattern, scalability, ADR | System architecture design, architectural decisions, ADRs, scalability planning |
-| senior-backend | `.agents/skills/senior-backend/SKILL.md` | API design, database optimization, backend logic, auth | API scaffolding, database optimization, security, backend performance tuning |
-| devops-engineer | `.agents/skills/devops-engineer/SKILL.md` | DevOps, CI/CD, Docker, Kubernetes, Terraform, GitHub Actions | CI/CD pipelines, containerization, infrastructure as code, deployment |
-| sound-effects | `.agents/skills/sound-effects/SKILL.md` | sound effects, audio, ambient sounds, UI sounds | Generating sound effects via ElevenLabs API |
-| game-artist | `.agents/skills/game-artist/SKILL.md` | game assets, sprites, icons, visual elements | Finding/managing game assets from Kenney collection |
-| visual-design-foundations | `.agents/skills/visual-design-foundations/SKILL.md` | typography, color theory, spacing, design tokens, theming | Design tokens, style guides, visual hierarchy, dark mode |
+This project has agent skills in `.agents/skills/`. Before starting a task, scan the folder for available skills by listing `.agents/skills/*/SKILL.md`. Read each relevant `SKILL.md` to check its triggers and decide if it applies to the current task.
 
 ### How to use skills
 
-1. Read the matching `SKILL.md` to understand the role, constraints, and workflow
-2. Load relevant `references/*.md` files based on the specific subtask
-3. Follow the skill's constraints (MUST DO / MUST NOT DO) during implementation
-4. When spawning team agents, include the relevant skill path in the agent's prompt so it can load the skill context
+1. List `.agents/skills/` to discover all available skills (do not rely on a hardcoded list)
+2. Read the matching `SKILL.md` to understand the role, constraints, and workflow
+3. Load relevant `references/*.md` files based on the specific subtask
+4. Follow the skill's constraints (MUST DO / MUST NOT DO) during implementation
+5. When spawning team agents, include the relevant skill path in the agent's prompt so it can load the skill context

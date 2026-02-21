@@ -89,6 +89,11 @@ export type LightningMessage = {
   op: "lightning";
 };
 
+// Client → Server: Super push (pusher slams forward)
+export type SuperPushMessage = {
+  op: "super_push";
+};
+
 // Client → Server: Ping for clock sync
 export type PingMessage = {
   op: "ping";
@@ -150,6 +155,7 @@ export type ClientMessage =
   | TornadoMessage
   | ExplosionMessage
   | LightningMessage
+  | SuperPushMessage
   | PingMessage
   | ClearAllMessage
   | FillPlatformMessage
@@ -171,7 +177,7 @@ export type SlotMachineCounterMessage = {
 };
 
 // Server → Client: Ability VFX event (broadcast to all clients)
-export type AbilityType = "shock" | "tornado" | "explosion" | "lightning";
+export type AbilityType = "shock" | "tornado" | "explosion" | "lightning" | "superPush";
 
 export type AbilityEventMessage = {
   op: "ability";
@@ -251,6 +257,7 @@ export const RATE_LIMIT_CONFIG = {
   TORNADO_DURATION: 4000, // ms tornado is active
   EXPLOSION_COOLDOWN: 8000, // ms between explosion activations per connection
   LIGHTNING_COOLDOWN: 6000, // ms between lightning activations per connection
+  SUPER_PUSH_COOLDOWN: 12000, // ms between super push activations per connection
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
 } as const;
 
@@ -358,6 +365,16 @@ export const SCENE_CONFIG = {
     DEPTH: 0.3, // meters
     POSITION: { x: 0, y: 0.15, z: 0.75 },
   },
+} as const;
+
+// Super push configuration
+export const SUPER_PUSH_CONFIG = {
+  PULLBACK_Z: -0.05,       // currentZ during wind-up (behind normal min 0.02)
+  THRUST_Z: 0.7,           // currentZ at full extension (front face at lip back edge Z=0.6)
+  PULLBACK_DURATION: 400,  // ms - slow retract, builds tension
+  THRUST_DURATION: 120,    // ms - explosive forward slam
+  HOLD_DURATION: 100,      // ms - brief pause at full extension
+  RECOVERY_DURATION: 500,  // ms - smooth return to oscillation
 } as const;
 
 // Slot machine configuration

@@ -37,6 +37,7 @@ function App() {
   const [explosionCooldown, setExplosionCooldown] = useState(false);
   const [explosionTargeting, setExplosionTargeting] = useState(false);
   const [lightningCooldown, setLightningCooldown] = useState(false);
+  const [superPushCooldown, setSuperPushCooldown] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [themeName, setThemeName] = useState("Psychedelic Pop");
   const [celShading, setCelShading] = useState(true);
@@ -117,6 +118,11 @@ function App() {
           sceneManager.playLightningEffect();
           setLightningCooldown(true);
           setTimeout(() => setLightningCooldown(false), RATE_LIMIT_CONFIG.LIGHTNING_COOLDOWN);
+          break;
+        case "superPush":
+          sceneManager.playSuperPushEffect();
+          setSuperPushCooldown(true);
+          setTimeout(() => setSuperPushCooldown(false), RATE_LIMIT_CONFIG.SUPER_PUSH_COOLDOWN);
           break;
       }
     });
@@ -372,6 +378,14 @@ function App() {
     // VFX/cooldown now synced via server ability broadcast
   };
 
+  const handleSuperPush = () => {
+    if (!gameClientRef.current || !gameClientRef.current.isConnected() || superPushCooldown) {
+      return;
+    }
+    gameClientRef.current.superPush();
+    // VFX/cooldown now synced via server ability broadcast
+  };
+
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!tornadoTargeting && !explosionTargeting) return;
 
@@ -499,6 +513,9 @@ function App() {
         onLightning={handleLightning}
         lightningDisabled={connectionStatus !== "connected"}
         lightningCooldown={lightningCooldown}
+        onSuperPush={handleSuperPush}
+        superPushDisabled={connectionStatus !== "connected"}
+        superPushCooldown={superPushCooldown}
       />
 
       <button
