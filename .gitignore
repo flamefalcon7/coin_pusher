@@ -50,3 +50,6 @@ logs/
 .shared/
 .agents/
 .cursor/
+
+# ssl
+backend/zarf/keys/
