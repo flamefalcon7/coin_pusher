@@ -75,9 +75,6 @@ importers:
       '@dimforge/rapier3d-compat':
         specifier: npm:@dimforge/rapier3d-simd-compat@^0.19.3
         version: '@dimforge/rapier3d-simd-compat@0.19.3'
-      '@msgpack/msgpack':
-        specifier: ^3.1.2
-        version: 3.1.2
       nats:
         specifier: ^2.28.0
         version: 2.29.3
