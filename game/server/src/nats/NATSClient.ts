@@ -1,6 +1,7 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
-import * as msgpack from "@msgpack/msgpack";
+import { create, toBinary } from "@bufbuild/protobuf";
 import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage } from "@coin-pusher/shared";
+import { GameMessageSchema } from "@coin-pusher/shared";
 
 const sc = StringCodec();
 
@@ -207,29 +208,77 @@ export class NATSClient {
     })();
   }
 
-  // Subscribe to snapshot requests (request/reply)
+  // Subscribe to snapshot requests (request/reply, protobuf encoded)
   subscribeSnapshotRequest(handler: () => WorldSnapshotMessage): void {
     const sub = this.nc!.subscribe(`game.${this.room}.snapshot.request`);
     this.subs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const snapshot = handler();
-        const encoded = msgpack.encode(snapshot);
-        msg.respond(encoded);
+        const gm = create(GameMessageSchema, {
+          msg: {
+            case: "worldSnapshot",
+            value: {
+              protocolVersion: snapshot.protocolVersion,
+              serverTime: snapshot.serverTime,
+              tick: snapshot.tick,
+              bodies: snapshot.bodies.map((b) => ({
+                id: b.id,
+                type: b.type,
+                posX: b.pos?.[0] ?? 0,
+                posY: b.pos?.[1] ?? 0,
+                posZ: b.pos?.[2] ?? 0,
+                rotX: b.rot?.[0] ?? 0,
+                rotY: b.rot?.[1] ?? 0,
+                rotZ: b.rot?.[2] ?? 0,
+                rotW: b.rot?.[3] ?? 0,
+                z: b.z ?? 0,
+              })),
+            },
+          },
+        });
+        msg.respond(toBinary(GameMessageSchema, gm));
       }
     })();
   }
 
-  // Publish state delta (msgpack encoded, 30Hz)
+  // Publish state delta (protobuf encoded, 15Hz)
   publishStateDelta(delta: StateDeltaMessage): void {
-    const encoded = msgpack.encode(delta);
-    this.nc!.publish(`game.${this.room}.state_delta`, encoded);
+    const msg = create(GameMessageSchema, {
+      msg: {
+        case: "stateDelta",
+        value: {
+          serverTime: delta.serverTime,
+          tick: delta.tick,
+          updates: delta.updates.map((u) => ({
+            id: u.id,
+            posX: u.pos[0],
+            posY: u.pos[1],
+            posZ: u.pos[2],
+            rotX: u.rot[0],
+            rotY: u.rot[1],
+            rotZ: u.rot[2],
+            rotW: u.rot[3],
+          })),
+          pusherZ: delta.pusherZ,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.state_delta`, toBinary(GameMessageSchema, msg));
   }
 
-  // Publish despawn event (msgpack encoded)
+  // Publish despawn event (protobuf encoded)
   publishDespawn(despawn: DespawnMessage): void {
-    const encoded = msgpack.encode(despawn);
-    this.nc!.publish(`game.${this.room}.despawn`, encoded);
+    const msg = create(GameMessageSchema, {
+      msg: {
+        case: "despawn",
+        value: {
+          tick: despawn.tick,
+          ids: despawn.ids,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.despawn`, toBinary(GameMessageSchema, msg));
   }
 
   // Publish reward event (JSON encoded)
@@ -237,28 +286,73 @@ export class NATSClient {
     this.nc!.publish(`game.${this.room}.reward`, sc.encode(JSON.stringify(reward)));
   }
 
-  // Publish slot machine spin result (msgpack encoded)
+  // Publish slot machine spin result (protobuf encoded)
   publishSlotSpin(msg: SlotMachineSpinMessage): void {
-    const encoded = msgpack.encode(msg);
-    this.nc!.publish(`game.${this.room}.slot_spin`, encoded);
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "slotSpin",
+        value: {
+          reels: msg.reels,
+          jackpot: msg.jackpot,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.slot_spin`, toBinary(GameMessageSchema, gm));
   }
 
-  // Publish slot machine counter update (msgpack encoded)
+  // Publish slot machine counter update (protobuf encoded)
   publishSlotCounter(msg: SlotMachineCounterMessage): void {
-    const encoded = msgpack.encode(msg);
-    this.nc!.publish(`game.${this.room}.slot_counter`, encoded);
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "slotCounter",
+        value: {
+          counter: msg.counter,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.slot_counter`, toBinary(GameMessageSchema, gm));
   }
 
-  // Publish ability event (msgpack encoded, broadcast to all clients)
+  // Publish ability event (protobuf encoded, broadcast to all clients)
   publishAbilityEvent(msg: AbilityEventMessage): void {
-    const encoded = msgpack.encode(msg);
-    this.nc!.publish(`game.${this.room}.ability`, encoded);
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "ability",
+        value: {
+          ability: msg.ability,
+          x: msg.x,
+          z: msg.z,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.ability`, toBinary(GameMessageSchema, gm));
   }
 
-  // Publish full world snapshot for caching (msgpack encoded)
+  // Publish full world snapshot for caching (protobuf encoded)
   publishSnapshot(snapshot: WorldSnapshotMessage): void {
-    const encoded = msgpack.encode(snapshot);
-    this.nc!.publish(`game.${this.room}.snapshot`, encoded);
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "worldSnapshot",
+        value: {
+          protocolVersion: snapshot.protocolVersion,
+          serverTime: snapshot.serverTime,
+          tick: snapshot.tick,
+          bodies: snapshot.bodies.map((b) => ({
+            id: b.id,
+            type: b.type,
+            posX: b.pos?.[0] ?? 0,
+            posY: b.pos?.[1] ?? 0,
+            posZ: b.pos?.[2] ?? 0,
+            rotX: b.rot?.[0] ?? 0,
+            rotY: b.rot?.[1] ?? 0,
+            rotZ: b.rot?.[2] ?? 0,
+            rotW: b.rot?.[3] ?? 0,
+            z: b.z ?? 0,
+          })),
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.snapshot`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish classified coin despawn events (JSON encoded, for backend processing)
@@ -266,16 +360,34 @@ export class NATSClient {
     this.nc!.publish(`game.${this.room}.evt.coin_despawn`, sc.encode(JSON.stringify(data)));
   }
 
-  // Publish coin spawn notification (msgpack encoded, for client broadcast)
+  // Publish coin spawn notification (protobuf encoded, for client broadcast)
   publishCoinSpawn(msg: CoinSpawnMessage): void {
-    const encoded = msgpack.encode(msg);
-    this.nc!.publish(`game.${this.room}.coin_spawn`, encoded);
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "coinSpawn",
+        value: {
+          coins: msg.coins.map((c) => ({
+            id: c.id,
+            ownerId: c.owner_id,
+          })),
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.coin_spawn`, toBinary(GameMessageSchema, gm));
   }
 
-  // Publish queue update notification (msgpack encoded, for client broadcast)
+  // Publish queue update notification (protobuf encoded, for client broadcast)
   publishQueueUpdate(msg: QueueUpdateMessage): void {
-    const encoded = msgpack.encode(msg);
-    this.nc!.publish(`game.${this.room}.queue_update`, encoded);
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "queueUpdate",
+        value: {
+          userId: msg.user_id,
+          pending: msg.pending,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.queue_update`, toBinary(GameMessageSchema, gm));
   }
 
   // Subscribe to batch_insert commands (JSON encoded)

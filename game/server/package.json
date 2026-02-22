@@ -11,6 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
     "@coin-pusher/shared": "workspace:*",
     "@dimforge/rapier3d-compat": "npm:@dimforge/rapier3d-simd-compat@^0.19.3",
     "@msgpack/msgpack": "^3.1.2",
