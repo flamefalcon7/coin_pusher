@@ -84,54 +84,55 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
 
   return (
     <div className="coin-panel">
-      {/* Slot selector row */}
-      <div className="coin-panel-selector">
-        <button
-          className="coin-arrow-btn"
-          onClick={moveLeft}
-          disabled={selectedSlot === 0}
-        >
-          <img
-            src="/ui/kenney-ui-pack/PNG/Yellow/Default/arrow_basic_w.png"
-            alt="Left"
-            draggable={false}
-          />
-        </button>
-
-        <div className="coin-slot-dots">
-          {Array.from({ length: SLOT_COUNT }, (_, i) => (
+      {/* Batch + Slot selectors on one row */}
+      <div className="coin-panel-top-row">
+        <div className="coin-batch-selector">
+          {BATCH_AMOUNTS.map((amount) => (
             <button
-              key={i}
-              className={`coin-dot ${i === selectedSlot ? 'active' : ''}`}
-              onClick={() => setSelectedSlot(i)}
-            />
+              key={amount}
+              className={`coin-batch-btn ${amount === selectedAmount ? 'active' : ''}`}
+              onClick={() => setSelectedAmount(amount)}
+            >
+              {amount}
+            </button>
           ))}
         </div>
 
-        <button
-          className="coin-arrow-btn"
-          onClick={moveRight}
-          disabled={selectedSlot === SLOT_COUNT - 1}
-        >
-          <img
-            src="/ui/kenney-ui-pack/PNG/Yellow/Default/arrow_basic_e.png"
-            alt="Right"
-            draggable={false}
-          />
-        </button>
-      </div>
-
-      {/* Batch amount selector */}
-      <div className="coin-batch-selector">
-        {BATCH_AMOUNTS.map((amount) => (
+        <div className="coin-panel-selector">
           <button
-            key={amount}
-            className={`coin-batch-btn ${amount === selectedAmount ? 'active' : ''}`}
-            onClick={() => setSelectedAmount(amount)}
+            className="coin-arrow-btn"
+            onClick={moveLeft}
+            disabled={selectedSlot === 0}
           >
-            {amount}
+            <img
+              src="/ui/kenney-ui-pack/PNG/Yellow/Default/arrow_basic_w.png"
+              alt="Left"
+              draggable={false}
+            />
           </button>
-        ))}
+
+          <div className="coin-slot-dots">
+            {Array.from({ length: SLOT_COUNT }, (_, i) => (
+              <button
+                key={i}
+                className={`coin-dot ${i === selectedSlot ? 'active' : ''}`}
+                onClick={() => setSelectedSlot(i)}
+              />
+            ))}
+          </div>
+
+          <button
+            className="coin-arrow-btn"
+            onClick={moveRight}
+            disabled={selectedSlot === SLOT_COUNT - 1}
+          >
+            <img
+              src="/ui/kenney-ui-pack/PNG/Yellow/Default/arrow_basic_e.png"
+              alt="Right"
+              draggable={false}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Insert coin button */}

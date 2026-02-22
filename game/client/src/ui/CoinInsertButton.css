@@ -1,8 +1,8 @@
-/* ── Arcade Coin Panel (bottom-center) ────────────────────────────────── */
+/* ── Arcade Coin Panel (top-center) ───────────────────────────────────── */
 
 .coin-panel {
   position: absolute;
-  bottom: calc(clamp(12px, 3vw, 24px) + env(safe-area-inset-bottom, 0px));
+  top: calc(clamp(8px, 2vw, 14px) + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   user-select: none;
@@ -11,14 +11,22 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(6px, 1.5vw, 10px);
+  gap: clamp(4px, 1vw, 6px);
 
   background: rgba(26, 14, 46, 0.85);
   border: 2px solid rgba(232, 150, 32, 0.5);
-  border-radius: clamp(12px, 2.5vw, 16px);
-  padding: clamp(10px, 2.5vw, 14px) clamp(16px, 4vw, 24px) clamp(12px, 3vw, 16px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5),
+  border-radius: clamp(10px, 2vw, 14px);
+  padding: clamp(6px, 1.5vw, 8px) clamp(14px, 3vw, 20px) clamp(6px, 1.5vw, 8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5),
               inset 0 1px 0 rgba(245, 230, 184, 0.08);
+}
+
+/* ── Top row: batch selector + slot selector side by side ────────────── */
+
+.coin-panel-top-row {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 2.5vw, 16px);
 }
 
 /* ── Slot Selector Row ───────────────────────────────────────────────── */
@@ -26,7 +34,7 @@
 .coin-panel-selector {
   display: flex;
   align-items: center;
-  gap: clamp(8px, 2vw, 12px);
+  gap: clamp(6px, 1.5vw, 10px);
 }
 
 /* Arrow buttons */
@@ -34,8 +42,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: clamp(28px, 6vw, 36px);
-  height: clamp(28px, 6vw, 36px);
+  width: clamp(24px, 5vw, 30px);
+  height: clamp(24px, 5vw, 30px);
   border: none;
   background: none;
   padding: 0;
@@ -68,13 +76,13 @@
 
 .coin-slot-dots {
   display: flex;
-  gap: clamp(7px, 1.5vw, 10px);
+  gap: clamp(5px, 1.2vw, 8px);
   align-items: center;
 }
 
 .coin-dot {
-  width: clamp(11px, 2.5vw, 14px);
-  height: clamp(11px, 2.5vw, 14px);
+  width: clamp(9px, 2vw, 12px);
+  height: clamp(9px, 2vw, 12px);
   border-radius: 50%;
   border: 2px solid rgba(232, 150, 32, 0.5);
   background: rgba(232, 150, 32, 0.15);
@@ -101,18 +109,17 @@
 
 .coin-batch-selector {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   justify-content: center;
-  margin-bottom: 6px;
 }
 
 .coin-batch-btn {
   background: rgba(0, 0, 0, 0.3);
   border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  border-radius: 5px;
   color: rgba(255, 255, 255, 0.7);
-  padding: 4px 10px;
-  font-size: 14px;
+  padding: 2px 8px;
+  font-size: 12px;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -135,8 +142,7 @@
 .coin-queue-progress {
   text-align: center;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: 11px;
 }
 
 /* ── Insert Coin Button ──────────────────────────────────────────────── */
@@ -146,8 +152,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: clamp(170px, 40vw, 220px);
-  height: clamp(44px, 10vw, 56px);
+  width: clamp(150px, 36vw, 200px);
+  height: clamp(34px, 7vw, 42px);
   border: none;
   background: none;
   padding: 0;
@@ -195,10 +201,10 @@
   position: relative;
   z-index: 1;
   font-family: 'Baloo 2', cursive, sans-serif;
-  font-size: clamp(14px, 3.5vw, 18px);
+  font-size: clamp(12px, 3vw, 15px);
   font-weight: 800;
   color: #5A3800;
-  letter-spacing: clamp(2px, 0.5vw, 3px);
+  letter-spacing: clamp(1px, 0.4vw, 2px);
   text-transform: uppercase;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
   pointer-events: none;
