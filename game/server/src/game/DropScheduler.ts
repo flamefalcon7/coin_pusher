@@ -1,9 +1,14 @@
 import { DROP_SCHEDULER_CONFIG } from "@coin-pusher/shared";
 
+interface SlotBatch {
+  slotX: number;
+  count: number;
+}
+
 interface PlayerQueue {
   userId: string;
-  slotX: number;
-  pending: number;
+  batches: SlotBatch[];
+  totalPending: number;
 }
 
 export class DropScheduler {
@@ -15,14 +20,16 @@ export class DropScheduler {
   enqueue(userId: string, slotX: number, count: number): number {
     let q = this.queues.get(userId);
     if (!q) {
-      q = { userId, slotX, pending: 0 };
+      q = { userId, batches: [], totalPending: 0 };
       this.queues.set(userId, q);
       this.roundRobinOrder.push(userId);
     }
-    const space = DROP_SCHEDULER_CONFIG.MAX_QUEUE - q.pending;
+    const space = DROP_SCHEDULER_CONFIG.MAX_QUEUE - q.totalPending;
     const accepted = Math.min(count, space);
-    q.pending += accepted;
-    q.slotX = slotX;
+    if (accepted > 0) {
+      q.batches.push({ slotX, count: accepted });
+      q.totalPending += accepted;
+    }
     return accepted;
   }
 
@@ -41,17 +48,24 @@ export class DropScheduler {
       const userId = this.roundRobinOrder[this.currentIndex];
       const q = this.queues.get(userId);
 
-      if (q && q.pending > 0) {
-        q.pending--;
+      if (q && q.batches.length > 0) {
+        const batch = q.batches[0];
+        const slotX = batch.slotX;
+        batch.count--;
+        q.totalPending--;
         this.dropCooldown = DROP_SCHEDULER_CONFIG.DROP_INTERVAL_TICKS;
         this.currentIndex = (this.currentIndex + 1) % this.roundRobinOrder.length;
 
-        if (q.pending === 0) {
+        if (batch.count === 0) {
+          q.batches.shift();
+        }
+
+        if (q.totalPending === 0) {
           this.queues.delete(userId);
           this.roundRobinOrder = this.roundRobinOrder.filter(id => id !== userId);
         }
 
-        return { userId, slotX: q.slotX };
+        return { userId, slotX };
       }
 
       // Empty queue, remove and continue
@@ -65,7 +79,7 @@ export class DropScheduler {
   }
 
   getPending(userId: string): number {
-    return this.queues.get(userId)?.pending ?? 0;
+    return this.queues.get(userId)?.totalPending ?? 0;
   }
 
   clear(): void {
