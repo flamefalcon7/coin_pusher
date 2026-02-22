@@ -6,8 +6,10 @@
 Cloudflare Pages                        DigitalOcean Droplet
 (static client)                         (docker compose)
                                         +--------------------+
-Browser ---HTTPS/WSS---> Cloudflare --> | Go Backend :4000   |
+Browser ---HTTPS/WSS---> Cloudflare --> | Nginx :80/:443     |
                           DNS proxy     |   |                |
+                                        |   v                |
+                                        | Go Backend :4000   |
                                         |   | NATS           |
                                         |   v                |
                                         | TS Game Server     |
@@ -22,7 +24,7 @@ Browser ---HTTPS/WSS---> Cloudflare --> | Go Backend :4000   |
 | DNS + SSL + CDN | Cloudflare (free plan) | Free |
 | Domain | Namecheap (or any registrar) | ~$10/yr |
 
-Cloudflare proxies both HTTPS and WSS, terminates SSL, and forwards to the droplet over plain HTTP/WS. No nginx, certbot, or Caddy needed on the server.
+Cloudflare proxies both HTTPS and WSS. An Nginx container listens on ports 80/443, redirects HTTP to HTTPS, and proxies `/` and `/ws` to the Go backend.
 
 ---
 
@@ -120,8 +122,8 @@ SSH into the droplet as root and run:
 ssh root@<DROPLET_IP>
 
 # Download and run setup script (or clone repo first)
-git clone https://github.com/flamefalcon/coin_pusher.git /opt/coinpusher
-cd /opt/coinpusher
+git clone https://github.com/flamefalcon/coin_pusher.git /opt/coin_pusher
+cd /opt/coin_pusher
 chmod +x deploy/setup.sh
 ./deploy/setup.sh
 ```
@@ -129,12 +131,13 @@ chmod +x deploy/setup.sh
 The script does the following automatically:
 1. Installs Docker + Docker Compose
 2. Creates a `deploy` user with Docker access (copies your SSH key)
-3. Clones the repo to `/opt/coinpusher`
+3. Clones the repo to `/opt/coin_pusher`
 4. Creates `.env` from `.env.example` with a random DB password
 5. Generates an RSA key for JWT signing (`backend/zarf/keys/default.pem`)
-6. Starts all services via `docker-compose.prod.yml`
-7. Runs database migrations
-8. Configures UFW firewall (allows ports 22 and 4000 only)
+6. Generates TLS cert files for Nginx at `deploy/nginx/certs/`
+7. Starts all services via `docker-compose.prod.yml`
+8. Runs database migrations
+9. Configures UFW firewall (allows ports 22, 80, and 443)
 
 Verify services are running:
 
@@ -142,7 +145,7 @@ Verify services are running:
 docker compose -f docker-compose.prod.yml ps
 ```
 
-You should see 4 services: `nats`, `postgres`, `backend`, `game`.
+You should see 5 services: `nginx`, `nats`, `postgres`, `backend`, `game`.
 
 ### Step 3: Configure Cloudflare DNS
 
@@ -165,10 +168,11 @@ You should see 4 services: `nats`, `postgres`, `backend`, `game`.
    The `api` record points your backend to the droplet. Cloudflare handles SSL.
 
 4. **Set SSL/TLS mode**:
-   - Cloudflare Dashboard > SSL/TLS > set to **Full (strict)**
+   - Cloudflare Dashboard > SSL/TLS > set to **Full**
    - Enable "Always Use HTTPS"
+   - For **Full (strict)**, replace `deploy/nginx/certs/origin.crt` and `origin.key` with a Cloudflare Origin Certificate pair.
 
-5. **Verify**: After DNS propagates, `curl https://api.<your-domain>/v1/readiness` should return 200.
+5. **Verify**: After DNS propagates, `curl https://api.<your-domain>/debug/readiness` should return 200.
 
 ### Step 4: Set up Cloudflare Pages (frontend)
 
@@ -215,7 +219,7 @@ Frontend deploys are automatic — Cloudflare Pages rebuilds on every push to `m
 
 ```bash
 ssh deploy@<DROPLET_IP>
-cd /opt/coinpusher
+cd /opt/coin_pusher
 
 # All services
 docker compose -f docker-compose.prod.yml logs -f
@@ -235,7 +239,7 @@ docker compose -f docker-compose.prod.yml restart backend game
 
 ```bash
 ssh deploy@<DROPLET_IP>
-cd /opt/coinpusher
+cd /opt/coin_pusher
 git pull origin main
 docker compose -f docker-compose.prod.yml build --no-cache backend game
 docker compose -f docker-compose.prod.yml up -d
@@ -258,20 +262,21 @@ docker compose -f docker-compose.prod.yml ps
 docker stats
 
 # Test API
-curl https://api.<your-domain>/v1/readiness
+curl https://api.<your-domain>/debug/readiness
 ```
 
 ---
 
 ## Production Services
 
-`docker-compose.prod.yml` runs 4 containers on a shared `app` network:
+`docker-compose.prod.yml` runs 5 containers on a shared `app` network:
 
 | Service | Image | Exposed Port | Notes |
 |---------|-------|-------------|-------|
+| nginx | nginx:1.27-alpine | :80, :443 | Public entrypoint. Redirects HTTP to HTTPS and proxies WebSocket `/ws` to backend. |
 | nats | nats:2.10-alpine | (internal) | Message queue between backend and game server |
 | postgres | postgres:16-alpine | (internal) | Data persisted in `pgdata` Docker volume |
-| backend | Built from `backend/zarf/docker/Dockerfile.backend` | :4000 | Go API + WebSocket gateway. Only client-facing port. |
+| backend | Built from `backend/zarf/docker/Dockerfile.backend` | (internal :4000) | Go API + WebSocket gateway behind nginx. |
 | game | Built from `Dockerfile` | (none) | TS physics server. NATS worker, no HTTP port. |
 
 Environment variables are read from `.env` (created by `deploy/setup.sh`):
