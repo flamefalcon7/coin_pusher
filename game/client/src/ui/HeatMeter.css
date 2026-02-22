@@ -43,3 +43,20 @@
   font-size: clamp(9px, 2vw, 11px);
   margin-top: 4px;
 }
+
+/* ── Mobile ≤ 480px ────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .heat-panel {
+    min-width: 100px;
+    padding: 4px 6px;
+  }
+
+  .heat-label {
+    font-size: 10px;
+  }
+
+  .heat-queue {
+    font-size: 9px;
+  }
+}
