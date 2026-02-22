@@ -3,16 +3,22 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/nats-io/nats.go"
+	"github.com/shopspring/decimal"
+	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
 
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/debug"
@@ -21,6 +27,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
@@ -124,6 +131,7 @@ func run() error {
 	userCore := user.NewCore(userdb.NewStore(db))
 	acctCore := accounting.NewCore(ledgerdb.NewStore(db), userCore)
 	gameCore := game.NewCore(userCore, acctCore)
+	heatEngine := heat.New()
 
 	// -------------------------------------------------------------------------
 	// NATS
@@ -145,11 +153,11 @@ func run() error {
 		return fmt.Errorf("starting nats relay: %w", err)
 	}
 
-	wsHandler := ws.NewHandler(log, hub, nc, a)
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine)
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, userCore, acctCore, gameCore, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, userCore, acctCore, gameCore, heatEngine, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -183,6 +191,115 @@ func run() error {
 	}()
 
 	// -------------------------------------------------------------------------
+	// Heat broadcast goroutine (1s interval)
+	stopHeat := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				shares := heatEngine.GetShares()
+				if len(shares) == 0 {
+					continue
+				}
+				type playerHeat struct {
+					UserID  string  `msgpack:"user_id"`
+					Share   float64 `msgpack:"share"`
+					RawHeat float64 `msgpack:"raw_heat"`
+				}
+				type heatMsg struct {
+					Op      string       `msgpack:"op"`
+					Players []playerHeat `msgpack:"players"`
+				}
+				msg := heatMsg{Op: "heat_update"}
+				for _, s := range shares {
+					msg.Players = append(msg.Players, playerHeat{
+						UserID:  s.UserID.String(),
+						Share:   s.Share,
+						RawHeat: s.RawHeat,
+					})
+				}
+				data, err := msgpack.Marshal(msg)
+				if err != nil {
+					log.Errorw("heat broadcast marshal error", "error", err)
+					continue
+				}
+				nc.Publish(ws.TopicHeatUpdate("main"), data)
+
+				// Prune stale heat entries.
+				heatEngine.Prune()
+			case <-stopHeat:
+				return
+			}
+		}
+	}()
+
+	// -------------------------------------------------------------------------
+	// Reward accumulator + flush goroutine (10s interval)
+	var rewardMu sync.Mutex
+	rewardAccum := make(map[uuid.UUID]float64)
+
+	// Subscribe to coin_despawn events from game server.
+	despawnSub, err := nc.Subscribe(ws.TopicCoinDespawn("main"), func(msg *nats.Msg) {
+		var evt struct {
+			Zone      string `json:"zone"`
+			CoinCount int    `json:"coin_count"`
+		}
+		if err := json.Unmarshal(msg.Data, &evt); err != nil {
+			log.Errorw("coin_despawn unmarshal error", "error", err)
+			return
+		}
+
+		if evt.Zone != "front" {
+			return // side/back drops are house profit
+		}
+
+		dist := heatEngine.DistributeFrontEdgeDrop(evt.CoinCount)
+		if dist == nil {
+			return
+		}
+
+		rewardMu.Lock()
+		for uid, amount := range dist {
+			rewardAccum[uid] += amount
+		}
+		rewardMu.Unlock()
+	})
+	if err != nil {
+		return fmt.Errorf("subscribing to coin_despawn: %w", err)
+	}
+	defer despawnSub.Unsubscribe()
+
+	stopFlush := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				rewardMu.Lock()
+				batch := rewardAccum
+				rewardAccum = make(map[uuid.UUID]float64)
+				rewardMu.Unlock()
+
+				for uid, amount := range batch {
+					if amount < 0.001 {
+						continue
+					}
+					refKey := uuid.NewString()
+					amt := decimal.NewFromFloat(amount)
+					if err := acctCore.ProcessHeatReward(context.Background(), uid, amt, refKey); err != nil {
+						log.Errorw("heat reward flush error", "user_id", uid, "amount", amount, "error", err)
+					}
+				}
+			case <-stopFlush:
+				return
+			}
+		}
+	}()
+
+	// -------------------------------------------------------------------------
 	// Shutdown
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
@@ -192,6 +309,10 @@ func run() error {
 		return fmt.Errorf("server error: %w", err)
 	case sig := <-shutdown:
 		log.Infow("shutdown started", "signal", sig)
+
+		// Stop background goroutines.
+		close(stopHeat)
+		close(stopFlush)
 
 		// Stop NATS relay first.
 		relay.Stop()
@@ -234,6 +355,8 @@ func buildAPIMux(
 	userCore *user.Core,
 	acctCore *accounting.Core,
 	gameCore *game.Core,
+	heatEngine *heat.HeatEngine,
+	nc *nats.Conn,
 	wsHandler *ws.Handler,
 ) *chi.Mux {
 	mux := chi.NewRouter()
@@ -251,7 +374,7 @@ func buildAPIMux(
 
 	// V1 routes.
 	userGrp := usergrp.New(userCore, a)
-	gameGrp := gamegrp.New(gameCore)
+	gameGrp := gamegrp.New(gameCore, heatEngine, nc)
 
 	// Public
 	mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login))
@@ -260,6 +383,7 @@ func buildAPIMux(
 	mux.Group(func(r chi.Router) {
 		r.Use(mid.Authenticate(a))
 		r.Get("/v1/user/profile", mid.Errors(log, userGrp.Profile))
+		r.Post("/v1/game/batch-insert", mid.Errors(log, gameGrp.BatchInsert))
 	})
 
 	// Game-secret-protected

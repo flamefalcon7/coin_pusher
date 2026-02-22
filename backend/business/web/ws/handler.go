@@ -1,15 +1,19 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
 	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
 
+	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
 )
 
@@ -30,21 +34,25 @@ var upgrader = websocket.Upgrader{
 
 // Handler upgrades HTTP connections to WebSocket and manages the read loop.
 type Handler struct {
-	log  *zap.SugaredLogger
-	hub  *Hub
-	nc   *nats.Conn
-	auth *auth.Auth
-	room string
+	log      *zap.SugaredLogger
+	hub      *Hub
+	nc       *nats.Conn
+	auth     *auth.Auth
+	room     string
+	gameCore *game.Core
+	heat     *heat.HeatEngine
 }
 
 // NewHandler constructs a WS Handler.
-func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth) *Handler {
+func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine) *Handler {
 	return &Handler{
-		log:  log,
-		hub:  hub,
-		nc:   nc,
-		auth: a,
-		room: "main",
+		log:      log,
+		hub:      hub,
+		nc:       nc,
+		auth:     a,
+		room:     "main",
+		gameCore: gameCore,
+		heat:     heat,
 	}
 }
 
@@ -53,7 +61,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Auth check: get token from ?token= query param.
 	var userID string
 	if h.auth.IsDevMode() {
-		userID = "dev-user-id"
+		userID = uuid.NewString()
 	} else {
 		tokenStr := r.URL.Query().Get("token")
 		if tokenStr == "" {
@@ -79,6 +87,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.hub.Add(c)
 
 	h.log.Infow("ws client connected", "user_id", userID, "clients", h.hub.Count())
+
+	// Send welcome message with assigned user ID.
+	c.SendMessage(map[string]interface{}{
+		"op":      "welcome",
+		"user_id": userID,
+	})
 
 	// Send cached snapshot if available.
 	if snap := h.hub.GetSnapshot(); snap != nil {
@@ -149,6 +163,8 @@ func (h *Handler) readPump(c *Connection) {
 			h.handleClearAll(c)
 		case "fill_platform":
 			h.handleFillPlatform(c)
+		case "batch_insert":
+			h.handleBatchInsert(c, msg)
 		case "ping":
 			h.handlePing(c)
 		case "update_scene_objects":
@@ -390,6 +406,70 @@ func (h *Handler) handleUpdateSceneObjects(c *Connection, msg ClientMessage) {
 	}
 
 	h.nc.Publish(TopicUpdateSceneObjects(h.room), data)
+}
+
+func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
+	count := msg.Count
+	if count <= 0 {
+		return
+	}
+
+	var userID uuid.UUID
+	var balanceStr string
+
+	userID, err := uuid.Parse(c.userID)
+	if err != nil {
+		h.log.Errorw("batch_insert invalid user_id", "user_id", c.userID, "error", err)
+		return
+	}
+
+	if h.auth.IsDevMode() {
+		// Dev mode: skip balance checks.
+		balanceStr = "dev"
+	} else {
+
+		refKey := uuid.NewString()
+		result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, count, refKey)
+		if err != nil {
+			h.log.Errorw("batch_insert process error", "error", err, "user_id", c.userID)
+			return
+		}
+		if !result.Success {
+			h.log.Warnw("batch_insert failed", "error", result.Error, "user_id", c.userID)
+			return
+		}
+		balanceStr = result.BalanceCoin
+	}
+
+	// Add heat on commit.
+	h.heat.AddHeat(userID, count)
+
+	// Publish batch_insert command to NATS for game server.
+	slotPositions := []float64{-0.4, -0.2, 0.0, 0.2, 0.4}
+	slotX := 0.0
+	if msg.SlotID >= 0 && msg.SlotID < len(slotPositions) {
+		slotX = slotPositions[msg.SlotID]
+	}
+	cmd := NATSBatchInsertCmd{
+		UserID: userID.String(),
+		SlotX:  slotX,
+		Count:  count,
+	}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		h.log.Errorw("json marshal batch_insert", "error", err)
+		return
+	}
+	h.nc.Publish(TopicBatchInsert(h.room), data)
+
+	// Send response to the requesting client.
+	share := h.heat.GetShareForUser(userID)
+	c.SendMessage(map[string]interface{}{
+		"op":         "batch_insert_ack",
+		"queued":     count,
+		"heat_share": share,
+		"balance":    balanceStr,
+	})
 }
 
 func (h *Handler) handlePing(c *Connection) {

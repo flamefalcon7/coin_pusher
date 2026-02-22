@@ -67,3 +67,10 @@ type NATSRewardEvent struct {
 	CoinCount int    `json:"coin_count"`
 	UserID    string `json:"user_id,omitempty"`
 }
+
+// NATSBatchInsertCmd is published to game.{room}.cmd.batch_insert.
+type NATSBatchInsertCmd struct {
+	UserID string  `json:"user_id"`
+	SlotX  float64 `json:"slot_x"`
+	Count  int     `json:"count"`
+}

@@ -1,0 +1,45 @@
+.heat-panel {
+  position: absolute;
+  top: calc(clamp(50px, 12vw, 80px) + env(safe-area-inset-top, 0px));
+  left: calc(clamp(8px, 2vw, 12px) + env(safe-area-inset-left, 0px));
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 100, 0, 0.4);
+  border-radius: clamp(6px, 1.5vw, 8px);
+  padding: clamp(6px, 1.5vw, 8px) clamp(8px, 2vw, 12px);
+  min-width: clamp(120px, 30vw, 180px);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.heat-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.heat-label {
+  color: #ff8800;
+  font-size: clamp(11px, 2.5vw, 14px);
+  font-weight: bold;
+}
+
+.heat-bar-container {
+  height: clamp(6px, 1.5vw, 8px);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.heat-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4400, #ff8800, #ffcc00);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.heat-queue {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: clamp(9px, 2vw, 11px);
+  margin-top: 4px;
+}

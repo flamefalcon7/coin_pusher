@@ -14,6 +14,7 @@ import (
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
@@ -149,7 +150,7 @@ func TestEvent(t *testing.T) {
 			t.Parallel()
 
 			gameCore := newGameCore(userID, tc.balance)
-			grp := New(gameCore)
+			grp := New(gameCore, heat.New(), nil)
 
 			r := httptest.NewRequest(http.MethodPost, "/v1/game/event", strings.NewReader(tc.body))
 			r.Header.Set("Content-Type", "application/json")

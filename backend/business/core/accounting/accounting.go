@@ -95,11 +95,9 @@ func (c *Core) ProcessGameInsert(ctx context.Context, userID uuid.UUID, coinCoun
 	return nil
 }
 
-// ProcessGameReward handles a game reward event (coins pushed off edge).
+// ProcessHeatReward handles a heat-based reward event (coins distributed via heat shares).
 // Credits the user's coin balance and creates a ledger entry.
-func (c *Core) ProcessGameReward(ctx context.Context, userID uuid.UUID, coinCount int, referenceID string) error {
-	amount := decimal.NewFromInt(int64(coinCount))
-
+func (c *Core) ProcessHeatReward(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, referenceID string) error {
 	if err := c.userCore.IncrementCoinBalance(ctx, userID, amount); err != nil {
 		return err
 	}
@@ -108,7 +106,7 @@ func (c *Core) ProcessGameReward(ctx context.Context, userID uuid.UUID, coinCoun
 	log := AccountingLog{
 		LogID:       uuid.New(),
 		UserID:      userID,
-		ActionType:  ActionGameReward,
+		ActionType:  ActionHeatReward,
 		Amount:      amount,
 		Currency:    CurrencyCoin,
 		ReferenceID: referenceID,
@@ -116,7 +114,7 @@ func (c *Core) ProcessGameReward(ctx context.Context, userID uuid.UUID, coinCoun
 	}
 
 	if err := c.storer.Create(ctx, log); err != nil {
-		return fmt.Errorf("creating game reward log: %w", err)
+		return fmt.Errorf("creating heat reward log: %w", err)
 	}
 
 	return nil

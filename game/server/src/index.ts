@@ -7,6 +7,7 @@ import { StackSpawner } from "./game/StackSpawner.js";
 import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
 import { GameLoop } from "./game/GameLoop.js";
+import { DropScheduler } from "./game/DropScheduler.js";
 import { EditorPhysics } from "./physics/EditorPhysics.js";
 import type { StackType, WorldSnapshotMessage } from "@coin-pusher/shared";
 
@@ -39,13 +40,16 @@ async function initialize() {
   // Connect to NATS
   await natsClient.connect(NATS_URL);
 
-  // Create game loop (now uses NATSClient instead of WebSocketServer)
+  // Create drop scheduler and game loop
+  const dropScheduler = new DropScheduler();
+
   gameLoop = new GameLoop(
     physicsWorld,
     pusher,
     gameState,
     coinManager,
-    natsClient
+    natsClient,
+    dropScheduler
   );
 
   // Subscribe to coin_insert commands from Go backend
@@ -133,6 +137,18 @@ async function initialize() {
   // Subscribe to update_scene_objects commands from Go backend
   natsClient.subscribeUpdateSceneObjects((cmd: UpdateSceneObjectsCommand) => {
     editorPhysics.syncObjects(cmd.objects);
+  });
+
+  // Subscribe to batch_insert commands from Go backend
+  natsClient.subscribeBatchInsert((cmd) => {
+    const accepted = dropScheduler.enqueue(cmd.user_id, cmd.slot_x, cmd.count);
+    console.log(`📥 Batch insert: ${cmd.user_id} queued ${accepted}/${cmd.count} coins at x=${cmd.slot_x}`);
+    // Publish queue update
+    natsClient.publishQueueUpdate({
+      op: "queue_update",
+      user_id: cmd.user_id,
+      pending: dropScheduler.getPending(cmd.user_id),
+    });
   });
 
   // Subscribe to snapshot requests (request/reply for new clients)

@@ -258,6 +258,14 @@ export class SceneManager {
     this.coinManager.clear();
   }
 
+  addCoinHighlight(coinId: number): void {
+    this.coinManager.addHighlight(coinId);
+  }
+
+  updateCoinHighlights(): void {
+    this.coinManager.updateHighlights();
+  }
+
   /** Finalize pending coins (batch detection) + advance animations + push to GPU. */
   updateCoinBuffers(dt: number): void {
     this.coinManager.commitNewCoins();

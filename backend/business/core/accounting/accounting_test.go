@@ -229,10 +229,10 @@ func TestProcessGameInsert(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ProcessGameReward
+// ProcessHeatReward
 // ---------------------------------------------------------------------------
 
-func TestProcessGameReward(t *testing.T) {
+func TestProcessHeatReward(t *testing.T) {
 	t.Parallel()
 
 	userID := uuid.New()
@@ -252,7 +252,8 @@ func TestProcessGameReward(t *testing.T) {
 	userCore := user.NewCore(userStr)
 	core := NewCore(acctStr, userCore)
 
-	err := core.ProcessGameReward(context.Background(), userID, 10, "ref-reward-1")
+	amount := decimal.NewFromFloat(10.5)
+	err := core.ProcessHeatReward(context.Background(), userID, amount, "ref-reward-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,7 +261,7 @@ func TestProcessGameReward(t *testing.T) {
 	if updatedCurrency != "COIN" {
 		t.Errorf("currency = %q, want COIN", updatedCurrency)
 	}
-	if !updatedDelta.Equal(decimal.NewFromInt(10)) {
-		t.Errorf("delta = %s, want 10", updatedDelta)
+	if !updatedDelta.Equal(amount) {
+		t.Errorf("delta = %s, want %s", updatedDelta, amount)
 	}
 }

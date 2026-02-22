@@ -13,7 +13,7 @@ const (
 	ActionDeposit    = "DEPOSIT"
 	ActionWithdraw   = "WITHDRAW"
 	ActionGameInsert = "GAME_INSERT"
-	ActionGameReward = "GAME_REWARD"
+	ActionHeatReward = "HEAT_REWARD"
 )
 
 // Currency types.

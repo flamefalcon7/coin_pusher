@@ -247,20 +247,15 @@ func TestProcessEvent_SpawnStack(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ProcessEvent: REWARD
+// ProcessBatchInsert
 // ---------------------------------------------------------------------------
 
-func TestProcessEvent_Reward(t *testing.T) {
+func TestProcessBatchInsert(t *testing.T) {
 	t.Parallel()
 
-	core, userID := newTestCore(t, decimal.NewFromInt(50))
+	core, userID := newTestCore(t, decimal.NewFromInt(100))
 
-	result, err := core.ProcessEvent(context.Background(), GameEvent{
-		UserID:         userID,
-		Type:           EventReward,
-		CoinCount:      10,
-		IdempotencyKey: uuid.NewString(),
-	})
+	result, err := core.ProcessBatchInsert(context.Background(), userID, 5, uuid.NewString())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -274,23 +269,18 @@ func TestProcessEvent_Reward(t *testing.T) {
 	}
 }
 
-func TestProcessEvent_RewardDefaultCount(t *testing.T) {
+func TestProcessBatchInsert_ZeroCount(t *testing.T) {
 	t.Parallel()
 
-	core, userID := newTestCore(t, decimal.NewFromInt(50))
+	core, userID := newTestCore(t, decimal.NewFromInt(100))
 
-	result, err := core.ProcessEvent(context.Background(), GameEvent{
-		UserID:         userID,
-		Type:           EventReward,
-		CoinCount:      0,
-		IdempotencyKey: uuid.NewString(),
-	})
+	result, err := core.ProcessBatchInsert(context.Background(), userID, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !result.Success {
-		t.Errorf("Success = false for default count; Error = %q", result.Error)
+	if result.Success {
+		t.Error("Success = true for zero count, want false")
 	}
 }
 

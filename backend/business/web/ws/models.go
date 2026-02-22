@@ -64,4 +64,6 @@ type ClientMessage struct {
 	Type       string         `msgpack:"type,omitempty"`
 	ClientTime int64          `msgpack:"clientTime,omitempty"`
 	Objects    []EditorObject `msgpack:"objects,omitempty"`
+	Count      int            `msgpack:"count,omitempty"`
+	SlotID     int            `msgpack:"slot_id,omitempty"`
 }

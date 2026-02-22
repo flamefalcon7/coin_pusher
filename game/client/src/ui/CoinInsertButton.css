@@ -97,6 +97,48 @@
   transform: scale(1.15);
 }
 
+/* ── Batch Amount Selector ────────────────────────────────────────────── */
+
+.coin-batch-selector {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.coin-batch-btn {
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 4px 10px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.coin-batch-btn.active {
+  background: rgba(255, 200, 0, 0.4);
+  border-color: rgba(255, 200, 0, 0.8);
+  color: #fff;
+}
+
+.coin-batch-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Queue Progress ──────────────────────────────────────────────────── */
+
+.coin-queue-progress {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 /* ── Insert Coin Button ──────────────────────────────────────────────── */
 
 .coin-insert-btn {
