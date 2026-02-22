@@ -29,3 +29,7 @@ backend-migrate:
 
 backend-seed:
 	cd backend && go run ./app/tooling/admin seed
+
+# clear stale images
+clear-docker-images:
+	docker image prune -f
