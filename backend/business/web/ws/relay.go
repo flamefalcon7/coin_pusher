@@ -89,6 +89,33 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// heat_update: broadcast heat shares to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicHeatUpdate(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// coin_spawn: broadcast coin spawn events to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicCoinSpawn(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// queue_update: broadcast queue updates to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicQueueUpdate(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	rl.log.Infow("nats relay started", "room", rl.room)
 	return nil
 }

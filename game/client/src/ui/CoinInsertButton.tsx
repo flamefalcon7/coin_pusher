@@ -3,15 +3,19 @@ import { SLOT_CONFIG } from '@coin-pusher/shared';
 import './CoinInsertButton.css';
 
 interface CoinInsertButtonProps {
-  onClick: (slotIndex: number) => void;
+  onClick: (slotIndex: number, count: number) => void;
   disabled: boolean;
+  queuePending?: number;
 }
 
 const SLOT_COUNT = SLOT_CONFIG.POSITIONS.length;
 
-export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, disabled }) => {
+const BATCH_AMOUNTS = [1, 10, 50, 100];
+
+export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, disabled, queuePending }) => {
   const [selectedSlot, setSelectedSlot] = useState(Math.floor(SLOT_COUNT / 2)); // start center
   const [pressed, setPressed] = useState(false);
+  const [selectedAmount, setSelectedAmount] = useState(1);
 
   const moveLeft = useCallback(() => {
     setSelectedSlot(prev => Math.max(0, prev - 1));
@@ -23,8 +27,8 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
 
   const handleInsert = useCallback(() => {
     if (disabled) return;
-    onClick(selectedSlot);
-  }, [disabled, onClick, selectedSlot]);
+    onClick(selectedSlot, selectedAmount);
+  }, [disabled, onClick, selectedSlot, selectedAmount]);
 
   const handleInsertDown = useCallback(() => {
     if (disabled) return;
@@ -117,6 +121,19 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
         </button>
       </div>
 
+      {/* Batch amount selector */}
+      <div className="coin-batch-selector">
+        {BATCH_AMOUNTS.map((amount) => (
+          <button
+            key={amount}
+            className={`coin-batch-btn ${amount === selectedAmount ? 'active' : ''}`}
+            onClick={() => setSelectedAmount(amount)}
+          >
+            {amount}
+          </button>
+        ))}
+      </div>
+
       {/* Insert coin button */}
       <button
         className={`coin-insert-btn ${pressed ? 'pressed' : ''}`}
@@ -131,8 +148,16 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
           alt=""
           draggable={false}
         />
-        <span className="coin-insert-btn-text">INSERT COIN</span>
+        <span className="coin-insert-btn-text">
+          INSERT {selectedAmount > 1 ? `${selectedAmount} COINS` : 'COIN'}
+        </span>
       </button>
+
+      {queuePending !== undefined && queuePending > 0 && (
+        <div className="coin-queue-progress">
+          Queue: {queuePending} remaining
+        </div>
+      )}
     </div>
   );
 };

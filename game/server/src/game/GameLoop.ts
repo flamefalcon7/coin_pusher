@@ -4,13 +4,14 @@ import { Coin } from "../physics/Coin.js";
 import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
+import type { DropScheduler } from "./DropScheduler.js";
 import type {
   StateDeltaMessage,
   DespawnMessage,
   StateUpdate,
   SlotSymbol,
 } from "@coin-pusher/shared";
-import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG, SLOT_MACHINE_CONFIG } from "@coin-pusher/shared";
+import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG, SLOT_MACHINE_CONFIG, DespawnZone } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
 
 export class GameLoop {
@@ -19,7 +20,9 @@ export class GameLoop {
   private gameState: GameState;
   private coinManager: CoinManager;
   private natsClient: NATSClient;
+  private dropScheduler: DropScheduler;
   private coins: Map<number, Coin> = new Map();
+  private coinOwners: Map<number, string> = new Map(); // coinId → userId
   private running: boolean = false;
   private intervalId?: NodeJS.Timeout;
   private statsIntervalId?: NodeJS.Timeout;
@@ -68,13 +71,15 @@ export class GameLoop {
     pusher: Pusher,
     gameState: GameState,
     coinManager: CoinManager,
-    natsClient: NATSClient
+    natsClient: NATSClient,
+    dropScheduler: DropScheduler
   ) {
     this.physicsWorld = physicsWorld;
     this.pusher = pusher;
     this.gameState = gameState;
     this.coinManager = coinManager;
     this.natsClient = natsClient;
+    this.dropScheduler = dropScheduler;
   }
 
   start(): void {
@@ -114,7 +119,24 @@ export class GameLoop {
     this.pusher.update();
     const tAfterPusher = performance.now();
 
-    // 1b. Update tornado / lightning forces (before physics step)
+    // 1b. Check drop scheduler for next coin to drop
+    const drop = this.dropScheduler.tick();
+    if (drop) {
+      const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
+      const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
+      if (coinId !== null) {
+        const coin = new Coin(this.physicsWorld, coinId, drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
+        this.addCoin(coin);
+        this.coinOwners.set(coinId, drop.userId);
+        // Publish coin_spawn event
+        this.natsClient.publishCoinSpawn({
+          op: "coin_spawn",
+          coins: [{ id: coinId, owner_id: drop.userId }],
+        });
+      }
+    }
+
+    // 1c. Update tornado / lightning forces (before physics step)
     this.updateTornado();
     this.updateLightning();
 
@@ -134,15 +156,30 @@ export class GameLoop {
     despawnIds.length = 0;
     const f = GameLoop.Q_FACTOR;
     let sleepingCount = 0;
+    const classifiedDespawns: { id: number; zone: string; owner_id: string }[] = [];
 
     this.coins.forEach((coin, id) => {
       if (coin.shouldDespawn()) {
-        // Check if coin fell through left wall opening
-        const despawnPos = coin.getPosition();
-        if (despawnPos.x < SLOT_MACHINE_CONFIG.X_THRESHOLD && despawnPos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+        const pos = coin.getPosition();
+        let zone: string;
+
+        if (pos.z > SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+          zone = DespawnZone.FRONT_EDGE;
+        } else if (pos.x < SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+          zone = DespawnZone.LEFT_WALL;
           this.onLeftWallCoinDespawn();
+        } else if (pos.x > -SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+          zone = DespawnZone.RIGHT_WALL;
+        } else {
+          zone = DespawnZone.OTHER;
         }
+
         despawnIds.push(id);
+        classifiedDespawns.push({
+          id,
+          zone,
+          owner_id: this.coinOwners.get(id) ?? "",
+        });
         return;
       }
 
@@ -189,6 +226,7 @@ export class GameLoop {
           coin.destroy(this.physicsWorld);
           this.coins.delete(id);
           this.coinManager.removeCoin(id);
+          this.coinOwners.delete(id);
         }
       }
 
@@ -199,6 +237,14 @@ export class GameLoop {
       };
 
       this.natsClient.publishDespawn(despawnMessage);
+    }
+
+    // 5b. Publish classified despawn events to NATS for backend processing
+    if (classifiedDespawns.length > 0) {
+      this.natsClient.publishCoinDespawn({
+        coins: classifiedDespawns,
+        tick: this.gameState.getTick(),
+      });
     }
     const tAfterDespawn = performance.now();
 
@@ -385,6 +431,7 @@ export class GameLoop {
       ids.push(id);
     });
     this.coins.clear();
+    this.coinOwners.clear();
 
     if (ids.length > 0) {
       this.natsClient.publishDespawn({

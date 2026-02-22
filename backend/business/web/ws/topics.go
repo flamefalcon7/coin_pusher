@@ -20,3 +20,8 @@ func TopicUpdateSceneObjects(room string) string { return "game." + room + ".cmd
 func TopicSlotSpin(room string) string            { return "game." + room + ".slot_spin" }
 func TopicSlotCounter(room string) string          { return "game." + room + ".slot_counter" }
 func TopicAbility(room string) string              { return "game." + room + ".ability" }
+func TopicBatchInsert(room string) string          { return "game." + room + ".cmd.batch_insert" }
+func TopicCoinDespawn(room string) string          { return "game." + room + ".evt.coin_despawn" }
+func TopicHeatUpdate(room string) string           { return "game." + room + ".heat_update" }
+func TopicCoinSpawn(room string) string            { return "game." + room + ".coin_spawn" }
+func TopicQueueUpdate(room string) string          { return "game." + room + ".queue_update" }

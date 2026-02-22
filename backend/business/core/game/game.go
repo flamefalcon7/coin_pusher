@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 )
@@ -30,8 +32,6 @@ func (c *Core) ProcessEvent(ctx context.Context, evt GameEvent) (GameEventResult
 		return c.processInsertCoin(ctx, evt)
 	case EventSpawnStack:
 		return c.processSpawnStack(ctx, evt)
-	case EventReward:
-		return c.processReward(ctx, evt)
 	default:
 		return GameEventResult{}, fmt.Errorf("unknown event type: %s", evt.Type)
 	}
@@ -83,17 +83,18 @@ func (c *Core) processSpawnStack(ctx context.Context, evt GameEvent) (GameEventR
 	}, nil
 }
 
-func (c *Core) processReward(ctx context.Context, evt GameEvent) (GameEventResult, error) {
-	count := evt.CoinCount
-	if count <= 0 {
-		count = 1
+// ProcessBatchInsert debits the user's balance for a batch coin insert.
+// Returns the result including the updated balance.
+func (c *Core) ProcessBatchInsert(ctx context.Context, userID uuid.UUID, coinCount int, referenceID string) (GameEventResult, error) {
+	if coinCount <= 0 {
+		return GameEventResult{Success: false, Error: "coin count must be positive"}, nil
 	}
 
-	if err := c.acctCore.ProcessGameReward(ctx, evt.UserID, count, evt.IdempotencyKey); err != nil {
+	if err := c.acctCore.ProcessGameInsert(ctx, userID, coinCount, referenceID); err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
-	usr, err := c.userCore.QueryByID(ctx, evt.UserID)
+	usr, err := c.userCore.QueryByID(ctx, userID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}

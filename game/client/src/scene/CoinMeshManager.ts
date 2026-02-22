@@ -46,6 +46,16 @@ export class CoinMeshManager {
   private spawnAnims: Map<number, SpawnAnim> = new Map(); // coinId -> anim
   private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[] = [];
 
+  // ── Highlight mesh for owned coins ────────────────────────────────
+  private highlightMesh!: Mesh;
+  private hlBuffer: Float32Array;
+  private hlIdToIndex: Map<number, number> = new Map();
+  private hlIndexToId: Int32Array;
+  private hlActive: number = 0;
+  private hlCapacity: number = 50;
+  private hlTimers: Map<number, number> = new Map(); // coinId -> expiry timestamp (Date.now())
+  private static readonly HIGHLIGHT_DURATION = 2000; // 2 seconds in ms
+
   // Reusable temporary objects to avoid GC per coin per frame
   private static tmpVector = new Vector3();
   private static tmpQuaternion = new Quaternion();
@@ -59,7 +69,11 @@ export class CoinMeshManager {
     // Initialize buffers with default capacity
     this.matrixBuffer = new Float32Array(this.capacity * 16);
     this.indexToId = new Int32Array(this.capacity);
+    // Initialize highlight buffers
+    this.hlBuffer = new Float32Array(this.hlCapacity * 16);
+    this.hlIndexToId = new Int32Array(this.hlCapacity);
     this.createPrototype();
+    this.createHighlightPrototype();
   }
 
   private createPrototype(): void {
@@ -86,6 +100,27 @@ export class CoinMeshManager {
     this.prototypeMesh.thinInstanceEnablePicking = false;
 
     console.log("🪙 Coin prototype created");
+  }
+
+  private createHighlightPrototype(): void {
+    const { RADIUS, THICKNESS } = COIN_CONFIG;
+    this.highlightMesh = MeshBuilder.CreateCylinder(
+      "coinHighlight",
+      {
+        height: THICKNESS + 0.001,
+        diameter: RADIUS * 2 + 0.001,
+        tessellation: 32,
+      },
+      this.scene
+    );
+
+    const material = createToonMaterial(this.scene, {
+      name: "coinHighlightMat",
+      baseColor: new Color3(0, 1, 1), // bright cyan
+      thinInstances: true,
+    });
+    this.highlightMesh.material = material;
+    this.highlightMesh.thinInstanceEnablePicking = false;
   }
 
   addCoin(
@@ -314,6 +349,100 @@ export class CoinMeshManager {
     this.idToIndex.delete(id);
 
     this.activeCoins--;
+
+    // Clean up highlight if present
+    this.removeHighlight(id);
+  }
+
+  // ── Highlight Methods ─────────────────────────────────────────────────
+
+  addHighlight(coinId: number): void {
+    if (this.hlIdToIndex.has(coinId)) return;
+
+    // Get the main mesh matrix for this coin
+    const mainIndex = this.idToIndex.get(coinId);
+    if (mainIndex === undefined) return;
+
+    if (this.hlActive >= this.hlCapacity) {
+      this.resizeHighlightBuffer();
+    }
+
+    const index = this.hlActive;
+    this.hlActive++;
+    this.hlIdToIndex.set(coinId, index);
+    this.hlIndexToId[index] = coinId;
+
+    // Copy matrix from main buffer
+    this.hlBuffer.set(
+      this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
+      index * 16
+    );
+
+    // Set timer
+    this.hlTimers.set(coinId, Date.now() + CoinMeshManager.HIGHLIGHT_DURATION);
+  }
+
+  removeHighlight(coinId: number): void {
+    const index = this.hlIdToIndex.get(coinId);
+    if (index === undefined) return;
+
+    const lastIndex = this.hlActive - 1;
+
+    if (index !== lastIndex) {
+      const lastCoinId = this.hlIndexToId[lastIndex];
+      this.hlBuffer.copyWithin(index * 16, lastIndex * 16, (lastIndex + 1) * 16);
+      this.hlIdToIndex.set(lastCoinId, index);
+      this.hlIndexToId[index] = lastCoinId;
+    }
+
+    this.hlIdToIndex.delete(coinId);
+    this.hlTimers.delete(coinId);
+    this.hlActive--;
+  }
+
+  updateHighlights(): void {
+    const now = Date.now();
+
+    // Check expired highlights
+    for (const [coinId, expiry] of this.hlTimers) {
+      if (now >= expiry) {
+        this.removeHighlight(coinId);
+      }
+    }
+
+    // Update positions from main buffer for active highlights
+    for (const [coinId, hlIndex] of this.hlIdToIndex) {
+      const mainIndex = this.idToIndex.get(coinId);
+      if (mainIndex === undefined) {
+        this.removeHighlight(coinId);
+        continue;
+      }
+      this.hlBuffer.set(
+        this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
+        hlIndex * 16
+      );
+    }
+
+    // Update instances
+    if (this.hlActive === 0) {
+      this.highlightMesh.thinInstanceSetBuffer("matrix", null);
+      this.highlightMesh.isVisible = false;
+    } else {
+      this.highlightMesh.isVisible = true;
+      const activeData = this.hlBuffer.subarray(0, this.hlActive * 16);
+      this.highlightMesh.thinInstanceSetBuffer("matrix", activeData, 16, false);
+    }
+  }
+
+  private resizeHighlightBuffer(): void {
+    const newCapacity = this.hlCapacity * 2;
+    const newBuffer = new Float32Array(newCapacity * 16);
+    newBuffer.set(this.hlBuffer);
+    this.hlBuffer = newBuffer;
+    const newIndexToId = new Int32Array(newCapacity);
+    newIndexToId.set(this.hlIndexToId);
+    this.hlIndexToId = newIndexToId;
+    this.hlCapacity = newCapacity;
   }
 
   public updateInstances(): void {
@@ -387,5 +516,13 @@ export class CoinMeshManager {
     // No need to zero indexToId — entries beyond activeCoins are never read
     this.activeCoins = 0;
     this.updateInstances();
+    // Clear highlights
+    this.hlIdToIndex.clear();
+    this.hlTimers.clear();
+    this.hlActive = 0;
+    if (this.highlightMesh) {
+      this.highlightMesh.thinInstanceSetBuffer("matrix", null);
+      this.highlightMesh.isVisible = false;
+    }
   }
 }

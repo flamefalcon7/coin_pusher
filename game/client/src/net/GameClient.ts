@@ -18,6 +18,10 @@ export type PingCallback = (ping: number) => void;
 export type SlotSpinCallback = (reels: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean) => void;
 export type SlotCounterCallback = (counter: number) => void;
 export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number) => void;
+export type CoinSpawnCallback = (coins: { id: number; owner_id: string }[]) => void;
+export type HeatUpdateCallback = (players: { user_id: string; share: number; raw_heat: number }[]) => void;
+export type QueueUpdateCallback = (userId: string, pending: number) => void;
+export type RewardCallback = (userId: string, amount: number, balance: string) => void;
 
 export class GameClient {
   private wsClient: WebSocketClient;
@@ -30,7 +34,12 @@ export class GameClient {
   private slotSpinCallback?: SlotSpinCallback;
   private slotCounterCallback?: SlotCounterCallback;
   private abilityEventCallback?: AbilityEventCallback;
+  private coinSpawnCallback?: CoinSpawnCallback;
+  private heatUpdateCallback?: HeatUpdateCallback;
+  private queueUpdateCallback?: QueueUpdateCallback;
+  private rewardCallback?: RewardCallback;
   private pendingPingTime: number = 0;
+  private userId: string = "";
 
   constructor(url: string, token?: string) {
     this.wsClient = new WebSocketClient(url, token);
@@ -136,6 +145,35 @@ export class GameClient {
         if (this.abilityEventCallback) {
           this.abilityEventCallback(message.ability, message.x, message.z);
         }
+        break;
+
+      case "coin_spawn":
+        if (this.coinSpawnCallback) {
+          this.coinSpawnCallback(message.coins);
+        }
+        break;
+
+      case "heat_update":
+        if (this.heatUpdateCallback) {
+          this.heatUpdateCallback(message.players);
+        }
+        break;
+
+      case "queue_update":
+        if (this.queueUpdateCallback) {
+          this.queueUpdateCallback(message.user_id, message.pending);
+        }
+        break;
+
+      case "reward":
+        if (this.rewardCallback) {
+          this.rewardCallback(message.user_id, message.amount, message.balance);
+        }
+        break;
+
+      case "welcome":
+        this.userId = message.user_id;
+        console.log("👤 Assigned user ID:", this.userId);
         break;
     }
   }
@@ -254,8 +292,37 @@ export class GameClient {
     this.abilityEventCallback = callback;
   }
 
+  onCoinSpawn(callback: CoinSpawnCallback): void {
+    this.coinSpawnCallback = callback;
+  }
+
+  onHeatUpdate(callback: HeatUpdateCallback): void {
+    this.heatUpdateCallback = callback;
+  }
+
+  onQueueUpdate(callback: QueueUpdateCallback): void {
+    this.queueUpdateCallback = callback;
+  }
+
+  onReward(callback: RewardCallback): void {
+    this.rewardCallback = callback;
+  }
+
+  batchInsert(slotId: number, count: number): void {
+    const message: ClientMessage = {
+      op: "batch_insert",
+      slot_id: slotId,
+      count,
+    };
+    this.wsClient.send(message);
+  }
+
   isConnected(): boolean {
     return this.wsClient.isConnected();
+  }
+
+  getUserId(): string {
+    return this.userId;
   }
 
   getClockOffset(): number {

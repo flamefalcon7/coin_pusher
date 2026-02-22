@@ -5,6 +5,8 @@ import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { Toolbar } from "./ui/Toolbar";
 import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
+import { HeatMeter } from "./ui/HeatMeter";
+import { RewardToast } from "./ui/RewardToast";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -46,6 +48,11 @@ function App() {
   const [slotCounter, setSlotCounter] = useState(0);
   const [holeTooltip, setHoleTooltip] = useState<HoleTooltipData | null>(null);
   const lastHolePickTime = useRef(0);
+  const [heatShare, setHeatShare] = useState(0);
+  const [heatRaw, setHeatRaw] = useState(0);
+  const [queuePending, setQueuePending] = useState(0);
+  const [rewardToast, setRewardToast] = useState<{ amount: number; id: number } | null>(null);
+  const rewardIdRef = useRef(0);
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -124,6 +131,43 @@ function App() {
           setSuperPushCooldown(true);
           setTimeout(() => setSuperPushCooldown(false), RATE_LIMIT_CONFIG.SUPER_PUSH_COOLDOWN);
           break;
+      }
+    });
+
+    // Set up heat system callbacks
+    gameClient.onCoinSpawn((coins) => {
+      const myUserId = gameClient.getUserId();
+      for (const coin of coins) {
+        if (coin.owner_id === myUserId) {
+          sceneManager.addCoinHighlight(coin.id);
+        }
+      }
+    });
+
+    gameClient.onHeatUpdate((players) => {
+      const myUserId = gameClient.getUserId();
+      const me = players.find(p => p.user_id === myUserId);
+      if (me) {
+        setHeatShare(me.share);
+        setHeatRaw(me.raw_heat);
+      } else {
+        setHeatShare(0);
+        setHeatRaw(0);
+      }
+    });
+
+    gameClient.onQueueUpdate((userId, pending) => {
+      const myUserId = gameClient.getUserId();
+      if (userId === myUserId) {
+        setQueuePending(pending);
+      }
+    });
+
+    gameClient.onReward((userId, amount, _balance) => {
+      const myUserId = gameClient.getUserId();
+      if (userId === myUserId) {
+        rewardIdRef.current++;
+        setRewardToast({ amount, id: rewardIdRef.current });
       }
     });
 
@@ -217,6 +261,7 @@ function App() {
 
           // Batch update coin instances to GPU (pass dt in seconds for animations)
           sceneManager.updateCoinBuffers(deltaTime / 1000);
+          sceneManager.updateCoinHighlights();
 
           // Only trigger React re-render when coin count actually changes
           const size = knownCoins.size;
@@ -315,21 +360,16 @@ function App() {
     };
   }, [toggleEditor]);
 
-  const handleInsertCoin = (slotIndex: number) => {
+  const handleInsertCoin = (slotIndex: number, count: number = 1) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
       console.warn("Not connected to server");
       return;
     }
 
-    // Get X position from slot configuration
-    const x = SLOT_CONFIG.POSITIONS[slotIndex];
-
-    // Send to server
-    gameClientRef.current.insertCoin(x);
+    gameClientRef.current.batchInsert(slotIndex, count);
     sceneManagerRef.current?.getSoundManager().playCoinInsert();
     sceneManagerRef.current?.playCoinInsertVFX(slotIndex);
 
-    // Visual feedback
     setButtonDisabled(true);
     setTimeout(() => setButtonDisabled(false), 100);
   };
@@ -601,7 +641,20 @@ function App() {
       <CoinInsertButton
         onClick={handleInsertCoin}
         disabled={buttonDisabled || connectionStatus !== "connected"}
+        queuePending={queuePending}
       />
+
+      {heatShare > 0 && (
+        <HeatMeter
+          share={heatShare}
+          rawHeat={heatRaw}
+          queuePending={queuePending}
+        />
+      )}
+
+      {rewardToast && (
+        <RewardToast amount={rewardToast.amount} id={rewardToast.id} />
+      )}
 
       {holeTooltip && (
         <HoleTooltip data={holeTooltip} slotCounter={slotCounter} />

@@ -42,6 +42,15 @@ export type StateUpdate = {
   rot: [number, number, number, number];
 };
 
+// Despawn zone classification
+export const DespawnZone = {
+  FRONT_EDGE: "front",
+  LEFT_WALL: "left_wall",
+  RIGHT_WALL: "right_wall",
+  OTHER: "other",
+} as const;
+export type DespawnZone = typeof DespawnZone[keyof typeof DespawnZone];
+
 // --- Message Types ---
 
 // Client → Server: Insert coin at position x
@@ -110,6 +119,13 @@ export type FillPlatformMessage = {
   op: "fill_platform";
 };
 
+// Client → Server: Batch insert request
+export type BatchInsertMessage = {
+  op: "batch_insert";
+  slot_id: number;
+  count: number;
+};
+
 // Client → Server: Update editor scene objects for physics
 export type UpdateSceneObjectsMessage = {
   op: "update_scene_objects";
@@ -159,7 +175,8 @@ export type ClientMessage =
   | PingMessage
   | ClearAllMessage
   | FillPlatformMessage
-  | UpdateSceneObjectsMessage;
+  | UpdateSceneObjectsMessage
+  | BatchInsertMessage;
 
 // Server → Client: Slot machine spin result
 export type SlotSymbol = "bitcoin" | "ethereum" | "solana";
@@ -176,6 +193,33 @@ export type SlotMachineCounterMessage = {
   counter: number;
 };
 
+// Server → Client: Coin spawn notification (one-time per coin drop)
+export type CoinSpawnMessage = {
+  op: "coin_spawn";
+  coins: { id: number; owner_id: string }[];
+};
+
+// Server → Client: Heat state update (1Hz from backend via relay)
+export type HeatUpdateMessage = {
+  op: "heat_update";
+  players: { user_id: string; share: number; raw_heat: number }[];
+};
+
+// Server → Client: Queue progress update
+export type QueueUpdateMessage = {
+  op: "queue_update";
+  user_id: string;
+  pending: number;
+};
+
+// Server → Client: Reward notification
+export type RewardMessage = {
+  op: "reward";
+  user_id: string;
+  amount: number;
+  balance: string;
+};
+
 // Server → Client: Ability VFX event (broadcast to all clients)
 export type AbilityType = "shock" | "tornado" | "explosion" | "lightning" | "superPush";
 
@@ -186,6 +230,12 @@ export type AbilityEventMessage = {
   z?: number;
 };
 
+// Server → Client: Welcome message with assigned user ID
+export type WelcomeMessage = {
+  op: "welcome";
+  user_id: string;
+};
+
 // Union of all server-to-client messages
 export type ServerMessage =
   | WorldSnapshotMessage
@@ -194,7 +244,12 @@ export type ServerMessage =
   | PongMessage
   | SlotMachineSpinMessage
   | SlotMachineCounterMessage
-  | AbilityEventMessage;
+  | AbilityEventMessage
+  | CoinSpawnMessage
+  | HeatUpdateMessage
+  | QueueUpdateMessage
+  | RewardMessage
+  | WelcomeMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
@@ -387,4 +442,19 @@ export const SLOT_MACHINE_CONFIG = {
   SPIN_DURATION: 3500, // ms total reel animation time
   BONUS_SPAWN_DELAY: 4000, // ms after spin starts before bonus coins drop
   BONUS_SPAWN_INTERVAL: 30, // ms between each bonus coin spawn
+} as const;
+
+// Heat system configuration
+export const HEAT_CONFIG = {
+  HALF_LIFE: 180,           // seconds
+  ALPHA: 0.7,               // diminishing returns
+  GUARANTEED_MIN: 0.05,     // per active player
+  BROADCAST_INTERVAL: 1000, // ms
+  REWARD_FLUSH_INTERVAL: 10000, // ms
+} as const;
+
+// Drop scheduler configuration
+export const DROP_SCHEDULER_CONFIG = {
+  DROP_INTERVAL_TICKS: 2,  // 1 drop every 2 ticks = ~15 drops/sec
+  MAX_QUEUE: 100,          // max coins queued per player
 } as const;

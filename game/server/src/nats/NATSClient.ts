@@ -1,8 +1,14 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
 import * as msgpack from "@msgpack/msgpack";
-import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage } from "@coin-pusher/shared";
+import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage } from "@coin-pusher/shared";
 
 const sc = StringCodec();
+
+export type BatchInsertCommand = {
+  user_id: string;
+  slot_x: number;
+  count: number;
+};
 
 export type CoinInsertCommand = {
   user_id: string;
@@ -253,6 +259,35 @@ export class NATSClient {
   publishSnapshot(snapshot: WorldSnapshotMessage): void {
     const encoded = msgpack.encode(snapshot);
     this.nc!.publish(`game.${this.room}.snapshot`, encoded);
+  }
+
+  // Publish classified coin despawn events (JSON encoded, for backend processing)
+  publishCoinDespawn(data: { coins: { id: number; zone: string; owner_id: string }[]; tick: number }): void {
+    this.nc!.publish(`game.${this.room}.evt.coin_despawn`, sc.encode(JSON.stringify(data)));
+  }
+
+  // Publish coin spawn notification (msgpack encoded, for client broadcast)
+  publishCoinSpawn(msg: CoinSpawnMessage): void {
+    const encoded = msgpack.encode(msg);
+    this.nc!.publish(`game.${this.room}.coin_spawn`, encoded);
+  }
+
+  // Publish queue update notification (msgpack encoded, for client broadcast)
+  publishQueueUpdate(msg: QueueUpdateMessage): void {
+    const encoded = msgpack.encode(msg);
+    this.nc!.publish(`game.${this.room}.queue_update`, encoded);
+  }
+
+  // Subscribe to batch_insert commands (JSON encoded)
+  subscribeBatchInsert(handler: (cmd: BatchInsertCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.batch_insert`);
+    this.subs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as BatchInsertCommand;
+        handler(cmd);
+      }
+    })();
   }
 
   // Graceful close

@@ -7,7 +7,6 @@ import "github.com/google/uuid"
 const (
 	EventInsertCoin = "INSERT_COIN"
 	EventSpawnStack = "SPAWN_STACK"
-	EventReward     = "REWARD"
 )
 
 // Stack types and their coin costs.
