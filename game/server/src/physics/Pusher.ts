@@ -37,9 +37,13 @@ export class Pusher {
   private spStartZ: number = 0;
   private recoveryTargetZ: number = 0;
 
-  constructor(physicsWorld: PhysicsWorld) {
+  // Injectable clock (defaults to Date.now for production)
+  private getTime: () => number;
+
+  constructor(physicsWorld: PhysicsWorld, getTime?: () => number) {
     const world = physicsWorld.getWorld();
-    this.startTime = Date.now();
+    this.getTime = getTime ?? (() => Date.now());
+    this.startTime = this.getTime();
 
     const { WIDTH, HEIGHT, DEPTH, POSITION, FRICTION, RESTITUTION } =
       SCENE_CONFIG.PUSHER;
@@ -86,7 +90,7 @@ export class Pusher {
       return;
     }
 
-    const elapsedTime = (Date.now() - this.startTime) / 1000;
+    const elapsedTime = (this.getTime() - this.startTime) / 1000;
 
     const phase = this.omega * elapsedTime + this.initialPhase;
 
@@ -114,14 +118,14 @@ export class Pusher {
     if (this.spState !== 'idle') return;
 
     this.spStartZ = this.currentZ;
-    this.spStartTime = Date.now();
+    this.spStartTime = this.getTime();
     this.spState = 'pullback';
 
     console.log("💥 Super push activated!");
   }
 
   private updateSuperPush(): void {
-    const now = Date.now();
+    const now = this.getTime();
     const elapsed = now - this.spStartTime;
     const { PULLBACK_Z, THRUST_Z, PULLBACK_DURATION, THRUST_DURATION, HOLD_DURATION, RECOVERY_DURATION } = SUPER_PUSH_CONFIG;
 
