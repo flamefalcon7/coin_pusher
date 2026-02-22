@@ -40,6 +40,7 @@ export class GameClient {
   private rewardCallback?: RewardCallback;
   private pendingPingTime: number = 0;
   private userId: string = "";
+  private _snapshotJustLoaded: boolean = false;
 
   constructor(url: string, token?: string) {
     this.wsClient = new WebSocketClient(url, token);
@@ -86,18 +87,22 @@ export class GameClient {
         this.interpolator.clear();
         // Initialize state buffer with snapshot
         this.stateBuffer.clear();
+        const snapshotCoins = message.bodies
+          .filter((b) => b.type === "coin" && b.pos && b.rot)
+          .map((b) => ({
+            id: b.id,
+            pos: b.pos!,
+            rot: b.rot!,
+          }));
         this.stateBuffer.addState({
           serverTime: message.serverTime,
           tick: message.tick,
-          updates: message.bodies
-            .filter((b) => b.type === "coin" && b.pos && b.rot)
-            .map((b) => ({
-              id: b.id,
-              pos: b.pos!,
-              rot: b.rot!,
-            })),
+          updates: snapshotCoins,
           pusherZ: message.bodies.find((b) => b.type === "pusher")?.z ?? 0,
         });
+        // Seed interpolator so sleeping coins render immediately
+        this.interpolator.seedCoins(snapshotCoins);
+        this._snapshotJustLoaded = true;
         break;
 
       case "state_delta":
@@ -331,5 +336,14 @@ export class GameClient {
 
   getBufferSize(): number {
     return this.stateBuffer.getBufferSize();
+  }
+
+  /** Returns true once after a world_snapshot is loaded, then resets. */
+  consumeSnapshotFlag(): boolean {
+    if (this._snapshotJustLoaded) {
+      this._snapshotJustLoaded = false;
+      return true;
+    }
+    return false;
   }
 }
