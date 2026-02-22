@@ -54,6 +54,7 @@ export class CoinMeshManager {
   private hlActive: number = 0;
   private hlCapacity: number = 50;
   private hlTimers: Map<number, number> = new Map(); // coinId -> expiry timestamp (Date.now())
+  private hlPending: Set<number> = new Set(); // coinIds waiting for addCoin before highlight
   private static readonly HIGHLIGHT_DURATION = 2000; // 2 seconds in ms
 
   // Reusable temporary objects to avoid GC per coin per frame
@@ -192,6 +193,16 @@ export class CoinMeshManager {
       // Normal instant placement
       for (const coin of batch) {
         this.allocateCoin(coin.id, coin.pos, coin.rot);
+      }
+    }
+
+    // Flush deferred highlights for coins that are now allocated
+    if (this.hlPending.size > 0) {
+      for (const coinId of this.hlPending) {
+        if (this.idToIndex.has(coinId)) {
+          this.hlPending.delete(coinId);
+          this.addHighlight(coinId);
+        }
       }
     }
   }
@@ -352,6 +363,7 @@ export class CoinMeshManager {
 
     // Clean up highlight if present
     this.removeHighlight(id);
+    this.hlPending.delete(id);
   }
 
   // ── Highlight Methods ─────────────────────────────────────────────────
@@ -361,7 +373,11 @@ export class CoinMeshManager {
 
     // Get the main mesh matrix for this coin
     const mainIndex = this.idToIndex.get(coinId);
-    if (mainIndex === undefined) return;
+    if (mainIndex === undefined) {
+      // Coin not yet added (coin_spawn arrives before state delta) — defer
+      this.hlPending.add(coinId);
+      return;
+    }
 
     if (this.hlActive >= this.hlCapacity) {
       this.resizeHighlightBuffer();

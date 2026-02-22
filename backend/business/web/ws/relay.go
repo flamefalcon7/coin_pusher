@@ -26,7 +26,7 @@ func NewRelay(log *zap.SugaredLogger, nc *nats.Conn, hub *Hub, room string) *Rel
 
 // Start subscribes to state_delta, despawn, snapshot, and reward topics.
 func (rl *Relay) Start() error {
-	// state_delta: broadcast raw msgpack bytes to all WS clients.
+	// state_delta: broadcast raw protobuf bytes to all WS clients.
 	sub, err := rl.nc.Subscribe(TopicStateDelta(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)
 	})
@@ -35,7 +35,7 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
-	// despawn: broadcast raw msgpack bytes to all WS clients.
+	// despawn: broadcast raw protobuf bytes to all WS clients.
 	sub, err = rl.nc.Subscribe(TopicDespawn(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)
 	})
@@ -62,7 +62,7 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
-	// slot_spin: broadcast raw msgpack bytes to all WS clients.
+	// slot_spin: broadcast raw protobuf bytes to all WS clients.
 	sub, err = rl.nc.Subscribe(TopicSlotSpin(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)
 	})
@@ -71,7 +71,7 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
-	// slot_counter: broadcast raw msgpack bytes to all WS clients.
+	// slot_counter: broadcast raw protobuf bytes to all WS clients.
 	sub, err = rl.nc.Subscribe(TopicSlotCounter(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)
 	})
@@ -80,7 +80,7 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
-	// ability: broadcast raw msgpack bytes to all WS clients.
+	// ability: broadcast raw protobuf bytes to all WS clients.
 	sub, err = rl.nc.Subscribe(TopicAbility(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)
 	})
