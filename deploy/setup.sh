@@ -3,7 +3,7 @@
 # Run as root on a fresh Ubuntu 22.04+ droplet.
 set -euo pipefail
 
-APP_DIR="/opt/coinpusher"
+APP_DIR="/opt/coin_pusher"
 DEPLOY_USER="deploy"
 
 echo "=== 1. Install Docker ==="
@@ -36,14 +36,14 @@ else
   echo "User '$DEPLOY_USER' already exists, skipping."
 fi
 
-echo "=== 3. Clone repo ==="
-if [ ! -d "$APP_DIR" ]; then
-  git clone https://github.com/flamefalcon/coin_pusher.git "$APP_DIR"
-  chown -R $DEPLOY_USER:$DEPLOY_USER "$APP_DIR"
-else
-  echo "Repo already cloned at $APP_DIR, pulling latest."
-  cd "$APP_DIR" && git pull origin main
-fi
+#echo "=== 3. Clone repo ==="
+#if [ ! -d "$APP_DIR" ]; then
+#  git clone https://github.com/flamefalcon/coin_pusher.git "$APP_DIR"
+#  chown -R $DEPLOY_USER:$DEPLOY_USER "$APP_DIR"
+#else
+#  echo "Repo already cloned at $APP_DIR, pulling latest."
+#  cd "$APP_DIR" && git pull origin main
+#fi
 
 echo "=== 4. Create .env ==="
 if [ ! -f "$APP_DIR/.env" ]; then
@@ -61,7 +61,7 @@ echo "=== 5. Generate JWT signing key ==="
 KEYS_DIR="$APP_DIR/backend/zarf/keys"
 if [ ! -f "$KEYS_DIR/default.pem" ]; then
   mkdir -p "$KEYS_DIR"
-  openssl genpkey -algorithm RSA -out "$KEYS_DIR/default.pem" -pkeyopt rsa_keygen_bits:2048
+  openssl genrsa -traditional -out "$KEYS_DIR/default.pem" 2048
   chmod 600 "$KEYS_DIR/default.pem"
   echo "Generated RSA key at $KEYS_DIR/default.pem."
 else
