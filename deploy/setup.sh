@@ -50,7 +50,7 @@ if [ ! -f "$APP_DIR/.env" ]; then
   cp "$APP_DIR/.env.example" "$APP_DIR/.env"
   # Generate a random DB password
   DB_PASS=$(openssl rand -base64 24)
-  sed -i "s/CHANGE_ME/$DB_PASS/" "$APP_DIR/.env"
+  sed -i "s#CHANGE_ME#$DB_PASS#" "$APP_DIR/.env"
   chmod 600 "$APP_DIR/.env"
   echo "Created .env with generated DB password."
 else
@@ -68,20 +68,38 @@ else
   echo "JWT key already exists, skipping."
 fi
 
-echo "=== 6. Start services ==="
+echo "=== 6. Generate TLS cert for nginx ==="
+TLS_DIR="$APP_DIR/deploy/nginx/certs"
+if [ ! -f "$TLS_DIR/origin.crt" ] || [ ! -f "$TLS_DIR/origin.key" ]; then
+  mkdir -p "$TLS_DIR"
+  openssl req -x509 -nodes -newkey rsa:2048 \
+    -keyout "$TLS_DIR/origin.key" \
+    -out "$TLS_DIR/origin.crt" \
+    -sha256 -days 365 \
+    -subj "/CN=api.local"
+  chmod 600 "$TLS_DIR/origin.key"
+  chmod 644 "$TLS_DIR/origin.crt"
+  echo "Generated self-signed TLS cert for nginx at $TLS_DIR."
+  echo "Replace with Cloudflare Origin Certificate for Full (strict)."
+else
+  echo "TLS cert already exists, skipping."
+fi
+
+echo "=== 7. Start services ==="
 cd "$APP_DIR"
 docker compose -f docker-compose.prod.yml up -d --build
 
-echo "=== 7. Run DB migrations ==="
+echo "=== 8. Run DB migrations ==="
 sleep 5
 docker compose -f docker-compose.prod.yml exec backend /bin/admin migrate
 
-echo "=== 8. Configure UFW firewall ==="
+echo "=== 9. Configure UFW firewall ==="
 if command -v ufw &>/dev/null; then
   ufw allow 22/tcp
-  ufw allow 4000/tcp
+  ufw allow 80/tcp
+  ufw allow 443/tcp
   ufw --force enable
-  echo "UFW enabled: allowing SSH (22) and backend (4000) only."
+  echo "UFW enabled: allowing SSH (22), HTTP (80), and HTTPS (443)."
 else
   echo "UFW not found, skipping firewall setup."
 fi
@@ -93,7 +111,7 @@ docker compose -f docker-compose.prod.yml ps
 echo ""
 echo "Next steps:"
 echo "  1. Point Cloudflare DNS 'api' A record to this server's IP"
-echo "  2. Set Cloudflare SSL mode to Full (strict)"
+echo "  2. Set Cloudflare SSL mode to Full (or Full strict after replacing cert with Origin CA cert)"
 echo "  3. Connect GitHub repo to Cloudflare Pages for frontend"
 echo "  4. Set VITE_WS_URL=wss://api.<your-domain>/ws in Cloudflare Pages env"
 echo "  5. Add GitHub Actions secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_KEY"

@@ -26,7 +26,7 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
             set -e
-            cd /opt/coinpusher
+            cd /opt/coin_pusher
             git pull origin main
             docker compose -f docker-compose.prod.yml build --no-cache backend game
             docker compose -f docker-compose.prod.yml up -d
