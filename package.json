@@ -9,8 +9,17 @@
     "build": "pnpm -r build",
     "clean": "pnpm -r clean"
   },
-  "keywords": ["coin-pusher", "babylonjs", "rapier", "websocket"],
+  "keywords": [
+    "coin-pusher",
+    "babylonjs",
+    "rapier",
+    "websocket"
+  ],
   "license": "MIT",
-  "packageManager": "pnpm@9.12.3"
+  "packageManager": "pnpm@9.12.3",
+  "dependencies": {
+    "@bufbuild/buf": "^1.65.0",
+    "@bufbuild/protobuf": "^2.11.0",
+    "@bufbuild/protoc-gen-es": "^2.11.0"
+  }
 }
-

@@ -203,19 +203,19 @@ export class GameLoop {
         [rot.x, rot.y, rot.z, rot.w]
       );
 
-      // Add to updates — Math.fround forces Float32 encoding in msgpack (5 bytes vs 9 bytes)
+      // Quantize to 3 decimal places; protobuf float fields handle float32 natively
       updates.push({
         id,
         pos: [
-          Math.fround(Math.round(pos.x * f) / f),
-          Math.fround(Math.round(pos.y * f) / f),
-          Math.fround(Math.round(pos.z * f) / f),
+          Math.round(pos.x * f) / f,
+          Math.round(pos.y * f) / f,
+          Math.round(pos.z * f) / f,
         ],
         rot: [
-          Math.fround(Math.round(rot.x * f) / f),
-          Math.fround(Math.round(rot.y * f) / f),
-          Math.fround(Math.round(rot.z * f) / f),
-          Math.fround(Math.round(rot.w * f) / f),
+          Math.round(rot.x * f) / f,
+          Math.round(rot.y * f) / f,
+          Math.round(rot.z * f) / f,
+          Math.round(rot.w * f) / f,
         ],
       });
     });
@@ -253,7 +253,7 @@ export class GameLoop {
     const tAfterDespawn = performance.now();
 
     // 6. Update pusher z in game state
-    const pusherZ = Math.fround(Math.round(this.pusher.getCurrentZ() * f) / f);
+    const pusherZ = Math.round(this.pusher.getCurrentZ() * f) / f;
     this.gameState.updatePusherZ(pusherZ);
 
     this.tickCount++;

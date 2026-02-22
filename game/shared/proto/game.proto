@@ -1,0 +1,87 @@
+syntax = "proto3";
+package coinpusher;
+
+message GameMessage {
+  oneof msg {
+    StateDelta state_delta = 1;
+    Despawn despawn = 2;
+    WorldSnapshot world_snapshot = 3;
+    SlotSpin slot_spin = 4;
+    SlotCounter slot_counter = 5;
+    AbilityEvent ability = 6;
+    CoinSpawn coin_spawn = 7;
+    QueueUpdate queue_update = 8;
+  }
+}
+
+message CoinUpdate {
+  uint32 id = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  float rot_x = 5;
+  float rot_y = 6;
+  float rot_z = 7;
+  float rot_w = 8;
+}
+
+message StateDelta {
+  double server_time = 1;
+  uint32 tick = 2;
+  repeated CoinUpdate updates = 3;
+  float pusher_z = 4;
+}
+
+message Despawn {
+  uint32 tick = 1;
+  repeated uint32 ids = 2;
+}
+
+message BodyState {
+  uint32 id = 1;
+  string type = 2;
+  float pos_x = 3;
+  float pos_y = 4;
+  float pos_z = 5;
+  float rot_x = 6;
+  float rot_y = 7;
+  float rot_z = 8;
+  float rot_w = 9;
+  float z = 10;
+}
+
+message WorldSnapshot {
+  uint32 protocol_version = 1;
+  double server_time = 2;
+  uint32 tick = 3;
+  repeated BodyState bodies = 4;
+}
+
+message SlotSpin {
+  repeated string reels = 1;
+  bool jackpot = 2;
+}
+
+message SlotCounter {
+  uint32 counter = 1;
+}
+
+message AbilityEvent {
+  string ability = 1;
+  optional float x = 2;
+  optional float z = 3;
+}
+
+message CoinSpawn {
+  repeated CoinSpawnEntry coins = 1;
+}
+
+message CoinSpawnEntry {
+  uint32 id = 1;
+  string owner_id = 2;
+}
+
+message QueueUpdate {
+  string user_id = 1;
+  uint32 pending = 2;
+}

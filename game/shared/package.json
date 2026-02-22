@@ -6,12 +6,18 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "buf:generate": "npx buf generate",
+    "build": "pnpm buf:generate && tsc",
     "clean": "rm -rf dist",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "@bufbuild/protoc-gen-es": "^2.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.18"
   }
 }
-

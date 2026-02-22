@@ -14,7 +14,11 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 # Stage 1: Build shared package
 # ===========================
 FROM base AS shared-builder
-COPY game/shared ./game/shared
+COPY game/shared/package.json ./game/shared/
+COPY game/shared/tsconfig.json ./game/shared/
+COPY game/shared/buf.yaml game/shared/buf.gen.yaml ./game/shared/
+COPY game/shared/proto ./game/shared/proto
+COPY game/shared/src ./game/shared/src
 RUN cd game/shared && pnpm install --frozen-lockfile && pnpm build
 
 # ===========================
