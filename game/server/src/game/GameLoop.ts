@@ -148,8 +148,8 @@ export class GameLoop {
     this.physicsWorld.step();
     const tAfterPhysics = performance.now();
 
-    // 4. Single pass: collect body states and check for despawns
-    //    Reuse arrays — clear length instead of allocating new arrays each tick
+    // 4. Despawn check + optional state collection
+    //    Despawn runs every tick; state collection only on network-send ticks
     const updates = this.updates;
     const despawnIds = this.despawnIds;
     updates.length = 0;
@@ -157,6 +157,7 @@ export class GameLoop {
     const f = GameLoop.Q_FACTOR;
     let sleepingCount = 0;
     const classifiedDespawns: { id: number; zone: string; owner_id: string }[] = [];
+    const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
     this.coins.forEach((coin, id) => {
       if (coin.shouldDespawn()) {
@@ -183,6 +184,9 @@ export class GameLoop {
         return;
       }
 
+      // Skip state collection on non-network ticks to save CPU
+      if (!isNetworkTick) return;
+
       // Skip sleeping coins — their position hasn't changed
       if (coin.isSleeping()) {
         sleepingCount++;
@@ -199,19 +203,19 @@ export class GameLoop {
         [rot.x, rot.y, rot.z, rot.w]
       );
 
-      // Add to updates — skip normalization, Rapier quaternions are already normalized
+      // Add to updates — Math.fround forces Float32 encoding in msgpack (5 bytes vs 9 bytes)
       updates.push({
         id,
         pos: [
-          Math.round(pos.x * f) / f,
-          Math.round(pos.y * f) / f,
-          Math.round(pos.z * f) / f,
+          Math.fround(Math.round(pos.x * f) / f),
+          Math.fround(Math.round(pos.y * f) / f),
+          Math.fround(Math.round(pos.z * f) / f),
         ],
         rot: [
-          Math.round(rot.x * f) / f,
-          Math.round(rot.y * f) / f,
-          Math.round(rot.z * f) / f,
-          Math.round(rot.w * f) / f,
+          Math.fround(Math.round(rot.x * f) / f),
+          Math.fround(Math.round(rot.y * f) / f),
+          Math.fround(Math.round(rot.z * f) / f),
+          Math.fround(Math.round(rot.w * f) / f),
         ],
       });
     });
@@ -249,21 +253,22 @@ export class GameLoop {
     const tAfterDespawn = performance.now();
 
     // 6. Update pusher z in game state
-    const pusherZ = Math.round(this.pusher.getCurrentZ() * f) / f;
+    const pusherZ = Math.fround(Math.round(this.pusher.getCurrentZ() * f) / f);
     this.gameState.updatePusherZ(pusherZ);
-
-    // 7. Broadcast state delta (always send so client stays in sync with pusherZ)
-    const stateDelta: StateDeltaMessage = {
-      op: "state_delta",
-      serverTime: Date.now(),
-      tick: this.gameState.getTick(),
-      updates,
-      pusherZ,
-    };
 
     this.tickCount++;
 
-    this.natsClient.publishStateDelta(stateDelta);
+    // 7. Broadcast state delta at reduced rate (e.g. 15Hz) to halve outbound bandwidth
+    if (this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
+      const stateDelta: StateDeltaMessage = {
+        op: "state_delta",
+        serverTime: Date.now(),
+        tick: this.gameState.getTick(),
+        updates,
+        pusherZ,
+      };
+      this.natsClient.publishStateDelta(stateDelta);
+    }
     const tAfterPublish = performance.now();
 
     // 8. Record per-phase timings
