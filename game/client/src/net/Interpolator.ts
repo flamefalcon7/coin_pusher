@@ -62,6 +62,18 @@ export class Interpolator {
     this.despawnedIds.clear();
   }
 
+  /** Seed coins from a world snapshot so sleeping coins render immediately. */
+  seedCoins(coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[]): void {
+    for (let i = 0, len = coins.length; i < len; i++) {
+      const c = coins[i];
+      this.knownCoins.set(c.id, {
+        id: c.id,
+        pos: [c.pos[0], c.pos[1], c.pos[2]],
+        rot: [c.rot[0], c.rot[1], c.rot[2], c.rot[3]],
+      });
+    }
+  }
+
   /** Build the coins array from knownCoins into the reusable result. */
   private buildResult(pusherZ: number): InterpolatedState {
     // Reuse the array: truncate and refill from map values

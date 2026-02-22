@@ -223,6 +223,12 @@ function App() {
         // Get interpolated state
         const state = gameClient.getInterpolatedState();
         if (state) {
+          // Check if this is the first frame after a world_snapshot
+          const isSnapshotFrame = gameClient.consumeSnapshotFlag();
+          if (isSnapshotFrame) {
+            knownCoins.clear();
+          }
+
           // Update pusher position
           sceneManager.updatePusherPosition(state.pusherZ);
 
@@ -238,7 +244,10 @@ function App() {
               // New coin
               sceneManager.addCoin(coin.id, coin.pos, coin.rot);
               knownCoins.add(coin.id);
-              sceneManager.getSoundManager().playCoinLand();
+              // Skip sound for snapshot coins (bulk load on connect/reconnect)
+              if (!isSnapshotFrame) {
+                sceneManager.getSoundManager().playCoinLand();
+              }
             } else {
               // Update existing coin
               sceneManager.updateCoin(coin.id, coin.pos, coin.rot);
