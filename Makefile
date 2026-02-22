@@ -15,7 +15,7 @@ build_local:
 	docker compose -f docker-compose.dev.yml build
 
 rtp_sim:
-	docker compose -f docker-compose.dev.yml run --rm game pnpm dlx tsx game/server/src/rtp_sim.ts
+	cd game/server && pnpm exec tsx src/simulation/run.ts --trials 100 --coins 200
 
 # Backend targets
 backend-run:
