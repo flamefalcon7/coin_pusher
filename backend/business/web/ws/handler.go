@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	maxXPosition     = 0.5
-	spawnHeight      = 1.5
-	backWallZ        = -0.4
-	stackSpawnY      = 0.3 // Just above the platform
-	stackSpawnZ      = 0.3 // Closer to the frontend
-	snapshotReqTTL   = 2 * time.Second
+	maxXPosition   = 0.5
+	spawnHeight    = 1.5
+	backWallZ      = -0.4
+	stackSpawnY    = 0.3  // Just above the platform
+	stackSpawnZ    = 0.35 // Near front lip
+	snapshotReqTTL = 2 * time.Second
 )
 
 var upgrader = websocket.Upgrader{

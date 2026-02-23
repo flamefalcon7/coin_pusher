@@ -165,8 +165,8 @@ export class StackSpawner {
     const coins: CoinSpawnData[] = [];
     const levels = 30;
     const coinsPerLevel = 8;
-    const radius = COIN_CONFIG.RADIUS * 2.5; // Ring radius
-    const spacingY = COIN_CONFIG.THICKNESS * 1.0; // Tight stacking
+    const radius = COIN_CONFIG.RADIUS * 2.8; // Ring radius (2.8R so adjacent coins don't overlap)
+    const spacingY = COIN_CONFIG.THICKNESS * 1.05; // Slight gap to prevent solver jitter
     const angleStep = (Math.PI * 2) / coinsPerLevel;
 
     for (let level = 0; level < levels; level++) {

@@ -49,7 +49,7 @@ export const DespawnZone = {
   RIGHT_WALL: "right_wall",
   OTHER: "other",
 } as const;
-export type DespawnZone = typeof DespawnZone[keyof typeof DespawnZone];
+export type DespawnZone = (typeof DespawnZone)[keyof typeof DespawnZone];
 
 // --- Message Types ---
 
@@ -221,12 +221,17 @@ export type RewardMessage = {
 };
 
 // Server → Client: Ability VFX event (broadcast to all clients)
-export type AbilityType = "shock" | "tornado" | "explosion" | "lightning" | "superPush";
+export type AbilityType =
+  | "shock"
+  | "tornado"
+  | "explosion"
+  | "lightning"
+  | "superPush";
 
 export type AbilityEventMessage = {
   op: "ability";
   ability: AbilityType;
-  x?: number;  // position for tornado/explosion
+  x?: number; // position for tornado/explosion
   z?: number;
 };
 
@@ -264,7 +269,7 @@ export const PHYSICS_CONFIG = {
   TICK_INTERVAL: 1000 / 30, // ~33.333ms
   SUBSTEPS: 2, // 2 substeps (reduced from 4 to halve physics cost)
   SOLVER_VELOCITY_ITERATIONS: 4,
-  SOLVER_POSITION_ITERATIONS: 4,
+  SOLVER_POSITION_ITERATIONS: 3,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
   QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places
   NETWORK_SEND_INTERVAL: 2, // Send state_delta every N physics ticks (2 = 15Hz)
@@ -425,12 +430,12 @@ export const SCENE_CONFIG = {
 
 // Super push configuration
 export const SUPER_PUSH_CONFIG = {
-  PULLBACK_Z: -0.05,       // currentZ during wind-up (behind normal min 0.02)
-  THRUST_Z: 0.6,           // currentZ at full extension (stop 10cm before front lip)
-  PULLBACK_DURATION: 400,  // ms - slow retract, builds tension
-  THRUST_DURATION: 350,    // ms - powerful forward slam
-  HOLD_DURATION: 250,      // ms - heavy pause at full extension (weight feel)
-  RECOVERY_DURATION: 700,  // ms - slow return to oscillation (inertia)
+  PULLBACK_Z: -0.05, // currentZ during wind-up (behind normal min 0.02)
+  THRUST_Z: 0.6, // currentZ at full extension (stop 10cm before front lip)
+  PULLBACK_DURATION: 400, // ms - slow retract, builds tension
+  THRUST_DURATION: 350, // ms - powerful forward slam
+  HOLD_DURATION: 250, // ms - heavy pause at full extension (weight feel)
+  RECOVERY_DURATION: 700, // ms - slow return to oscillation (inertia)
 } as const;
 
 // Slot machine configuration
@@ -447,15 +452,15 @@ export const SLOT_MACHINE_CONFIG = {
 
 // Heat system configuration
 export const HEAT_CONFIG = {
-  HALF_LIFE: 180,           // seconds
-  ALPHA: 0.7,               // diminishing returns
-  GUARANTEED_MIN: 0.05,     // per active player
+  HALF_LIFE: 180, // seconds
+  ALPHA: 0.7, // diminishing returns
+  GUARANTEED_MIN: 0.05, // per active player
   BROADCAST_INTERVAL: 1000, // ms
   REWARD_FLUSH_INTERVAL: 10000, // ms
 } as const;
 
 // Drop scheduler configuration
 export const DROP_SCHEDULER_CONFIG = {
-  DROP_INTERVAL_TICKS: 2,  // 1 drop every 2 ticks = ~15 drops/sec
-  MAX_QUEUE: 100,          // max coins queued per player
+  DROP_INTERVAL_TICKS: 2, // 1 drop every 2 ticks = ~15 drops/sec
+  MAX_QUEUE: 100, // max coins queued per player
 } as const;

@@ -159,66 +159,68 @@ export class GameLoop {
     const classifiedDespawns: { id: number; zone: string; owner_id: string }[] = [];
     const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
-    this.coins.forEach((coin, id) => {
-      if (coin.shouldDespawn()) {
+    // Despawn + state collection only on network ticks (15Hz instead of 30Hz)
+    // Saves ~600 translation() WASM calls per skipped tick
+    if (isNetworkTick) {
+      this.coins.forEach((coin, id) => {
+        // Despawn check — reuse pos for state collection below
         const pos = coin.getPosition();
-        let zone: string;
 
-        if (pos.z > SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
-          zone = DespawnZone.FRONT_EDGE;
-        } else if (pos.x < SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
-          zone = DespawnZone.LEFT_WALL;
-          this.onLeftWallCoinDespawn();
-        } else if (pos.x > -SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
-          zone = DespawnZone.RIGHT_WALL;
-        } else {
-          zone = DespawnZone.OTHER;
+        if (pos.y < COIN_CONFIG.DESPAWN_Y) {
+          let zone: string;
+
+          if (pos.z > SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+            zone = DespawnZone.FRONT_EDGE;
+          } else if (pos.x < SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+            zone = DespawnZone.LEFT_WALL;
+            this.onLeftWallCoinDespawn();
+          } else if (pos.x > -SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
+            zone = DespawnZone.RIGHT_WALL;
+          } else {
+            zone = DespawnZone.OTHER;
+          }
+
+          despawnIds.push(id);
+          classifiedDespawns.push({
+            id,
+            zone,
+            owner_id: this.coinOwners.get(id) ?? "",
+          });
+          return;
         }
 
-        despawnIds.push(id);
-        classifiedDespawns.push({
+        // Skip sleeping coins — their position hasn't changed
+        if (coin.isSleeping()) {
+          sleepingCount++;
+          return;
+        }
+
+        const rot = coin.getRotation();
+
+        // Update game state
+        this.coinManager.updateCoin(
           id,
-          zone,
-          owner_id: this.coinOwners.get(id) ?? "",
+          [pos.x, pos.y, pos.z],
+          [rot.x, rot.y, rot.z, rot.w]
+        );
+
+        // Quantize to 3 decimal places; protobuf float fields handle float32 natively
+        updates.push({
+          id,
+          pos: [
+            Math.round(pos.x * f) / f,
+            Math.round(pos.y * f) / f,
+            Math.round(pos.z * f) / f,
+          ],
+          rot: [
+            Math.round(rot.x * f) / f,
+            Math.round(rot.y * f) / f,
+            Math.round(rot.z * f) / f,
+            Math.round(rot.w * f) / f,
+          ],
         });
-        return;
-      }
-
-      // Skip state collection on non-network ticks to save CPU
-      if (!isNetworkTick) return;
-
-      // Skip sleeping coins — their position hasn't changed
-      if (coin.isSleeping()) {
-        sleepingCount++;
-        return;
-      }
-
-      const pos = coin.getPosition();
-      const rot = coin.getRotation();
-
-      // Update game state
-      this.coinManager.updateCoin(
-        id,
-        [pos.x, pos.y, pos.z],
-        [rot.x, rot.y, rot.z, rot.w]
-      );
-
-      // Quantize to 3 decimal places; protobuf float fields handle float32 natively
-      updates.push({
-        id,
-        pos: [
-          Math.round(pos.x * f) / f,
-          Math.round(pos.y * f) / f,
-          Math.round(pos.z * f) / f,
-        ],
-        rot: [
-          Math.round(rot.x * f) / f,
-          Math.round(rot.y * f) / f,
-          Math.round(rot.z * f) / f,
-          Math.round(rot.w * f) / f,
-        ],
       });
-    });
+    }
     const tAfterStateCollect = performance.now();
 
     // 5. Handle despawns
