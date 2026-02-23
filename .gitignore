@@ -53,3 +53,4 @@ logs/
 
 # ssl
 backend/zarf/keys/
+.claude/settings.local.json
