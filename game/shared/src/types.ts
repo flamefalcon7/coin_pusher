@@ -277,7 +277,10 @@ export const PHYSICS_CONFIG = {
 
 // Pusher configuration
 export const PUSHER_CONFIG = {
-  AMPLITUDE: 0.08, // meters
+  AMPLITUDE: 0.08, // meters (base amplitude)
+  AMPLITUDE_MAX: 0.16, // meters (max amplitude at coin cap)
+  AMPLITUDE_COIN_MIN: 250, // coin count where amplitude starts increasing
+  AMPLITUDE_COIN_MAX: 400, // coin count where amplitude reaches max
   FREQUENCY: 0.5, // Hz
   INITIAL_PHASE: 0,
   Z_OFFSET: 0.1, // meters
