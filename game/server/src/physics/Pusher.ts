@@ -24,7 +24,11 @@ export class Pusher {
 
   // Pre-computed constants to avoid recalculating every tick
   private readonly omega: number;
-  private readonly amplitude: number;
+  private readonly baseAmplitude: number;
+  private readonly maxAmplitude: number;
+  private readonly ampCoinMin: number;
+  private readonly ampCoinRange: number; // max - min (cached)
+  private amplitude: number;
   private readonly initialPhase: number;
   private readonly zOffset: number;
   private readonly baseX: number;
@@ -50,7 +54,11 @@ export class Pusher {
 
     // Cache constants
     this.omega = 2 * Math.PI * PUSHER_CONFIG.FREQUENCY;
-    this.amplitude = PUSHER_CONFIG.AMPLITUDE;
+    this.baseAmplitude = PUSHER_CONFIG.AMPLITUDE;
+    this.maxAmplitude = PUSHER_CONFIG.AMPLITUDE_MAX;
+    this.ampCoinMin = PUSHER_CONFIG.AMPLITUDE_COIN_MIN;
+    this.ampCoinRange = PUSHER_CONFIG.AMPLITUDE_COIN_MAX - PUSHER_CONFIG.AMPLITUDE_COIN_MIN;
+    this.amplitude = this.baseAmplitude;
     this.initialPhase = PUSHER_CONFIG.INITIAL_PHASE;
     this.zOffset = PUSHER_CONFIG.Z_OFFSET;
     this.baseX = POSITION.x;
@@ -82,6 +90,18 @@ export class Pusher {
     console.log(
       `   Amplitude: ${PUSHER_CONFIG.AMPLITUDE}m, Frequency: ${PUSHER_CONFIG.FREQUENCY}Hz`
     );
+  }
+
+  /** Update dynamic amplitude based on current coin count. Call before update(). */
+  updateAmplitude(coinCount: number): void {
+    if (coinCount <= this.ampCoinMin) {
+      this.amplitude = this.baseAmplitude;
+    } else {
+      const t = Math.min((coinCount - this.ampCoinMin) / this.ampCoinRange, 1);
+      // smoothstep for gradual transition
+      const s = t * t * (3 - 2 * t);
+      this.amplitude = this.baseAmplitude + (this.maxAmplitude - this.baseAmplitude) * s;
+    }
   }
 
   update(): void {

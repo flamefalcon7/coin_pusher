@@ -115,7 +115,8 @@ export class GameLoop {
   private tick(): void {
     const tickStart = performance.now();
 
-    // 1. Update pusher position
+    // 1. Update pusher position (dynamic amplitude based on coin count)
+    this.pusher.updateAmplitude(this.coins.size);
     this.pusher.update();
     const tAfterPusher = performance.now();
 
