@@ -72,7 +72,14 @@
   cursor: default;
 }
 
-/* ── Slot Dots ───────────────────────────────────────────────────────── */
+/* ── Slot Dots + Counts Column ──────────────────────────────────────── */
+
+.coin-slot-cols {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
 
 .coin-slot-dots {
   display: flex;
@@ -103,6 +110,92 @@
   box-shadow: 0 0 8px rgba(232, 150, 32, 0.7),
               0 0 16px rgba(232, 150, 32, 0.3);
   transform: scale(1.15);
+}
+
+.coin-dot.full {
+  border-color: #ff4444;
+  background: rgba(255, 68, 68, 0.3);
+}
+
+.coin-dot.full.active {
+  border-color: #ff6666;
+  background: rgba(255, 68, 68, 0.5);
+  box-shadow: 0 0 8px rgba(255, 68, 68, 0.7),
+              0 0 16px rgba(255, 68, 68, 0.3);
+}
+
+/* ── Per-slot count numbers under dots ──────────────────────────────── */
+
+.coin-slot-counts {
+  display: flex;
+  gap: clamp(5px, 1.2vw, 8px);
+  align-items: center;
+  min-height: 12px;
+}
+
+.coin-slot-count {
+  width: clamp(9px, 2vw, 12px);
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.coin-slot-count.active {
+  color: rgba(255, 200, 0, 0.9);
+}
+
+.coin-slot-count.full {
+  color: #ff6666;
+}
+
+/* ── Slot Progress Bar ──────────────────────────────────────────────── */
+
+.slot-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 180px;
+}
+
+.slot-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.slot-progress-bar.full {
+  background: rgba(255, 68, 68, 0.2);
+}
+
+.slot-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #E89620, #F5C842);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.slot-progress-bar.full .slot-progress-fill {
+  background: linear-gradient(90deg, #ff4444, #ff6666);
+}
+
+.slot-progress-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: right;
+}
+
+.slot-progress-label.full {
+  color: #ff6666;
 }
 
 /* ── Batch Amount Selector ────────────────────────────────────────────── */
@@ -141,8 +234,25 @@
 
 .coin-queue-progress {
   text-align: center;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 200, 0, 0.8);
   font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Ack Message (partial accept / slot full) ────────────────────────── */
+
+.coin-ack-message {
+  text-align: center;
+  color: #ff6666;
+  font-size: 11px;
+  font-weight: 700;
+  animation: ack-fade 2s ease-out forwards;
+}
+
+@keyframes ack-fade {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ── Insert Coin Button ──────────────────────────────────────────────── */
@@ -224,5 +334,9 @@
 
   .coin-insert-btn {
     width: 130px;
+  }
+
+  .slot-progress-row {
+    max-width: 140px;
   }
 }

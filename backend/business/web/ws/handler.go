@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,8 @@ const (
 	stackSpawnY    = 0.3  // Just above the platform
 	stackSpawnZ    = 0.35 // Near front lip
 	snapshotReqTTL = 2 * time.Second
+	numSlots       = 5
+	slotCap        = 500
 )
 
 var upgrader = websocket.Upgrader{
@@ -34,13 +37,14 @@ var upgrader = websocket.Upgrader{
 
 // Handler upgrades HTTP connections to WebSocket and manages the read loop.
 type Handler struct {
-	log      *zap.SugaredLogger
-	hub      *Hub
-	nc       *nats.Conn
-	auth     *auth.Auth
-	room     string
-	gameCore *game.Core
-	heat     *heat.HeatEngine
+	log        *zap.SugaredLogger
+	hub        *Hub
+	nc         *nats.Conn
+	auth       *auth.Auth
+	room       string
+	gameCore   *game.Core
+	heat       *heat.HeatEngine
+	slotCounts [numSlots]int64 // atomic — optimistic per-slot pending count
 }
 
 // NewHandler constructs a WS Handler.
@@ -414,6 +418,27 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		return
 	}
 
+	slotID := msg.SlotID
+	if slotID < 0 || slotID >= numSlots {
+		slotID = 0
+	}
+
+	// Check per-slot cap (optimistic).
+	current := atomic.LoadInt64(&h.slotCounts[slotID])
+	space := int64(slotCap) - current
+	if space <= 0 {
+		c.SendMessage(map[string]interface{}{
+			"op":     "batch_insert_ack",
+			"queued": 0,
+			"error":  "slot_full",
+		})
+		return
+	}
+	accepted := int64(count)
+	if accepted > space {
+		accepted = space
+	}
+
 	var userID uuid.UUID
 	var balanceStr string
 
@@ -427,9 +452,8 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		// Dev mode: skip balance checks.
 		balanceStr = "dev"
 	} else {
-
 		refKey := uuid.NewString()
-		result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, count, refKey)
+		result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey)
 		if err != nil {
 			h.log.Errorw("batch_insert process error", "error", err, "user_id", c.userID)
 			return
@@ -441,19 +465,17 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		balanceStr = result.BalanceCoin
 	}
 
+	// Optimistic increment slot count.
+	atomic.AddInt64(&h.slotCounts[slotID], accepted)
+
 	// Add heat on commit.
-	h.heat.AddHeat(userID, count)
+	h.heat.AddHeat(userID, int(accepted))
 
 	// Publish batch_insert command to NATS for game server.
-	slotPositions := []float64{-0.4, -0.2, 0.0, 0.2, 0.4}
-	slotX := 0.0
-	if msg.SlotID >= 0 && msg.SlotID < len(slotPositions) {
-		slotX = slotPositions[msg.SlotID]
-	}
 	cmd := NATSBatchInsertCmd{
 		UserID: userID.String(),
-		SlotX:  slotX,
-		Count:  count,
+		SlotID: slotID,
+		Count:  int(accepted),
 	}
 	data, err := json.Marshal(cmd)
 	if err != nil {
@@ -466,7 +488,7 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	share := h.heat.GetShareForUser(userID)
 	c.SendMessage(map[string]interface{}{
 		"op":         "batch_insert_ack",
-		"queued":     count,
+		"queued":     accepted,
 		"heat_share": share,
 		"balance":    balanceStr,
 	})
@@ -477,4 +499,22 @@ func (h *Handler) handlePing(c *Connection) {
 		Op:         "pong",
 		ServerTime: time.Now().UnixMilli(),
 	})
+}
+
+// SubscribeSlotStatus subscribes to slot_status messages from the game server
+// and overwrites the local slotCounts with authoritative values.
+func (h *Handler) SubscribeSlotStatus() error {
+	_, err := h.nc.Subscribe(TopicSlotStatus(h.room), func(msg *nats.Msg) {
+		var status struct {
+			Counts []int `json:"counts"`
+		}
+		if err := json.Unmarshal(msg.Data, &status); err != nil {
+			h.log.Errorw("slot_status unmarshal error", "error", err)
+			return
+		}
+		for i := 0; i < numSlots && i < len(status.Counts); i++ {
+			atomic.StoreInt64(&h.slotCounts[i], int64(status.Counts[i]))
+		}
+	})
+	return err
 }

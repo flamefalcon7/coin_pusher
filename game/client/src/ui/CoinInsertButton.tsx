@@ -1,18 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { SLOT_CONFIG } from '@coin-pusher/shared';
+import { SLOT_CONFIG, DROP_SCHEDULER_CONFIG } from '@coin-pusher/shared';
 import './CoinInsertButton.css';
 
 interface CoinInsertButtonProps {
   onClick: (slotIndex: number, count: number) => void;
   disabled: boolean;
-  queuePending?: number;
+  slotCounts?: number[];
+  ackMessage?: string | null;
 }
 
 const SLOT_COUNT = SLOT_CONFIG.POSITIONS.length;
 
 const BATCH_AMOUNTS = [1, 10, 50, 100];
 
-export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, disabled, queuePending }) => {
+const SLOT_CAP = DROP_SCHEDULER_CONFIG.SLOT_CAP;
+
+export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, disabled, slotCounts, ackMessage }) => {
   const [selectedSlot, setSelectedSlot] = useState(Math.floor(SLOT_COUNT / 2)); // start center
   const [pressed, setPressed] = useState(false);
   const [selectedAmount, setSelectedAmount] = useState(1);
@@ -82,6 +85,10 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
     };
   }, [moveLeft, moveRight, disabled, handleInsert]);
 
+  const selCount = slotCounts?.[selectedSlot] ?? 0;
+  const selPct = Math.min(selCount / SLOT_CAP, 1);
+  const selFull = selCount >= SLOT_CAP;
+
   return (
     <div className="coin-panel">
       {/* Batch + Slot selectors on one row */}
@@ -111,14 +118,32 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
             />
           </button>
 
-          <div className="coin-slot-dots">
-            {Array.from({ length: SLOT_COUNT }, (_, i) => (
-              <button
-                key={i}
-                className={`coin-dot ${i === selectedSlot ? 'active' : ''}`}
-                onClick={() => setSelectedSlot(i)}
-              />
-            ))}
+          <div className="coin-slot-cols">
+            <div className="coin-slot-dots">
+              {Array.from({ length: SLOT_COUNT }, (_, i) => {
+                const isFull = (slotCounts?.[i] ?? 0) >= SLOT_CAP;
+                return (
+                  <button
+                    key={i}
+                    className={`coin-dot ${i === selectedSlot ? 'active' : ''} ${isFull ? 'full' : ''}`}
+                    onClick={() => setSelectedSlot(i)}
+                  />
+                );
+              })}
+            </div>
+            <div className="coin-slot-counts">
+              {Array.from({ length: SLOT_COUNT }, (_, i) => {
+                const c = slotCounts?.[i] ?? 0;
+                return (
+                  <span
+                    key={i}
+                    className={`coin-slot-count ${i === selectedSlot ? 'active' : ''} ${c >= SLOT_CAP ? 'full' : ''}`}
+                  >
+                    {c > 0 ? c : ''}
+                  </span>
+                );
+              })}
+            </div>
           </div>
 
           <button
@@ -134,6 +159,21 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
           </button>
         </div>
       </div>
+
+      {/* Slot progress bar (always visible when there are queued coins) */}
+      {selCount > 0 && (
+        <div className="slot-progress-row">
+          <div className={`slot-progress-bar ${selFull ? 'full' : ''}`}>
+            <div
+              className="slot-progress-fill"
+              style={{ width: `${selPct * 100}%` }}
+            />
+          </div>
+          <span className={`slot-progress-label ${selFull ? 'full' : ''}`}>
+            {selFull ? 'FULL' : `${selCount}/${SLOT_CAP}`}
+          </span>
+        </div>
+      )}
 
       {/* Insert coin button */}
       <button
@@ -154,10 +194,8 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
         </span>
       </button>
 
-      {queuePending !== undefined && queuePending > 0 && (
-        <div className="coin-queue-progress">
-          Queue: {queuePending} remaining
-        </div>
+      {ackMessage && (
+        <div className="coin-ack-message">{ackMessage}</div>
       )}
     </div>
   );

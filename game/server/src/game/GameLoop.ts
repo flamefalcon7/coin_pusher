@@ -120,9 +120,9 @@ export class GameLoop {
     this.pusher.update();
     const tAfterPusher = performance.now();
 
-    // 1b. Check drop scheduler for next coin to drop
-    const drop = this.dropScheduler.tick();
-    if (drop) {
+    // 1b. Check drop scheduler for coins to drop (one per slot per tick)
+    const drops = this.dropScheduler.tick();
+    for (const drop of drops) {
       const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
       const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
       if (coinId !== null) {
@@ -135,6 +135,15 @@ export class GameLoop {
           coins: [{ id: coinId, owner_id: drop.userId }],
         });
       }
+    }
+
+    // 1b2. Broadcast slot_status every ~30 ticks (1 sec) for backend sync
+    if (this.tickCount % 30 === 0) {
+      this.natsClient.publishSlotStatus({
+        op: "slot_status",
+        counts: this.dropScheduler.getSlotCounts(),
+        tick: this.gameState.getTick(),
+      });
     }
 
     // 1c. Update tornado / lightning forces (before physics step)

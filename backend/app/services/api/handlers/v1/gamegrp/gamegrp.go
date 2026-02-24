@@ -99,7 +99,7 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	// Publish batch_insert command to NATS for game server.
 	cmd := ws.NATSBatchInsertCmd{
 		UserID: userID.String(),
-		SlotX:  0, // default slot position
+		SlotID: 0, // default slot
 		Count:  req.Count,
 	}
 	data, err := json.Marshal(cmd)

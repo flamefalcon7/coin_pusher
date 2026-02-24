@@ -4,13 +4,11 @@ import './HeatMeter.css';
 interface HeatMeterProps {
   share: number;
   rawHeat: number;
-  queuePending: number;
 }
 
 export const HeatMeter: React.FC<HeatMeterProps> = ({
   share,
   rawHeat: _rawHeat,
-  queuePending,
 }) => {
   const sharePercent = (share * 100).toFixed(1);
   const barWidth = Math.min(share * 100, 100);
@@ -23,11 +21,6 @@ export const HeatMeter: React.FC<HeatMeterProps> = ({
       <div className="heat-bar-container">
         <div className="heat-bar-fill" style={{ width: `${barWidth}%` }} />
       </div>
-      {queuePending > 0 && (
-        <div className="heat-queue">
-          Queue: {queuePending} coins remaining
-        </div>
-      )}
     </div>
   );
 };
