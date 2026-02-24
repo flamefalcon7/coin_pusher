@@ -155,6 +155,11 @@ func run() error {
 
 	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine)
 
+	// Subscribe to slot_status from game server for cap enforcement.
+	if err := wsHandler.SubscribeSlotStatus(); err != nil {
+		return fmt.Errorf("subscribing to slot_status: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Routes
 	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, userCore, acctCore, gameCore, heatEngine, nc, wsHandler)

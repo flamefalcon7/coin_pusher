@@ -241,6 +241,22 @@ export type WelcomeMessage = {
   user_id: string;
 };
 
+// Server (internal): Slot status for backend sync (not relayed to clients)
+export type SlotStatusMessage = {
+  op: "slot_status";
+  counts: number[];
+  tick: number;
+};
+
+// Server → Client: Batch insert acknowledgement
+export type BatchInsertAckMessage = {
+  op: "batch_insert_ack";
+  queued: number;
+  heat_share?: number;
+  balance?: string;
+  error?: string;
+};
+
 // Union of all server-to-client messages
 export type ServerMessage =
   | WorldSnapshotMessage
@@ -254,7 +270,9 @@ export type ServerMessage =
   | HeatUpdateMessage
   | QueueUpdateMessage
   | RewardMessage
-  | WelcomeMessage;
+  | WelcomeMessage
+  | SlotStatusMessage
+  | BatchInsertAckMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
@@ -462,8 +480,9 @@ export const HEAT_CONFIG = {
   REWARD_FLUSH_INTERVAL: 10000, // ms
 } as const;
 
-// Drop scheduler configuration
+// Drop scheduler configuration (per-slot independent queues)
 export const DROP_SCHEDULER_CONFIG = {
-  DROP_INTERVAL_TICKS: 2, // 1 drop every 2 ticks = ~15 drops/sec
-  MAX_QUEUE: 100, // max coins queued per player
+  DROP_INTERVAL_TICKS: 4, // 1 drop every 4 ticks per slot = ~7.5 drops/sec/slot
+  SLOT_CAP: 500, // max coins queued per slot (shared across all players)
+  RANDOM_X_OFFSET: 0.03, // ±0.03 random X offset on each drop
 } as const;

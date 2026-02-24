@@ -141,8 +141,8 @@ async function initialize() {
 
   // Subscribe to batch_insert commands from Go backend
   natsClient.subscribeBatchInsert((cmd) => {
-    const accepted = dropScheduler.enqueue(cmd.user_id, cmd.slot_x, cmd.count);
-    console.log(`📥 Batch insert: ${cmd.user_id} queued ${accepted}/${cmd.count} coins at x=${cmd.slot_x}`);
+    const accepted = dropScheduler.enqueue(cmd.user_id, cmd.slot_id, cmd.count);
+    console.log(`📥 Batch insert: ${cmd.user_id} queued ${accepted}/${cmd.count} coins at slot=${cmd.slot_id}`);
     // Publish queue update
     natsClient.publishQueueUpdate({
       op: "queue_update",

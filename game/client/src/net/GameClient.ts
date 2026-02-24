@@ -21,6 +21,8 @@ export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number
 export type CoinSpawnCallback = (coins: { id: number; owner_id: string }[]) => void;
 export type HeatUpdateCallback = (players: { user_id: string; share: number; raw_heat: number }[]) => void;
 export type QueueUpdateCallback = (userId: string, pending: number) => void;
+export type SlotStatusCallback = (counts: number[]) => void;
+export type BatchInsertAckCallback = (queued: number, error?: string) => void;
 export type RewardCallback = (userId: string, amount: number, balance: string) => void;
 
 export class GameClient {
@@ -37,6 +39,8 @@ export class GameClient {
   private coinSpawnCallback?: CoinSpawnCallback;
   private heatUpdateCallback?: HeatUpdateCallback;
   private queueUpdateCallback?: QueueUpdateCallback;
+  private slotStatusCallback?: SlotStatusCallback;
+  private batchInsertAckCallback?: BatchInsertAckCallback;
   private rewardCallback?: RewardCallback;
   private pendingPingTime: number = 0;
   private userId: string = "";
@@ -167,6 +171,18 @@ export class GameClient {
       case "queue_update":
         if (this.queueUpdateCallback) {
           this.queueUpdateCallback(message.user_id, message.pending);
+        }
+        break;
+
+      case "slot_status":
+        if (this.slotStatusCallback) {
+          this.slotStatusCallback(message.counts);
+        }
+        break;
+
+      case "batch_insert_ack":
+        if (this.batchInsertAckCallback) {
+          this.batchInsertAckCallback(message.queued, message.error);
         }
         break;
 
@@ -307,6 +323,14 @@ export class GameClient {
 
   onQueueUpdate(callback: QueueUpdateCallback): void {
     this.queueUpdateCallback = callback;
+  }
+
+  onSlotStatus(callback: SlotStatusCallback): void {
+    this.slotStatusCallback = callback;
+  }
+
+  onBatchInsertAck(callback: BatchInsertAckCallback): void {
+    this.batchInsertAckCallback = callback;
   }
 
   onReward(callback: RewardCallback): void {

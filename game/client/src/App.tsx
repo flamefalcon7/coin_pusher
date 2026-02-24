@@ -50,9 +50,11 @@ function App() {
   const lastHolePickTime = useRef(0);
   const [heatShare, setHeatShare] = useState(0);
   const [heatRaw, setHeatRaw] = useState(0);
-  const [queuePending, setQueuePending] = useState(0);
+  const [slotCounts, setSlotCounts] = useState<number[]>([0, 0, 0, 0, 0]);
   const [rewardToast, setRewardToast] = useState<{ amount: number; id: number } | null>(null);
   const rewardIdRef = useRef(0);
+  const [insertAckMsg, setInsertAckMsg] = useState<string | null>(null);
+  const lastRequestedAmount = useRef(0);
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -156,11 +158,19 @@ function App() {
       }
     });
 
-    gameClient.onQueueUpdate((userId, pending) => {
-      const myUserId = gameClient.getUserId();
-      if (userId === myUserId) {
-        setQueuePending(pending);
+    gameClient.onSlotStatus((counts) => {
+      setSlotCounts(counts);
+    });
+
+    gameClient.onBatchInsertAck((queued, error) => {
+      if (error === "slot_full") {
+        setInsertAckMsg("Slot is full!");
+        setTimeout(() => setInsertAckMsg(null), 2000);
+      } else if (queued < lastRequestedAmount.current && lastRequestedAmount.current > 0) {
+        setInsertAckMsg(`Only ${queued}/${lastRequestedAmount.current} accepted`);
+        setTimeout(() => setInsertAckMsg(null), 2000);
       }
+      lastRequestedAmount.current = 0;
     });
 
     gameClient.onReward((userId, amount, _balance) => {
@@ -375,6 +385,7 @@ function App() {
       return;
     }
 
+    lastRequestedAmount.current = count;
     gameClientRef.current.batchInsert(slotIndex, count);
     sceneManagerRef.current?.getSoundManager().playCoinInsert();
     sceneManagerRef.current?.playCoinInsertVFX(slotIndex);
@@ -650,14 +661,14 @@ function App() {
       <CoinInsertButton
         onClick={handleInsertCoin}
         disabled={buttonDisabled || connectionStatus !== "connected"}
-        queuePending={queuePending}
+        slotCounts={slotCounts}
+        ackMessage={insertAckMsg}
       />
 
       {heatShare > 0 && (
         <HeatMeter
           share={heatShare}
           rawHeat={heatRaw}
-          queuePending={queuePending}
         />
       )}
 

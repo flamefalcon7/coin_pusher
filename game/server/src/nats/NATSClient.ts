@@ -1,13 +1,13 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
 import { create, toBinary } from "@bufbuild/protobuf";
-import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage } from "@coin-pusher/shared";
+import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage, SlotStatusMessage } from "@coin-pusher/shared";
 import { GameMessageSchema } from "@coin-pusher/shared";
 
 const sc = StringCodec();
 
 export type BatchInsertCommand = {
   user_id: string;
-  slot_x: number;
+  slot_id: number;
   count: number;
 };
 
@@ -388,6 +388,11 @@ export class NATSClient {
       },
     });
     this.nc!.publish(`game.${this.room}.queue_update`, toBinary(GameMessageSchema, gm));
+  }
+
+  // Publish slot status for backend sync (JSON encoded, 1Hz)
+  publishSlotStatus(msg: SlotStatusMessage): void {
+    this.nc!.publish(`game.${this.room}.slot_status`, sc.encode(JSON.stringify(msg)));
   }
 
   // Subscribe to batch_insert commands (JSON encoded)

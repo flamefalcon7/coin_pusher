@@ -1,7 +1,10 @@
 package ws
 
 import (
+	"encoding/json"
+
 	"github.com/nats-io/nats.go"
+	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
 )
 
@@ -110,6 +113,29 @@ func (rl *Relay) Start() error {
 	// queue_update: broadcast queue updates to all WS clients.
 	sub, err = rl.nc.Subscribe(TopicQueueUpdate(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// slot_status: JSON from game server → re-encode as msgpack for WS clients.
+	sub, err = rl.nc.Subscribe(TopicSlotStatus(rl.room), func(msg *nats.Msg) {
+		var status struct {
+			Op     string `json:"op"     msgpack:"op"`
+			Counts []int  `json:"counts" msgpack:"counts"`
+			Tick   int    `json:"tick"   msgpack:"tick"`
+		}
+		if err := json.Unmarshal(msg.Data, &status); err != nil {
+			rl.log.Errorw("slot_status json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(status)
+		if err != nil {
+			rl.log.Errorw("slot_status msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.Broadcast(packed)
 	})
 	if err != nil {
 		return err
