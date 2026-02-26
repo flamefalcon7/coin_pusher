@@ -24,6 +24,10 @@
   - `zarf/` - Config & deploy (Docker, K8s)
 - `docker-compose*.yml` - Deployment configs
 
+## Product Spec
+
+Read `docs/spec.md` for product design intent: game loop, abilities, economy, multiplayer, and planned features. This captures the "why" behind design decisions that code alone doesn't convey.
+
 ## Skills
 
 This project has agent skills in `.agents/skills/`. Before starting a task, scan the folder for available skills by listing `.agents/skills/*/SKILL.md`. Read each relevant `SKILL.md` to check its triggers and decide if it applies to the current task.
