@@ -66,13 +66,13 @@ type config struct {
 		Name         string `conf:"default:coinpusher"`
 		MaxIdleConns int    `conf:"default:2"`
 		MaxOpenConns int    `conf:"default:10"`
-		DisableTLS   bool   `conf:"default:true"`
+		DisableTLS   bool   `conf:"default:false"`
 	}
 	Auth struct {
 		KeysFolder string `conf:"default:zarf/keys"`
 		ActiveKID  string `conf:"default:default"`
 		Issuer     string `conf:"default:coin-pusher"`
-		DevMode    bool   `conf:"default:true"`
+		DevMode    bool   `conf:"default:false"`
 	}
 	Game struct {
 		APIKey string `conf:"default:dev-secret,mask"`
@@ -137,6 +137,9 @@ func run() error {
 	// -------------------------------------------------------------------------
 	// Business Core
 	userCore := user.NewCore(userdb.NewStore(db))
+	if cfg.Auth.DevMode {
+		userCore.SetInitialBalance(decimal.NewFromInt(10000))
+	}
 	acctCore := accounting.NewCore(ledgerdb.NewStore(db), userCore)
 	gameCore := game.NewCore(userCore, acctCore)
 	heatEngine := heat.New()

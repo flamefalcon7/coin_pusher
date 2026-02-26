@@ -19,12 +19,18 @@ import (
 
 // Core manages the set of APIs for account access.
 type Core struct {
-	storer Storer
+	storer         Storer
+	initialBalance decimal.Decimal // balance_play granted to new accounts (0 in prod)
 }
 
 // NewCore constructs an account Core.
 func NewCore(storer Storer) *Core {
 	return &Core{storer: storer}
+}
+
+// SetInitialBalance sets the balance_play granted to newly created accounts.
+func (c *Core) SetInitialBalance(amount decimal.Decimal) {
+	c.initialBalance = amount
 }
 
 // FindOrCreate looks up an account by provider, creating one if not found.
@@ -43,7 +49,7 @@ func (c *Core) FindOrCreate(ctx context.Context, na NewAccount) (Account, error)
 		ID:          uuid.New(),
 		DisplayName: na.DisplayName,
 		BalanceUSDC: decimal.Zero,
-		BalancePlay: decimal.Zero,
+		BalancePlay: c.initialBalance,
 		BalanceCash: decimal.Zero,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -184,7 +190,7 @@ func (c *Core) FindOrCreateWithMeta(ctx context.Context, na NewAccountWithMeta) 
 		ID:          uuid.New(),
 		DisplayName: na.DisplayName,
 		BalanceUSDC: decimal.Zero,
-		BalancePlay: decimal.Zero,
+		BalancePlay: c.initialBalance,
 		BalanceCash: decimal.Zero,
 		CreatedAt:   now,
 		UpdatedAt:   now,

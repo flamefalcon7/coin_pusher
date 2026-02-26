@@ -16,17 +16,27 @@ export interface AuthResult {
 }
 
 const TOKEN_KEY = "coin_pusher_token";
+const ACCOUNT_KEY = "coin_pusher_account";
 
-export function getSavedToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY);
+export function getSavedAuth(): { token: string; account: Account } | null {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  const raw = sessionStorage.getItem(ACCOUNT_KEY);
+  if (!token || !raw) return null;
+  try {
+    return { token, account: JSON.parse(raw) };
+  } catch {
+    return null;
+  }
 }
 
-export function saveToken(token: string): void {
+export function saveAuth(token: string, account: Account): void {
   sessionStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
 }
 
-export function clearToken(): void {
+export function clearAuth(): void {
   sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(ACCOUNT_KEY);
 }
 
 async function fetchNonce(apiBase: string): Promise<{ nonce: string; message: string }> {
@@ -86,8 +96,8 @@ export async function connectAndSign(apiBase: string): Promise<AuthResult> {
   // 4. Login
   const result = await walletLogin(apiBase, address, nonce, signature);
 
-  // Persist token for session
-  saveToken(result.token);
+  // Persist token + account for session
+  saveAuth(result.token, result.account);
 
   return result;
 }

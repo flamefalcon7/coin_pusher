@@ -17,7 +17,7 @@ type config struct {
 		Password   string `conf:"default:postgres,mask"`
 		Host       string `conf:"default:localhost:5432"`
 		Name       string `conf:"default:coinpusher"`
-		DisableTLS bool   `conf:"default:true"`
+		DisableTLS bool   `conf:"default:false"`
 	}
 }
 
