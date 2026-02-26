@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -288,14 +289,17 @@ func run() error {
 				rewardAccum = make(map[uuid.UUID]float64)
 				rewardMu.Unlock()
 
+				const coinPrecision = 1e6 // 6 decimal places, aligned with stablecoin precision
 				for uid, amount := range batch {
-					if amount < 0.001 {
+					// Floor to coin precision. Dust stays with house.
+					truncated := math.Floor(amount*coinPrecision) / coinPrecision
+					if truncated < 1/coinPrecision {
 						continue
 					}
 					refKey := uuid.NewString()
-					amt := decimal.NewFromFloat(amount)
+					amt := decimal.NewFromFloat(truncated)
 					if err := acctCore.ProcessHeatReward(context.Background(), uid, amt, refKey); err != nil {
-						log.Errorw("heat reward flush error", "user_id", uid, "amount", amount, "error", err)
+						log.Errorw("heat reward flush error", "user_id", uid, "amount", truncated, "error", err)
 					}
 				}
 			case <-stopFlush:

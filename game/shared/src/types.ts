@@ -475,7 +475,7 @@ export const SLOT_MACHINE_CONFIG = {
 export const HEAT_CONFIG = {
   HALF_LIFE: 180, // seconds
   ALPHA: 0.7, // diminishing returns
-  GUARANTEED_MIN: 0.05, // per active player
+  GUARANTEED_MIN: 0.05, // per active player (capped to 1/(2n) when n>10)
   BROADCAST_INTERVAL: 1000, // ms
   REWARD_FLUSH_INTERVAL: 10000, // ms
 } as const;
