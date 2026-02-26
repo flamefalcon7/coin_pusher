@@ -164,6 +164,102 @@
   to   { opacity: 1; transform: translate(-50%, -100%) translateY(-12px); }
 }
 
+/* ── Wallet Login ─────────────────────────────────────────────────────── */
+
+.wallet-login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-deep);
+}
+
+.wallet-login-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px 40px;
+  border-radius: 12px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.12);
+  max-width: 360px;
+  width: 90%;
+}
+
+.wallet-login-title {
+  margin: 0;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--text-color);
+}
+
+.wallet-login-subtitle {
+  margin: 0;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  color: rgba(245, 230, 184, 0.6);
+}
+
+.wallet-login-btn {
+  margin-top: 8px;
+  padding: 12px 32px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-orange));
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.wallet-login-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.wallet-login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wallet-login-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.wallet-login-error p {
+  margin: 0;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  color: var(--accent-pink);
+  text-align: center;
+}
+
+.wallet-login-retry {
+  padding: 6px 16px;
+  border: 1px solid var(--accent-pink);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-pink);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.wallet-login-retry:hover {
+  background: rgba(232, 57, 107, 0.15);
+}
+
 /* ── Mobile ≤ 480px ────────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {

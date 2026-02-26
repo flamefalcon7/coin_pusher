@@ -17,8 +17,7 @@ import (
 // Claims represents the authorization claims embedded in a JWT.
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID     string `json:"user_id"`
-	SUIAddress string `json:"sui_address"`
+	AccountID string `json:"account_id"`
 }
 
 // Auth manages authentication and authorization.
@@ -40,7 +39,7 @@ func New(ks *keystore.KeyStore, activeKID, issuer string) *Auth {
 }
 
 // NewDevAuth constructs a dev-mode Auth that generates tokens with a
-// throwaway RSA key and skips SUI signature verification.
+// throwaway RSA key and skips signature verification.
 func NewDevAuth(issuer string) *Auth {
 	// Generate an ephemeral RSA key for development tokens.
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
@@ -51,17 +50,16 @@ func NewDevAuth(issuer string) *Auth {
 	}
 }
 
-// GenerateToken creates a signed JWT for the given user.
-func (a *Auth) GenerateToken(userID uuid.UUID, suiAddress string) (string, error) {
+// GenerateToken creates a signed JWT for the given account.
+func (a *Auth) GenerateToken(accountID uuid.UUID) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    a.issuer,
-			Subject:   userID.String(),
+			Subject:   accountID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		UserID:     userID.String(),
-		SUIAddress: suiAddress,
+		AccountID: accountID.String(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -98,21 +96,6 @@ func (a *Auth) ValidateToken(tokenStr string) (Claims, error) {
 	}
 
 	return claims, nil
-}
-
-// VerifySUISignature checks a SUI wallet signature. In dev mode, this always
-// returns true.
-func (a *Auth) VerifySUISignature(suiAddress, message, signature string) bool {
-	if a.devMode {
-		return true
-	}
-
-	// TODO: Implement real SUI signature verification.
-	// This requires integrating with the SUI SDK to verify ed25519 signatures.
-	_ = suiAddress
-	_ = message
-	_ = signature
-	return false
 }
 
 // IsDevMode returns whether auth is running in development mode.

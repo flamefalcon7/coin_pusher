@@ -79,13 +79,13 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	if !ok {
 		return v1.NewAuthError()
 	}
-	userID, err := uuid.Parse(claims.UserID)
+	accountID, err := uuid.Parse(claims.AccountID)
 	if err != nil {
-		return v1.NewRequestError(fmt.Errorf("invalid user id"), http.StatusBadRequest)
+		return v1.NewRequestError(fmt.Errorf("invalid account id"), http.StatusBadRequest)
 	}
 
 	refKey := uuid.NewString()
-	result, err := g.game.ProcessBatchInsert(ctx, userID, req.Count, refKey)
+	result, err := g.game.ProcessBatchInsert(ctx, accountID, req.Count, refKey)
 	if err != nil {
 		return err
 	}
@@ -94,11 +94,11 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	// Add heat on commit.
-	g.heat.AddHeat(userID, req.Count)
+	g.heat.AddHeat(accountID, req.Count)
 
 	// Publish batch_insert command to NATS for game server.
 	cmd := ws.NATSBatchInsertCmd{
-		UserID: userID.String(),
+		UserID: accountID.String(),
 		SlotID: 0, // default slot
 		Count:  req.Count,
 	}
@@ -108,11 +108,11 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 	g.nc.Publish(ws.TopicBatchInsert(g.room), data)
 
-	share := g.heat.GetShareForUser(userID)
+	share := g.heat.GetShareForUser(accountID)
 
 	return v1.Respond(w, http.StatusOK, BatchInsertResponse{
 		Queued:    req.Count,
 		HeatShare: share,
-		Balance:   result.BalanceCoin,
+		Balance:   result.BalancePlay,
 	})
 }

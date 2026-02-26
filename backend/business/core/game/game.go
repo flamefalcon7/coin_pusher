@@ -47,14 +47,14 @@ func (c *Core) processInsertCoin(ctx context.Context, evt GameEvent) (GameEventR
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
-	usr, err := c.userCore.QueryByID(ctx, evt.UserID)
+	acct, err := c.userCore.QueryByID(ctx, evt.UserID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
 	return GameEventResult{
 		Success:     true,
-		BalanceCoin: usr.BalanceCoin.String(),
+		BalancePlay: acct.BalancePlay.String(),
 	}, nil
 }
 
@@ -72,35 +72,35 @@ func (c *Core) processSpawnStack(ctx context.Context, evt GameEvent) (GameEventR
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
-	usr, err := c.userCore.QueryByID(ctx, evt.UserID)
+	acct, err := c.userCore.QueryByID(ctx, evt.UserID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
 	return GameEventResult{
 		Success:     true,
-		BalanceCoin: usr.BalanceCoin.String(),
+		BalancePlay: acct.BalancePlay.String(),
 	}, nil
 }
 
-// ProcessBatchInsert debits the user's balance for a batch coin insert.
+// ProcessBatchInsert debits the account's balance for a batch coin insert.
 // Returns the result including the updated balance.
-func (c *Core) ProcessBatchInsert(ctx context.Context, userID uuid.UUID, coinCount int, referenceID string) (GameEventResult, error) {
+func (c *Core) ProcessBatchInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (GameEventResult, error) {
 	if coinCount <= 0 {
 		return GameEventResult{Success: false, Error: "coin count must be positive"}, nil
 	}
 
-	if err := c.acctCore.ProcessGameInsert(ctx, userID, coinCount, referenceID); err != nil {
+	if err := c.acctCore.ProcessGameInsert(ctx, accountID, coinCount, referenceID); err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
-	usr, err := c.userCore.QueryByID(ctx, userID)
+	acct, err := c.userCore.QueryByID(ctx, accountID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
 	return GameEventResult{
 		Success:     true,
-		BalanceCoin: usr.BalanceCoin.String(),
+		BalancePlay: acct.BalancePlay.String(),
 	}, nil
 }

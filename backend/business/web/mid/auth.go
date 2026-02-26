@@ -30,8 +30,7 @@ func Authenticate(a *auth.Auth) func(http.Handler) http.Handler {
 			}
 
 			ctx := SetClaims(r.Context(), Claims{
-				UserID:     claims.UserID,
-				SUIAddress: claims.SUIAddress,
+				AccountID: claims.AccountID,
 			})
 
 			next.ServeHTTP(w, r.WithContext(ctx))

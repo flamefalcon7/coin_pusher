@@ -29,6 +29,6 @@ type GameEvent struct {
 // GameEventResult is the response sent back to the game server.
 type GameEventResult struct {
 	Success     bool   `json:"success"`
-	BalanceCoin string `json:"balance_coin,omitempty"`
+	BalancePlay string `json:"balance_play,omitempty"`
 	Error       string `json:"error,omitempty"`
 }

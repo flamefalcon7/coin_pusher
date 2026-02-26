@@ -20,6 +20,9 @@ const TOON_MAT_NAMES = [
   "slotLightMat", "slotPanelMat", "slotOutlineMat",
   "bumperRailMat", "panelDividerMat", "coinMat",
   "honeycombWallMat",
+  "wheelBezelMat", "wheelPointerMat", "wheelPanelMat", "wheelCenterMat",
+  "wheelSeg0", "wheelSeg1", "wheelSeg2", "wheelSeg3",
+  "wheelSeg4", "wheelSeg5", "wheelSeg6", "wheelSeg7",
 ] as const;
 
 export class SceneManager {
@@ -572,6 +575,23 @@ export class SceneManager {
     const slotMachine = this.staticMeshes.getSlotMachine();
     slotMachine?.updateCounter(counter);
     this.vfxManager.updateHoleProgress(counter, SLOT_MACHINE_CONFIG.TRIGGER_COUNT);
+  }
+
+  // ── Jackpot Wheel ───────────────────────────────────────────────────────
+
+  spinJackpotWheel(resultSegment: number, reward: number, onComplete?: () => void): void {
+    const wheel = this.staticMeshes.getJackpotWheel();
+    if (!wheel) return;
+    wheel.spinWheel(resultSegment, reward, onComplete);
+  }
+
+  updateWheelCounter(counter: number): void {
+    const wheel = this.staticMeshes.getJackpotWheel();
+    wheel?.updateCounter(counter);
+  }
+
+  getJackpotWheel() {
+    return this.staticMeshes.getJackpotWheel();
   }
 
   // ── VFX Triggers (called from App) ─────────────────────────────────────

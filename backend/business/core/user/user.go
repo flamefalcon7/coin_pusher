@@ -2,85 +2,220 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/flamefalcon/coin-pusher/backend/foundation/ethereum"
+
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
 )
 
-// Core manages the set of APIs for user access.
+// Core manages the set of APIs for account access.
 type Core struct {
 	storer Storer
 }
 
-// NewCore constructs a user Core.
+// NewCore constructs an account Core.
 func NewCore(storer Storer) *Core {
 	return &Core{storer: storer}
 }
 
-// FindOrCreate looks up a user by SUI address, creating one if not found.
-func (c *Core) FindOrCreate(ctx context.Context, nu NewUser) (User, error) {
-	usr, err := c.storer.QueryBySUIAddress(ctx, nu.SUIAddress)
+// FindOrCreate looks up an account by provider, creating one if not found.
+func (c *Core) FindOrCreate(ctx context.Context, na NewAccount) (Account, error) {
+	acct, err := c.storer.QueryByProvider(ctx, na.ProviderType, na.ProviderUID)
 	if err == nil {
-		return usr, nil
+		return acct, nil
 	}
 
 	if !errors.Is(err, v1.ErrNotFound) {
-		return User{}, fmt.Errorf("query by sui address: %w", err)
+		return Account{}, fmt.Errorf("query by provider: %w", err)
 	}
 
 	now := time.Now().UTC()
-	usr = User{
+	acct = Account{
 		ID:          uuid.New(),
-		Name:        nu.Name,
-		SUIAddress:  nu.SUIAddress,
-		BalanceCoin: decimal.Zero,
+		DisplayName: na.DisplayName,
 		BalanceUSDC: decimal.Zero,
+		BalancePlay: decimal.Zero,
+		BalanceCash: decimal.Zero,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 
-	if err := c.storer.Create(ctx, usr); err != nil {
-		return User{}, fmt.Errorf("create user: %w", err)
+	if err := c.storer.Create(ctx, acct); err != nil {
+		return Account{}, fmt.Errorf("create account: %w", err)
 	}
 
-	return usr, nil
+	ap := AuthProvider{
+		ProviderID:   uuid.New(),
+		AccountID:    acct.ID,
+		ProviderType: na.ProviderType,
+		ProviderUID:  na.ProviderUID,
+		MetadataJSON: "{}",
+		CreatedAt:    now,
+	}
+
+	if err := c.storer.CreateAuthProvider(ctx, ap); err != nil {
+		return Account{}, fmt.Errorf("create auth provider: %w", err)
+	}
+
+	return acct, nil
 }
 
-// QueryByID finds a user by ID.
-func (c *Core) QueryByID(ctx context.Context, userID uuid.UUID) (User, error) {
-	usr, err := c.storer.QueryByID(ctx, userID)
+// QueryByID finds an account by ID.
+func (c *Core) QueryByID(ctx context.Context, accountID uuid.UUID) (Account, error) {
+	acct, err := c.storer.QueryByID(ctx, accountID)
 	if err != nil {
-		return User{}, fmt.Errorf("query by id[%s]: %w", userID, err)
+		return Account{}, fmt.Errorf("query by id[%s]: %w", accountID, err)
 	}
-	return usr, nil
+	return acct, nil
 }
 
-// DecrementCoinBalance decreases a user's coin balance atomically.
+// DecrementPlayBalance decreases an account's play balance atomically.
 // Returns an error if the balance is insufficient.
-func (c *Core) DecrementCoinBalance(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) error {
-	usr, err := c.storer.QueryByID(ctx, userID)
+func (c *Core) DecrementPlayBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
+	acct, err := c.storer.QueryByID(ctx, accountID)
 	if err != nil {
-		return fmt.Errorf("query user: %w", err)
+		return fmt.Errorf("query account: %w", err)
 	}
 
-	if usr.BalanceCoin.LessThan(amount) {
-		return v1.NewInsufficientFundError("COIN", amount, usr.BalanceCoin)
+	if acct.BalancePlay.LessThan(amount) {
+		return v1.NewInsufficientFundError("PLAY", amount, acct.BalancePlay)
 	}
 
-	return c.storer.UpdateBalance(ctx, userID, "COIN", amount.Neg())
+	return c.storer.UpdateBalance(ctx, accountID, CurrencyPlay, amount.Neg())
 }
 
-// IncrementCoinBalance increases a user's coin balance atomically.
-func (c *Core) IncrementCoinBalance(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) error {
-	return c.storer.UpdateBalance(ctx, userID, "COIN", amount)
+// IncrementPlayBalance increases an account's play balance atomically.
+func (c *Core) IncrementPlayBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
+	return c.storer.UpdateBalance(ctx, accountID, CurrencyPlay, amount)
 }
 
-// IncrementUSDCBalance increases a user's USDC balance atomically.
-func (c *Core) IncrementUSDCBalance(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) error {
-	return c.storer.UpdateBalance(ctx, userID, "USDC", amount)
+// IncrementCashBalance increases an account's cash balance atomically.
+func (c *Core) IncrementCashBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
+	return c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount)
+}
+
+// IncrementUSDCBalance increases an account's USDC balance atomically.
+func (c *Core) IncrementUSDCBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
+	return c.storer.UpdateBalance(ctx, accountID, CurrencyUSDC, amount)
+}
+
+// -------------------------------------------------------------------------
+// Wallet Login
+// -------------------------------------------------------------------------
+
+const nonceTTL = 5 * time.Minute
+
+// GenerateNonce creates a cryptographic nonce for wallet login challenges.
+func (c *Core) GenerateNonce(ctx context.Context) (NonceRecord, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return NonceRecord{}, fmt.Errorf("generating random bytes: %w", err)
+	}
+
+	nonce := hex.EncodeToString(b)
+	expiresAt := time.Now().UTC().Add(nonceTTL)
+
+	if err := c.storer.CreateNonce(ctx, nonce, "", expiresAt); err != nil {
+		return NonceRecord{}, fmt.Errorf("creating nonce: %w", err)
+	}
+
+	return NonceRecord{
+		Nonce:     nonce,
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// VerifyWalletLogin verifies an EVM wallet signature and returns the account.
+// Steps: consume nonce → verify EIP-191 signature → compare addresses → find or create account.
+func (c *Core) VerifyWalletLogin(ctx context.Context, nonce, signature, claimedAddress string) (Account, error) {
+	// 1. Consume nonce (not found / expired → 401).
+	if _, err := c.storer.ConsumeNonce(ctx, nonce); err != nil {
+		return Account{}, fmt.Errorf("consume nonce: %w", err)
+	}
+
+	// 2. Build the expected message and recover the signer.
+	message := ethereum.FormatLoginMessage(nonce)
+	recoveredAddr, err := ethereum.VerifyPersonalSign(message, signature)
+	if err != nil {
+		return Account{}, v1.NewRequestError(v1.ErrAuthFailed, 401)
+	}
+
+	// 3. Normalize the claimed address.
+	normalizedClaimed, err := ethereum.NormalizeAddress(claimedAddress)
+	if err != nil {
+		return Account{}, v1.NewRequestError(v1.ErrAuthFailed, 401)
+	}
+
+	// 4. Compare recovered vs claimed (case-insensitive).
+	if !strings.EqualFold(recoveredAddr, normalizedClaimed) {
+		return Account{}, v1.NewRequestError(v1.ErrAuthFailed, 401)
+	}
+
+	// 5. Find or create account with wallet metadata.
+	return c.FindOrCreateWithMeta(ctx, NewAccountWithMeta{
+		ProviderType: "wallet",
+		ProviderUID:  normalizedClaimed,
+		MetadataJSON: `{"chain":"evm","chain_id":8453}`,
+	})
+}
+
+// FindOrCreateWithMeta is like FindOrCreate but also sets metadata_json on the auth provider.
+func (c *Core) FindOrCreateWithMeta(ctx context.Context, na NewAccountWithMeta) (Account, error) {
+	acct, err := c.storer.QueryByProvider(ctx, na.ProviderType, na.ProviderUID)
+	if err == nil {
+		return acct, nil
+	}
+
+	if !errors.Is(err, v1.ErrNotFound) {
+		return Account{}, fmt.Errorf("query by provider: %w", err)
+	}
+
+	now := time.Now().UTC()
+	acct = Account{
+		ID:          uuid.New(),
+		DisplayName: na.DisplayName,
+		BalanceUSDC: decimal.Zero,
+		BalancePlay: decimal.Zero,
+		BalanceCash: decimal.Zero,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := c.storer.Create(ctx, acct); err != nil {
+		return Account{}, fmt.Errorf("create account: %w", err)
+	}
+
+	meta := na.MetadataJSON
+	if meta == "" {
+		meta = "{}"
+	}
+
+	ap := AuthProvider{
+		ProviderID:   uuid.New(),
+		AccountID:    acct.ID,
+		ProviderType: na.ProviderType,
+		ProviderUID:  na.ProviderUID,
+		MetadataJSON: meta,
+		CreatedAt:    now,
+	}
+
+	if err := c.storer.CreateAuthProvider(ctx, ap); err != nil {
+		return Account{}, fmt.Errorf("create auth provider: %w", err)
+	}
+
+	return acct, nil
+}
+
+// PurgeExpiredNonces removes expired nonces from the database.
+func (c *Core) PurgeExpiredNonces(ctx context.Context) (int64, error) {
+	return c.storer.PurgeExpiredNonces(ctx)
 }

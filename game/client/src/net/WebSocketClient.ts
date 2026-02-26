@@ -11,7 +11,7 @@ export class WebSocketClient {
   private token?: string;
   private messageCallback?: MessageCallback;
   private onOpenCallback?: () => void;
-  private onCloseCallback?: () => void;
+  private onCloseCallback?: (code: number) => void;
   private onErrorCallback?: (error: Event) => void;
 
   constructor(url: string, token?: string) {
@@ -73,10 +73,10 @@ export class WebSocketClient {
       }
     };
 
-    this.ws.onclose = () => {
-      console.log('👋 WebSocket disconnected');
+    this.ws.onclose = (event) => {
+      console.log('👋 WebSocket disconnected', event.code);
       if (this.onCloseCallback) {
-        this.onCloseCallback();
+        this.onCloseCallback(event.code);
       }
     };
 
@@ -212,7 +212,7 @@ export class WebSocketClient {
     this.onOpenCallback = callback;
   }
 
-  onClose(callback: () => void): void {
+  onClose(callback: (code: number) => void): void {
     this.onCloseCallback = callback;
   }
 

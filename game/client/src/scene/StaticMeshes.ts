@@ -11,6 +11,7 @@ import {
 } from "@babylonjs/core";
 import { SCENE_CONFIG } from "@coin-pusher/shared";
 import { SlotMachine } from "./SlotMachine";
+import { JackpotWheel } from "./JackpotWheel";
 import { PacManAnimation } from "./PacManAnimation";
 import { createToonMat } from "./ToonMaterial";
 import { createHoneycombWallMaterial } from "./HoneycombWallMaterial";
@@ -18,6 +19,7 @@ import { createHoneycombWallMaterial } from "./HoneycombWallMaterial";
 export class StaticMeshes {
   private scene: Scene;
   private slotMachine: SlotMachine | null = null;
+  private jackpotWheel: JackpotWheel | null = null;
   private leftWallFrontParent: TransformNode | null = null;
   private rightWallFrontParent: TransformNode | null = null;
   private backWallGroup: TransformNode | null = null;
@@ -29,6 +31,10 @@ export class StaticMeshes {
 
   getSlotMachine(): SlotMachine | null {
     return this.slotMachine;
+  }
+
+  getJackpotWheel(): JackpotWheel | null {
+    return this.jackpotWheel;
   }
 
   getLeftWallFrontParent(): TransformNode | null {
@@ -71,6 +77,9 @@ export class StaticMeshes {
 
     // Slot machine embedded in the front-left side wall (above coin opening)
     this.createEmbeddedSlotMachine();
+
+    // Jackpot wheel embedded in the front-right side wall (mirrored)
+    this.createEmbeddedJackpotWheel();
 
     // Drop zone indicator (stays StandardMaterial — needs alpha)
     const {
@@ -279,6 +288,55 @@ export class StaticMeshes {
     this.slotMachine.getGroup().scaling.setAll(machineScale);
 
     console.log("  ✓ Slot machine mounted on front-left wall");
+  }
+
+  /**
+   * Mount the jackpot wheel on the inner face of the front-right angled wall,
+   * mirrored from the slot machine position on the left.
+   */
+  private createEmbeddedJackpotWheel(): void {
+    const { WIDTH, DEPTH, FLARE_Z, POSITION, THICKNESS: PLAT_THICK } = SCENE_CONFIG.PLATFORM;
+    const { THICKNESS, INNER_TILT_ANGLE } = SCENE_CONFIG.SIDE_WALLS;
+    const machineScale = 1.5;
+
+    const hw = WIDTH / 2;
+    const fhw = StaticMeshes.getFrontHalfWidth();
+    const frontZ = POSITION.z + DEPTH / 2;
+    const flareDepth = frontZ - FLARE_Z;
+    const dx = fhw - hw;
+
+    // Front-right wall center position and angles (mirrored from left)
+    const frontCenterZ = (FLARE_Z + frontZ) / 2;
+    const frontCenterXOff = (hw + fhw) / 2;
+    const yAngle = Math.atan2(dx, flareDepth);
+    const tiltRad = INNER_TILT_ANGLE * (Math.PI / 180);
+
+    // Parent node matching the front-right wall's position & rotation
+    const wallParent = new TransformNode("jackpotWheelWallMount", this.scene);
+    wallParent.position = new Vector3(frontCenterXOff, 0, frontCenterZ);
+    wallParent.rotation.y = yAngle;  // mirrored: positive
+    wallParent.rotation.z = tiltRad; // mirrored: positive
+
+    // Y: sit just above platform surface (same as slot machine)
+    const platformSurfaceY = POSITION.y + PLAT_THICK / 2;
+    const wheelCfg = SCENE_CONFIG.SLOT_MACHINE; // reuse same height for symmetry
+    const machineY = platformSurfaceY + (wheelCfg.HEIGHT / 2) * machineScale + 0.35;
+
+    // Z: centered along wall
+    const machineZ = 0;
+
+    const machinePos = new Vector3(
+      -(THICKNESS / 2 + 0.01), // mirrored: flush against inner face from right
+      machineY,
+      machineZ,
+    );
+
+    this.jackpotWheel = new JackpotWheel(this.scene, machinePos, wallParent);
+    // Rotate so front faces the wall's inner normal (mirrored from slot machine)
+    this.jackpotWheel.getGroup().rotation.y = -Math.PI / 2;
+    this.jackpotWheel.getGroup().scaling.setAll(machineScale);
+
+    console.log("  ✓ Jackpot wheel mounted on front-right wall");
   }
 
   private createAngledSideWalls(material: Material): void {

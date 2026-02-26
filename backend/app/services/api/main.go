@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/nats-io/nats.go"
@@ -55,6 +57,7 @@ type config struct {
 		WriteTimeout    time.Duration `conf:"default:10s"`
 		IdleTimeout     time.Duration `conf:"default:120s"`
 		ShutdownTimeout time.Duration `conf:"default:20s"`
+		CORSOrigins     string        `conf:"default:*"`
 	}
 	DB struct {
 		User         string `conf:"default:postgres"`
@@ -103,6 +106,10 @@ func run() error {
 	defer log.Sync()
 
 	log.Infow("starting service", "host", cfg.Web.APIHost)
+
+	if cfg.Web.CORSOrigins == "*" && !cfg.Auth.DevMode {
+		return fmt.Errorf("BACKEND_WEB_CORS_ORIGINS must be set in production (not wildcard)")
+	}
 
 	// -------------------------------------------------------------------------
 	// Database
@@ -163,7 +170,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, userCore, acctCore, gameCore, heatEngine, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, userCore, acctCore, gameCore, heatEngine, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -242,6 +249,27 @@ func run() error {
 	}()
 
 	// -------------------------------------------------------------------------
+	// Nonce purge goroutine (10 min interval)
+	stopNoncePurge := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				n, err := userCore.PurgeExpiredNonces(context.Background())
+				if err != nil {
+					log.Errorw("nonce purge error", "error", err)
+				} else if n > 0 {
+					log.Infow("purged expired nonces", "count", n)
+				}
+			case <-stopNoncePurge:
+				return
+			}
+		}
+	}()
+
+	// -------------------------------------------------------------------------
 	// Reward accumulator + flush goroutine (10s interval)
 	var rewardMu sync.Mutex
 	rewardAccum := make(map[uuid.UUID]float64)
@@ -298,7 +326,7 @@ func run() error {
 					}
 					refKey := uuid.NewString()
 					amt := decimal.NewFromFloat(truncated)
-					if err := acctCore.ProcessHeatReward(context.Background(), uid, amt, refKey); err != nil {
+					if err := acctCore.ProcessGameReward(context.Background(), uid, amt, refKey); err != nil {
 						log.Errorw("heat reward flush error", "user_id", uid, "amount", truncated, "error", err)
 					}
 				}
@@ -322,6 +350,7 @@ func run() error {
 		// Stop background goroutines.
 		close(stopHeat)
 		close(stopFlush)
+		close(stopNoncePurge)
 
 		// Stop NATS relay first.
 		relay.Stop()
@@ -361,6 +390,7 @@ func buildAPIMux(
 	db *sqlx.DB,
 	a *auth.Auth,
 	gameAPIKey string,
+	corsOrigins string,
 	userCore *user.Core,
 	acctCore *accounting.Core,
 	gameCore *game.Core,
@@ -371,6 +401,20 @@ func buildAPIMux(
 	mux := chi.NewRouter()
 
 	// Global middleware.
+	origins := []string{"https://*", "http://*"}
+	if corsOrigins != "*" {
+		origins = strings.Split(corsOrigins, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
+		}
+	}
+	mux.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   origins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 	mux.Use(mid.CorrelationID())
 	mux.Use(mid.Panics(log))
 	mux.Use(mid.Logger(log))
@@ -386,7 +430,9 @@ func buildAPIMux(
 	gameGrp := gamegrp.New(gameCore, heatEngine, nc)
 
 	// Public
-	mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login))
+	mux.Get("/v1/auth/nonce", mid.Errors(log, userGrp.Nonce))
+	mux.Post("/v1/auth/wallet/login", mid.Errors(log, userGrp.WalletLogin))
+	mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login)) // dev mode only
 
 	// JWT-protected
 	mux.Group(func(r chi.Router) {

@@ -82,6 +82,8 @@ services:
       - POSTGRES_DB=coinpusher
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/zarf/docker/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/zarf/docker/database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
     networks:
       - coin-pusher-network
     healthcheck:

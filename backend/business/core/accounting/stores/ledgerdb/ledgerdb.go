@@ -27,11 +27,11 @@ func NewStore(db *sqlx.DB) *Store {
 // Create inserts a new accounting log entry.
 func (s *Store) Create(ctx context.Context, log accounting.AccountingLog) error {
 	const q = `
-		INSERT INTO accounting_logs (log_id, user_id, action_type, amount, currency, reference_id, created_at)
+		INSERT INTO accounting_logs (log_id, account_id, action_type, amount, currency, reference_id, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	if _, err := s.db.ExecContext(ctx, q,
-		log.LogID, log.UserID, log.ActionType, log.Amount,
+		log.LogID, log.AccountID, log.ActionType, log.Amount,
 		log.Currency, log.ReferenceID, log.CreatedAt,
 	); err != nil {
 		return fmt.Errorf("inserting accounting log: %w", err)
@@ -40,17 +40,17 @@ func (s *Store) Create(ctx context.Context, log accounting.AccountingLog) error 
 	return nil
 }
 
-// QueryByUserID retrieves accounting logs for a user with pagination.
-func (s *Store) QueryByUserID(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error) {
+// QueryByAccountID retrieves accounting logs for an account with pagination.
+func (s *Store) QueryByAccountID(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error) {
 	const q = `
 		SELECT * FROM accounting_logs
-		WHERE user_id = $1
+		WHERE account_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3`
 
 	offset := (page - 1) * pageSize
 	var logs []accounting.AccountingLog
-	if err := s.db.SelectContext(ctx, &logs, q, userID, pageSize, offset); err != nil {
+	if err := s.db.SelectContext(ctx, &logs, q, accountID, pageSize, offset); err != nil {
 		return nil, fmt.Errorf("selecting accounting logs: %w", err)
 	}
 

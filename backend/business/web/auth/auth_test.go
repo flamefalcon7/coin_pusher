@@ -14,10 +14,9 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	t.Parallel()
 
 	a := NewDevAuth("test-issuer")
-	userID := uuid.New()
-	suiAddr := "0xabc123"
+	accountID := uuid.New()
 
-	token, err := a.GenerateToken(userID, suiAddr)
+	token, err := a.GenerateToken(accountID)
 	if err != nil {
 		t.Fatalf("GenerateToken() error = %v", err)
 	}
@@ -31,20 +30,16 @@ func TestGenerateAndValidateToken(t *testing.T) {
 		t.Fatalf("ValidateToken() error = %v", err)
 	}
 
-	if claims.UserID != userID.String() {
-		t.Errorf("UserID = %q, want %q", claims.UserID, userID.String())
-	}
-
-	if claims.SUIAddress != suiAddr {
-		t.Errorf("SUIAddress = %q, want %q", claims.SUIAddress, suiAddr)
+	if claims.AccountID != accountID.String() {
+		t.Errorf("AccountID = %q, want %q", claims.AccountID, accountID.String())
 	}
 
 	if claims.Issuer != "test-issuer" {
 		t.Errorf("Issuer = %q, want %q", claims.Issuer, "test-issuer")
 	}
 
-	if claims.Subject != userID.String() {
-		t.Errorf("Subject = %q, want %q", claims.Subject, userID.String())
+	if claims.Subject != accountID.String() {
+		t.Errorf("Subject = %q, want %q", claims.Subject, accountID.String())
 	}
 }
 
@@ -61,8 +56,7 @@ func TestValidateToken_Expired(t *testing.T) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
 		},
-		UserID:     uuid.NewString(),
-		SUIAddress: "0xexpired",
+		AccountID: uuid.NewString(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -81,9 +75,9 @@ func TestValidateToken_WrongKey(t *testing.T) {
 	t.Parallel()
 
 	a := NewDevAuth("test-issuer")
-	userID := uuid.New()
+	accountID := uuid.New()
 
-	token, err := a.GenerateToken(userID, "0xaddr")
+	token, err := a.GenerateToken(accountID)
 	if err != nil {
 		t.Fatalf("GenerateToken() error = %v", err)
 	}
@@ -97,7 +91,7 @@ func TestValidateToken_WrongKey(t *testing.T) {
 	}
 }
 
-func TestVerifySUISignature_DevMode(t *testing.T) {
+func TestDevMode(t *testing.T) {
 	t.Parallel()
 
 	a := NewDevAuth("test-issuer")
@@ -106,26 +100,13 @@ func TestVerifySUISignature_DevMode(t *testing.T) {
 		t.Fatal("NewDevAuth should be in dev mode")
 	}
 
-	if !a.VerifySUISignature("0xany", "any message", "any sig") {
-		t.Error("dev mode should always return true")
-	}
-}
-
-func TestVerifySUISignature_ProdMode(t *testing.T) {
-	t.Parallel()
-
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	a := &Auth{
+	prod := &Auth{
 		devMode: false,
 		devKey:  key,
 	}
 
-	if a.IsDevMode() {
+	if prod.IsDevMode() {
 		t.Fatal("should not be in dev mode")
-	}
-
-	// Production mode with no real SUI verification returns false.
-	if a.VerifySUISignature("0xany", "msg", "sig") {
-		t.Error("prod mode should return false (not implemented)")
 	}
 }

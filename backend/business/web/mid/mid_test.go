@@ -42,7 +42,7 @@ func TestClaimsContext(t *testing.T) {
 		t.Error("empty ctx should not have claims")
 	}
 
-	want := Claims{UserID: "u1", SUIAddress: "0xabc"}
+	want := Claims{AccountID: "a1"}
 	ctx = SetClaims(ctx, want)
 
 	got, ok := GetClaims(ctx)
@@ -183,10 +183,9 @@ func TestAuthenticate(t *testing.T) {
 	t.Parallel()
 
 	devAuth := auth.NewDevAuth("test-issuer")
-	userID := uuid.New()
-	suiAddr := "0xauth-test"
+	accountID := uuid.New()
 
-	validToken, err := devAuth.GenerateToken(userID, suiAddr)
+	validToken, err := devAuth.GenerateToken(accountID)
 	if err != nil {
 		t.Fatalf("generating test token: %v", err)
 	}
@@ -250,11 +249,8 @@ func TestAuthenticate(t *testing.T) {
 				if !gotOK {
 					t.Fatal("claims should be set in context")
 				}
-				if gotClaims.UserID != userID.String() {
-					t.Errorf("claims.UserID = %q, want %q", gotClaims.UserID, userID.String())
-				}
-				if gotClaims.SUIAddress != suiAddr {
-					t.Errorf("claims.SUIAddress = %q, want %q", gotClaims.SUIAddress, suiAddr)
+				if gotClaims.AccountID != accountID.String() {
+					t.Errorf("claims.AccountID = %q, want %q", gotClaims.AccountID, accountID.String())
 				}
 			}
 		})

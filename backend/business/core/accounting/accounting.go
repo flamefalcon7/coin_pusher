@@ -29,7 +29,7 @@ func NewCore(storer Storer, userCore *user.Core) *Core {
 
 // ProcessDeposit handles an on-chain deposit event idempotently.
 // The reference_id (tx hash) ensures each deposit is only applied once.
-func (c *Core) ProcessDeposit(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, currency, referenceID string) error {
+func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, currency, referenceID string) error {
 	// Check if this deposit was already processed.
 	_, err := c.storer.QueryByReference(ctx, ActionDeposit, referenceID)
 	if err == nil {
@@ -44,7 +44,7 @@ func (c *Core) ProcessDeposit(ctx context.Context, userID uuid.UUID, amount deci
 	now := time.Now().UTC()
 	log := AccountingLog{
 		LogID:       uuid.New(),
-		UserID:      userID,
+		AccountID:   accountID,
 		ActionType:  ActionDeposit,
 		Amount:      amount,
 		Currency:    currency,
@@ -56,34 +56,36 @@ func (c *Core) ProcessDeposit(ctx context.Context, userID uuid.UUID, amount deci
 		return fmt.Errorf("creating deposit log: %w", err)
 	}
 
-	// Credit user balance.
+	// Credit account balance.
 	switch currency {
 	case CurrencyUSDC:
-		return c.userCore.IncrementUSDCBalance(ctx, userID, amount)
-	case CurrencyCoin:
-		return c.userCore.IncrementCoinBalance(ctx, userID, amount)
+		return c.userCore.IncrementUSDCBalance(ctx, accountID, amount)
+	case CurrencyPlay:
+		return c.userCore.IncrementPlayBalance(ctx, accountID, amount)
+	case CurrencyCash:
+		return c.userCore.IncrementCashBalance(ctx, accountID, amount)
 	default:
 		return fmt.Errorf("unknown currency: %s", currency)
 	}
 }
 
 // ProcessGameInsert handles a coin insertion game event.
-// Debits the user's coin balance and creates a ledger entry.
-func (c *Core) ProcessGameInsert(ctx context.Context, userID uuid.UUID, coinCount int, referenceID string) error {
+// Debits the account's play balance and creates a ledger entry.
+func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) error {
 	amount := decimal.NewFromInt(int64(coinCount))
 
-	// Debit user balance.
-	if err := c.userCore.DecrementCoinBalance(ctx, userID, amount); err != nil {
+	// Debit account play balance.
+	if err := c.userCore.DecrementPlayBalance(ctx, accountID, amount); err != nil {
 		return err
 	}
 
 	now := time.Now().UTC()
 	log := AccountingLog{
 		LogID:       uuid.New(),
-		UserID:      userID,
+		AccountID:   accountID,
 		ActionType:  ActionGameInsert,
 		Amount:      amount,
-		Currency:    CurrencyCoin,
+		Currency:    CurrencyPlay,
 		ReferenceID: referenceID,
 		CreatedAt:   now,
 	}
@@ -95,26 +97,26 @@ func (c *Core) ProcessGameInsert(ctx context.Context, userID uuid.UUID, coinCoun
 	return nil
 }
 
-// ProcessHeatReward handles a heat-based reward event (coins distributed via heat shares).
-// Credits the user's coin balance and creates a ledger entry.
-func (c *Core) ProcessHeatReward(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, referenceID string) error {
-	if err := c.userCore.IncrementCoinBalance(ctx, userID, amount); err != nil {
+// ProcessGameReward handles a game reward event (coins distributed via heat shares).
+// Credits the account's cash balance and creates a ledger entry.
+func (c *Core) ProcessGameReward(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, referenceID string) error {
+	if err := c.userCore.IncrementCashBalance(ctx, accountID, amount); err != nil {
 		return err
 	}
 
 	now := time.Now().UTC()
 	log := AccountingLog{
 		LogID:       uuid.New(),
-		UserID:      userID,
-		ActionType:  ActionHeatReward,
+		AccountID:   accountID,
+		ActionType:  ActionGameReward,
 		Amount:      amount,
-		Currency:    CurrencyCoin,
+		Currency:    CurrencyCash,
 		ReferenceID: referenceID,
 		CreatedAt:   now,
 	}
 
 	if err := c.storer.Create(ctx, log); err != nil {
-		return fmt.Errorf("creating heat reward log: %w", err)
+		return fmt.Errorf("creating game reward log: %w", err)
 	}
 
 	return nil

@@ -7,6 +7,8 @@ import { Toolbar } from "./ui/Toolbar";
 import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 import { HeatMeter } from "./ui/HeatMeter";
 import { RewardToast } from "./ui/RewardToast";
+import { WalletLogin } from "./ui/WalletLogin";
+import { getSavedToken, clearToken, type AuthResult } from "./net/auth";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -19,8 +21,33 @@ import { EditorObjectData } from "./editor/EditorObject";
 
 // Auto-detect WS host from browser location so mobile on same WiFi works
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:4000/ws`;
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:4000`;
 
 function App() {
+  const [token, setToken] = useState<string | null>(() => getSavedToken());
+
+  const handleLoginSuccess = useCallback((result: AuthResult) => {
+    setToken(result.token);
+  }, []);
+
+  const handleAuthFailure = useCallback(() => {
+    clearToken();
+    setToken(null);
+  }, []);
+
+  if (!token) {
+    return <WalletLogin apiBase={API_URL} onSuccess={handleLoginSuccess} />;
+  }
+
+  return <Game token={token} onAuthFailure={handleAuthFailure} />;
+}
+
+interface GameProps {
+  token: string;
+  onAuthFailure: () => void;
+}
+
+function Game({ token, onAuthFailure }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gameClientRef = useRef<GameClient | null>(null);
@@ -71,8 +98,11 @@ function App() {
     sceneManagerRef.current = sceneManager;
 
     // Initialize game client
-    const gameClient = new GameClient(WS_URL);
+    const gameClient = new GameClient(WS_URL, token);
     gameClientRef.current = gameClient;
+
+    // Handle auth failure (WS closed with 4401/4403)
+    gameClient.onAuthFailure(onAuthFailure);
 
     // Set FPS callback
     sceneManager.setFpsCallback((fps) => {
