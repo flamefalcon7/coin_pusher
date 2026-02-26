@@ -26,8 +26,7 @@ func GetCorrelationID(ctx context.Context) string {
 
 // Claims represents the authorization claims extracted from a JWT.
 type Claims struct {
-	UserID     string `json:"user_id"`
-	SUIAddress string `json:"sui_address"`
+	AccountID string `json:"account_id"`
 }
 
 // SetClaims stores the claims in the context.

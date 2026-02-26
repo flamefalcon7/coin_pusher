@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -17,43 +18,63 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockUserStorer struct {
-	createFn         func(ctx context.Context, usr user.User) error
-	queryByIDFn      func(ctx context.Context, userID uuid.UUID) (user.User, error)
-	queryBySUIAddrFn func(ctx context.Context, suiAddress string) (user.User, error)
-	updateBalanceFn  func(ctx context.Context, userID uuid.UUID, currency string, delta decimal.Decimal) error
+	createFn             func(ctx context.Context, acct user.Account) error
+	createAuthProviderFn func(ctx context.Context, ap user.AuthProvider) error
+	queryByIDFn          func(ctx context.Context, accountID uuid.UUID) (user.Account, error)
+	queryByProviderFn    func(ctx context.Context, providerType, providerUID string) (user.Account, error)
+	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
 }
 
-func (m *mockUserStorer) Create(ctx context.Context, usr user.User) error {
+func (m *mockUserStorer) Create(ctx context.Context, acct user.Account) error {
 	if m.createFn != nil {
-		return m.createFn(ctx, usr)
+		return m.createFn(ctx, acct)
 	}
 	return nil
 }
 
-func (m *mockUserStorer) QueryByID(ctx context.Context, userID uuid.UUID) (user.User, error) {
+func (m *mockUserStorer) CreateAuthProvider(ctx context.Context, ap user.AuthProvider) error {
+	if m.createAuthProviderFn != nil {
+		return m.createAuthProviderFn(ctx, ap)
+	}
+	return nil
+}
+
+func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
 	if m.queryByIDFn != nil {
-		return m.queryByIDFn(ctx, userID)
+		return m.queryByIDFn(ctx, accountID)
 	}
-	return user.User{}, nil
+	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) QueryBySUIAddress(ctx context.Context, suiAddress string) (user.User, error) {
-	if m.queryBySUIAddrFn != nil {
-		return m.queryBySUIAddrFn(ctx, suiAddress)
+func (m *mockUserStorer) QueryByProvider(ctx context.Context, providerType, providerUID string) (user.Account, error) {
+	if m.queryByProviderFn != nil {
+		return m.queryByProviderFn(ctx, providerType, providerUID)
 	}
-	return user.User{}, nil
+	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) UpdateBalance(ctx context.Context, userID uuid.UUID, currency string, delta decimal.Decimal) error {
+func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
 	if m.updateBalanceFn != nil {
-		return m.updateBalanceFn(ctx, userID, currency, delta)
+		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
 	return nil
+}
+
+func (m *mockUserStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {
+	return nil
+}
+
+func (m *mockUserStorer) ConsumeNonce(ctx context.Context, nonce string) (user.NonceRecord, error) {
+	return user.NonceRecord{}, nil
+}
+
+func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
+	return 0, nil
 }
 
 type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log accounting.AccountingLog) error
-	queryByUserIDFn    func(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error)
+	queryByAccountIDFn func(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error)
 	queryByReferenceFn func(ctx context.Context, actionType, referenceID string) (accounting.AccountingLog, error)
 }
 
@@ -64,9 +85,9 @@ func (m *mockAcctStorer) Create(ctx context.Context, log accounting.AccountingLo
 	return nil
 }
 
-func (m *mockAcctStorer) QueryByUserID(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error) {
-	if m.queryByUserIDFn != nil {
-		return m.queryByUserIDFn(ctx, userID, page, pageSize)
+func (m *mockAcctStorer) QueryByAccountID(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error) {
+	if m.queryByAccountIDFn != nil {
+		return m.queryByAccountIDFn(ctx, accountID, page, pageSize)
 	}
 	return nil, nil
 }
@@ -85,18 +106,18 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 func newTestCore(t *testing.T, balance decimal.Decimal) (*Core, uuid.UUID) {
 	t.Helper()
 
-	userID := uuid.New()
+	accountID := uuid.New()
 
 	userStr := &mockUserStorer{
-		queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.User, error) {
-			return user.User{ID: userID, BalanceCoin: balance}, nil
+		queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: balance}, nil
 		},
 	}
 	acctStr := &mockAcctStorer{}
 
 	userCore := user.NewCore(userStr)
 	acctCore := accounting.NewCore(acctStr, userCore)
-	return NewCore(userCore, acctCore), userID
+	return NewCore(userCore, acctCore), accountID
 }
 
 // ---------------------------------------------------------------------------
@@ -136,10 +157,10 @@ func TestProcessEvent_InsertCoin(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			core, userID := newTestCore(t, tc.balance)
+			core, accountID := newTestCore(t, tc.balance)
 
 			result, err := core.ProcessEvent(context.Background(), GameEvent{
-				UserID:         userID,
+				UserID:         accountID,
 				Type:           EventInsertCoin,
 				CoinCount:      tc.coinCount,
 				IdempotencyKey: uuid.NewString(),
@@ -152,8 +173,8 @@ func TestProcessEvent_InsertCoin(t *testing.T) {
 				t.Errorf("Success = %v, want %v", result.Success, tc.wantSuccess)
 			}
 
-			if tc.wantSuccess && result.BalanceCoin == "" {
-				t.Error("BalanceCoin should be set on success")
+			if tc.wantSuccess && result.BalancePlay == "" {
+				t.Error("BalancePlay should be set on success")
 			}
 
 			if !tc.wantSuccess && result.Error == "" {
@@ -223,10 +244,10 @@ func TestProcessEvent_SpawnStack(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			core, userID := newTestCore(t, tc.balance)
+			core, accountID := newTestCore(t, tc.balance)
 
 			result, err := core.ProcessEvent(context.Background(), GameEvent{
-				UserID:         userID,
+				UserID:         accountID,
 				Type:           EventSpawnStack,
 				StackType:      tc.stackType,
 				IdempotencyKey: uuid.NewString(),
@@ -253,9 +274,9 @@ func TestProcessEvent_SpawnStack(t *testing.T) {
 func TestProcessBatchInsert(t *testing.T) {
 	t.Parallel()
 
-	core, userID := newTestCore(t, decimal.NewFromInt(100))
+	core, accountID := newTestCore(t, decimal.NewFromInt(100))
 
-	result, err := core.ProcessBatchInsert(context.Background(), userID, 5, uuid.NewString())
+	result, err := core.ProcessBatchInsert(context.Background(), accountID, 5, uuid.NewString())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,17 +285,17 @@ func TestProcessBatchInsert(t *testing.T) {
 		t.Errorf("Success = false, want true; Error = %q", result.Error)
 	}
 
-	if result.BalanceCoin == "" {
-		t.Error("BalanceCoin should be set on success")
+	if result.BalancePlay == "" {
+		t.Error("BalancePlay should be set on success")
 	}
 }
 
 func TestProcessBatchInsert_ZeroCount(t *testing.T) {
 	t.Parallel()
 
-	core, userID := newTestCore(t, decimal.NewFromInt(100))
+	core, accountID := newTestCore(t, decimal.NewFromInt(100))
 
-	result, err := core.ProcessBatchInsert(context.Background(), userID, 0, uuid.NewString())
+	result, err := core.ProcessBatchInsert(context.Background(), accountID, 0, uuid.NewString())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,10 +312,10 @@ func TestProcessBatchInsert_ZeroCount(t *testing.T) {
 func TestProcessEvent_UnknownType(t *testing.T) {
 	t.Parallel()
 
-	core, userID := newTestCore(t, decimal.NewFromInt(100))
+	core, accountID := newTestCore(t, decimal.NewFromInt(100))
 
 	_, err := core.ProcessEvent(context.Background(), GameEvent{
-		UserID: userID,
+		UserID: accountID,
 		Type:   "UNKNOWN_EVENT",
 	})
 	if err == nil {

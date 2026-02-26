@@ -46,6 +46,7 @@ export class GameClient {
   private slotStatusCallback?: SlotStatusCallback;
   private batchInsertAckCallback?: BatchInsertAckCallback;
   private rewardCallback?: RewardCallback;
+  private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
   private _snapshotJustLoaded: boolean = false;
@@ -70,7 +71,12 @@ export class GameClient {
       }
     });
 
-    this.wsClient.onClose(() => {
+    this.wsClient.onClose((code) => {
+      if (code === 4401 || code === 4403) {
+        if (this.authFailureCallback) {
+          this.authFailureCallback();
+        }
+      }
       if (this.connectionStatusCallback) {
         this.connectionStatusCallback("disconnected");
       }
@@ -311,6 +317,10 @@ export class GameClient {
 
   onConnectionStatus(callback: ConnectionStatusCallback): void {
     this.connectionStatusCallback = callback;
+  }
+
+  onAuthFailure(callback: () => void): void {
+    this.authFailureCallback = callback;
   }
 
   onPing(callback: PingCallback): void {

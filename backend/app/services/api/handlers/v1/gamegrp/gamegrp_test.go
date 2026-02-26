@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -25,43 +26,63 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockUserStorer struct {
-	createFn         func(ctx context.Context, usr user.User) error
-	queryByIDFn      func(ctx context.Context, userID uuid.UUID) (user.User, error)
-	queryBySUIAddrFn func(ctx context.Context, suiAddress string) (user.User, error)
-	updateBalanceFn  func(ctx context.Context, userID uuid.UUID, currency string, delta decimal.Decimal) error
+	createFn             func(ctx context.Context, acct user.Account) error
+	createAuthProviderFn func(ctx context.Context, ap user.AuthProvider) error
+	queryByIDFn          func(ctx context.Context, accountID uuid.UUID) (user.Account, error)
+	queryByProviderFn    func(ctx context.Context, providerType, providerUID string) (user.Account, error)
+	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
 }
 
-func (m *mockUserStorer) Create(ctx context.Context, usr user.User) error {
+func (m *mockUserStorer) Create(ctx context.Context, acct user.Account) error {
 	if m.createFn != nil {
-		return m.createFn(ctx, usr)
+		return m.createFn(ctx, acct)
 	}
 	return nil
 }
 
-func (m *mockUserStorer) QueryByID(ctx context.Context, userID uuid.UUID) (user.User, error) {
+func (m *mockUserStorer) CreateAuthProvider(ctx context.Context, ap user.AuthProvider) error {
+	if m.createAuthProviderFn != nil {
+		return m.createAuthProviderFn(ctx, ap)
+	}
+	return nil
+}
+
+func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
 	if m.queryByIDFn != nil {
-		return m.queryByIDFn(ctx, userID)
+		return m.queryByIDFn(ctx, accountID)
 	}
-	return user.User{}, nil
+	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) QueryBySUIAddress(ctx context.Context, suiAddress string) (user.User, error) {
-	if m.queryBySUIAddrFn != nil {
-		return m.queryBySUIAddrFn(ctx, suiAddress)
+func (m *mockUserStorer) QueryByProvider(ctx context.Context, providerType, providerUID string) (user.Account, error) {
+	if m.queryByProviderFn != nil {
+		return m.queryByProviderFn(ctx, providerType, providerUID)
 	}
-	return user.User{}, nil
+	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) UpdateBalance(ctx context.Context, userID uuid.UUID, currency string, delta decimal.Decimal) error {
+func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
 	if m.updateBalanceFn != nil {
-		return m.updateBalanceFn(ctx, userID, currency, delta)
+		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
 	return nil
+}
+
+func (m *mockUserStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {
+	return nil
+}
+
+func (m *mockUserStorer) ConsumeNonce(ctx context.Context, nonce string) (user.NonceRecord, error) {
+	return user.NonceRecord{}, nil
+}
+
+func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
+	return 0, nil
 }
 
 type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log accounting.AccountingLog) error
-	queryByUserIDFn    func(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error)
+	queryByAccountIDFn func(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error)
 	queryByReferenceFn func(ctx context.Context, actionType, referenceID string) (accounting.AccountingLog, error)
 }
 
@@ -72,9 +93,9 @@ func (m *mockAcctStorer) Create(ctx context.Context, log accounting.AccountingLo
 	return nil
 }
 
-func (m *mockAcctStorer) QueryByUserID(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error) {
-	if m.queryByUserIDFn != nil {
-		return m.queryByUserIDFn(ctx, userID, page, pageSize)
+func (m *mockAcctStorer) QueryByAccountID(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error) {
+	if m.queryByAccountIDFn != nil {
+		return m.queryByAccountIDFn(ctx, accountID, page, pageSize)
 	}
 	return nil, nil
 }
@@ -94,10 +115,10 @@ func errHandler(log *zap.SugaredLogger, handler v1.Handler) http.HandlerFunc {
 	return mid.Errors(log, handler)
 }
 
-func newGameCore(userID uuid.UUID, balance decimal.Decimal) *game.Core {
+func newGameCore(accountID uuid.UUID, balance decimal.Decimal) *game.Core {
 	userStr := &mockUserStorer{
-		queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.User, error) {
-			return user.User{ID: userID, BalanceCoin: balance}, nil
+		queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: balance}, nil
 		},
 	}
 	acctStr := &mockAcctStorer{}
@@ -115,7 +136,7 @@ func TestEvent(t *testing.T) {
 	t.Parallel()
 
 	log := zap.NewNop().Sugar()
-	userID := uuid.New()
+	accountID := uuid.New()
 
 	tests := []struct {
 		name       string
@@ -126,7 +147,7 @@ func TestEvent(t *testing.T) {
 	}{
 		{
 			name:       "success - insert coin",
-			body:       `{"user_id":"` + userID.String() + `","type":"INSERT_COIN","coin_count":1,"idempotency_key":"k1"}`,
+			body:       `{"user_id":"` + accountID.String() + `","type":"INSERT_COIN","coin_count":1,"idempotency_key":"k1"}`,
 			balance:    decimal.NewFromInt(100),
 			wantStatus: http.StatusOK,
 			wantField:  "success",
@@ -139,7 +160,7 @@ func TestEvent(t *testing.T) {
 		},
 		{
 			name:       "game error - unknown event type",
-			body:       `{"user_id":"` + userID.String() + `","type":"INVALID_TYPE"}`,
+			body:       `{"user_id":"` + accountID.String() + `","type":"INVALID_TYPE"}`,
 			balance:    decimal.NewFromInt(100),
 			wantStatus: http.StatusInternalServerError,
 		},
@@ -149,7 +170,7 @@ func TestEvent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			gameCore := newGameCore(userID, tc.balance)
+			gameCore := newGameCore(accountID, tc.balance)
 			grp := New(gameCore, heat.New(), nil)
 
 			r := httptest.NewRequest(http.MethodPost, "/v1/game/event", strings.NewReader(tc.body))

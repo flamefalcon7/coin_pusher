@@ -77,7 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 			return
 		}
-		userID = claims.UserID
+		userID = claims.AccountID
 	}
 
 	// Upgrade to WebSocket.
@@ -462,7 +462,7 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 			h.log.Warnw("batch_insert failed", "error", result.Error, "user_id", c.userID)
 			return
 		}
-		balanceStr = result.BalanceCoin
+		balanceStr = result.BalancePlay
 	}
 
 	// Optimistic increment slot count.

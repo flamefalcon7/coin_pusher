@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -18,7 +19,7 @@ import (
 
 type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log AccountingLog) error
-	queryByUserIDFn    func(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]AccountingLog, error)
+	queryByAccountIDFn func(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]AccountingLog, error)
 	queryByReferenceFn func(ctx context.Context, actionType, referenceID string) (AccountingLog, error)
 }
 
@@ -29,9 +30,9 @@ func (m *mockAcctStorer) Create(ctx context.Context, log AccountingLog) error {
 	return nil
 }
 
-func (m *mockAcctStorer) QueryByUserID(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]AccountingLog, error) {
-	if m.queryByUserIDFn != nil {
-		return m.queryByUserIDFn(ctx, userID, page, pageSize)
+func (m *mockAcctStorer) QueryByAccountID(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]AccountingLog, error) {
+	if m.queryByAccountIDFn != nil {
+		return m.queryByAccountIDFn(ctx, accountID, page, pageSize)
 	}
 	return nil, nil
 }
@@ -44,38 +45,58 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 }
 
 type mockUserStorer struct {
-	createFn         func(ctx context.Context, usr user.User) error
-	queryByIDFn      func(ctx context.Context, userID uuid.UUID) (user.User, error)
-	queryBySUIAddrFn func(ctx context.Context, suiAddress string) (user.User, error)
-	updateBalanceFn  func(ctx context.Context, userID uuid.UUID, currency string, delta decimal.Decimal) error
+	createFn             func(ctx context.Context, acct user.Account) error
+	createAuthProviderFn func(ctx context.Context, ap user.AuthProvider) error
+	queryByIDFn          func(ctx context.Context, accountID uuid.UUID) (user.Account, error)
+	queryByProviderFn    func(ctx context.Context, providerType, providerUID string) (user.Account, error)
+	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
 }
 
-func (m *mockUserStorer) Create(ctx context.Context, usr user.User) error {
+func (m *mockUserStorer) Create(ctx context.Context, acct user.Account) error {
 	if m.createFn != nil {
-		return m.createFn(ctx, usr)
+		return m.createFn(ctx, acct)
 	}
 	return nil
 }
 
-func (m *mockUserStorer) QueryByID(ctx context.Context, userID uuid.UUID) (user.User, error) {
+func (m *mockUserStorer) CreateAuthProvider(ctx context.Context, ap user.AuthProvider) error {
+	if m.createAuthProviderFn != nil {
+		return m.createAuthProviderFn(ctx, ap)
+	}
+	return nil
+}
+
+func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
 	if m.queryByIDFn != nil {
-		return m.queryByIDFn(ctx, userID)
+		return m.queryByIDFn(ctx, accountID)
 	}
-	return user.User{}, nil
+	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) QueryBySUIAddress(ctx context.Context, suiAddress string) (user.User, error) {
-	if m.queryBySUIAddrFn != nil {
-		return m.queryBySUIAddrFn(ctx, suiAddress)
+func (m *mockUserStorer) QueryByProvider(ctx context.Context, providerType, providerUID string) (user.Account, error) {
+	if m.queryByProviderFn != nil {
+		return m.queryByProviderFn(ctx, providerType, providerUID)
 	}
-	return user.User{}, nil
+	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) UpdateBalance(ctx context.Context, userID uuid.UUID, currency string, delta decimal.Decimal) error {
+func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
 	if m.updateBalanceFn != nil {
-		return m.updateBalanceFn(ctx, userID, currency, delta)
+		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
 	return nil
+}
+
+func (m *mockUserStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {
+	return nil
+}
+
+func (m *mockUserStorer) ConsumeNonce(ctx context.Context, nonce string) (user.NonceRecord, error) {
+	return user.NonceRecord{}, nil
+}
+
+func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
+	return 0, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +106,7 @@ func (m *mockUserStorer) UpdateBalance(ctx context.Context, userID uuid.UUID, cu
 func TestProcessDeposit(t *testing.T) {
 	t.Parallel()
 
-	userID := uuid.New()
+	accountID := uuid.New()
 
 	tests := []struct {
 		name     string
@@ -95,14 +116,14 @@ func TestProcessDeposit(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "new COIN deposit",
+			name: "new PLAY deposit",
 			acctStr: &mockAcctStorer{
 				queryByReferenceFn: func(ctx context.Context, actionType, referenceID string) (AccountingLog, error) {
 					return AccountingLog{}, v1.NewNotFoundError()
 				},
 			},
 			userStr:  &mockUserStorer{},
-			currency: CurrencyCoin,
+			currency: CurrencyPlay,
 			wantErr:  false,
 		},
 		{
@@ -124,7 +145,7 @@ func TestProcessDeposit(t *testing.T) {
 				},
 			},
 			userStr:  &mockUserStorer{},
-			currency: CurrencyCoin,
+			currency: CurrencyPlay,
 			wantErr:  false,
 		},
 		{
@@ -135,7 +156,7 @@ func TestProcessDeposit(t *testing.T) {
 				},
 			},
 			userStr:  &mockUserStorer{},
-			currency: CurrencyCoin,
+			currency: CurrencyPlay,
 			wantErr:  true,
 		},
 		{
@@ -149,7 +170,7 @@ func TestProcessDeposit(t *testing.T) {
 				},
 			},
 			userStr:  &mockUserStorer{},
-			currency: CurrencyCoin,
+			currency: CurrencyPlay,
 			wantErr:  true,
 		},
 	}
@@ -161,7 +182,7 @@ func TestProcessDeposit(t *testing.T) {
 			userCore := user.NewCore(tc.userStr)
 			core := NewCore(tc.acctStr, userCore)
 
-			err := core.ProcessDeposit(context.Background(), userID, decimal.NewFromInt(100), tc.currency, "tx-hash-123")
+			err := core.ProcessDeposit(context.Background(), accountID, decimal.NewFromInt(100), tc.currency, "tx-hash-123")
 
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
@@ -180,7 +201,7 @@ func TestProcessDeposit(t *testing.T) {
 func TestProcessGameInsert(t *testing.T) {
 	t.Parallel()
 
-	userID := uuid.New()
+	accountID := uuid.New()
 
 	tests := []struct {
 		name    string
@@ -207,8 +228,8 @@ func TestProcessGameInsert(t *testing.T) {
 			t.Parallel()
 
 			userStr := &mockUserStorer{
-				queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.User, error) {
-					return user.User{ID: userID, BalanceCoin: tc.balance}, nil
+				queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
+					return user.Account{ID: accountID, BalancePlay: tc.balance}, nil
 				},
 			}
 			acctStr := &mockAcctStorer{}
@@ -216,7 +237,7 @@ func TestProcessGameInsert(t *testing.T) {
 			userCore := user.NewCore(userStr)
 			core := NewCore(acctStr, userCore)
 
-			err := core.ProcessGameInsert(context.Background(), userID, tc.count, "ref-123")
+			err := core.ProcessGameInsert(context.Background(), accountID, tc.count, "ref-123")
 
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
@@ -229,13 +250,13 @@ func TestProcessGameInsert(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ProcessHeatReward
+// ProcessGameReward
 // ---------------------------------------------------------------------------
 
-func TestProcessHeatReward(t *testing.T) {
+func TestProcessGameReward(t *testing.T) {
 	t.Parallel()
 
-	userID := uuid.New()
+	accountID := uuid.New()
 
 	var updatedCurrency string
 	var updatedDelta decimal.Decimal
@@ -253,13 +274,13 @@ func TestProcessHeatReward(t *testing.T) {
 	core := NewCore(acctStr, userCore)
 
 	amount := decimal.NewFromFloat(10.5)
-	err := core.ProcessHeatReward(context.Background(), userID, amount, "ref-reward-1")
+	err := core.ProcessGameReward(context.Background(), accountID, amount, "ref-reward-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if updatedCurrency != "COIN" {
-		t.Errorf("currency = %q, want COIN", updatedCurrency)
+	if updatedCurrency != "CASH" {
+		t.Errorf("currency = %q, want CASH", updatedCurrency)
 	}
 	if !updatedDelta.Equal(amount) {
 		t.Errorf("delta = %s, want %s", updatedDelta, amount)
