@@ -119,8 +119,8 @@ export class VFXManager {
     this.dropZoneVFX = new DropZoneVFX(this.scene, backWallGroup);
   }
 
-  updateHoleProgress(counter: number, triggerCount: number): void {
-    this.holePortalVFX?.setProgress(counter, triggerCount);
+  updateHoleProgress(holeId: "left" | "right", counter: number, triggerCount: number): void {
+    this.holePortalVFX?.setProgress(holeId, counter, triggerCount);
   }
 
   dispose(): void {
