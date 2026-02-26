@@ -1,6 +1,6 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
 import { create, toBinary } from "@bufbuild/protobuf";
-import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage, SlotStatusMessage } from "@coin-pusher/shared";
+import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage, SlotStatusMessage, WheelSpinMessage, WheelCounterMessage } from "@coin-pusher/shared";
 import { GameMessageSchema } from "@coin-pusher/shared";
 
 const sc = StringCodec();
@@ -388,6 +388,33 @@ export class NATSClient {
       },
     });
     this.nc!.publish(`game.${this.room}.queue_update`, toBinary(GameMessageSchema, gm));
+  }
+
+  // Publish jackpot wheel spin result (protobuf encoded)
+  publishWheelSpin(msg: WheelSpinMessage): void {
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "wheelSpin",
+        value: {
+          segment: msg.segment,
+          reward: msg.reward,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.wheel_spin`, toBinary(GameMessageSchema, gm));
+  }
+
+  // Publish jackpot wheel counter update (protobuf encoded)
+  publishWheelCounter(msg: WheelCounterMessage): void {
+    const gm = create(GameMessageSchema, {
+      msg: {
+        case: "wheelCounter",
+        value: {
+          counter: msg.counter,
+        },
+      },
+    });
+    this.nc!.publish(`game.${this.room}.wheel_counter`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish slot status for backend sync (JSON encoded, 1Hz)

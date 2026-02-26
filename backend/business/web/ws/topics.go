@@ -26,3 +26,5 @@ func TopicHeatUpdate(room string) string           { return "game." + room + ".h
 func TopicCoinSpawn(room string) string            { return "game." + room + ".coin_spawn" }
 func TopicQueueUpdate(room string) string          { return "game." + room + ".queue_update" }
 func TopicSlotStatus(room string) string           { return "game." + room + ".slot_status" }
+func TopicWheelSpin(room string) string            { return "game." + room + ".wheel_spin" }
+func TopicWheelCounter(room string) string         { return "game." + room + ".wheel_counter" }

@@ -99,6 +99,15 @@ function App() {
       setSlotCounter(counter);
     });
 
+    // Set jackpot wheel callbacks
+    gameClient.onWheelSpin((segment, reward) => {
+      sceneManager.spinJackpotWheel(segment, reward);
+    });
+
+    gameClient.onWheelCounter((counter) => {
+      sceneManager.updateWheelCounter(counter);
+    });
+
     // Set ability event callback — plays VFX/sound + syncs cooldown for ALL clients
     gameClient.onAbilityEvent((ability, x, z) => {
       const platformY = 0.25 + 0.05 / 2;

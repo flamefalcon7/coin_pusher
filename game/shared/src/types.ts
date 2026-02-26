@@ -248,6 +248,19 @@ export type SlotStatusMessage = {
   tick: number;
 };
 
+// Server → Client: Jackpot wheel spin result
+export type WheelSpinMessage = {
+  op: "wheel_spin";
+  segment: number;
+  reward: number;
+};
+
+// Server → Client: Jackpot wheel counter update
+export type WheelCounterMessage = {
+  op: "wheel_counter";
+  counter: number;
+};
+
 // Server → Client: Batch insert acknowledgement
 export type BatchInsertAckMessage = {
   op: "batch_insert_ack";
@@ -265,6 +278,8 @@ export type ServerMessage =
   | PongMessage
   | SlotMachineSpinMessage
   | SlotMachineCounterMessage
+  | WheelSpinMessage
+  | WheelCounterMessage
   | AbilityEventMessage
   | CoinSpawnMessage
   | HeatUpdateMessage
@@ -469,6 +484,16 @@ export const SLOT_MACHINE_CONFIG = {
   SPIN_DURATION: 3500, // ms total reel animation time
   BONUS_SPAWN_DELAY: 4000, // ms after spin starts before bonus coins drop
   BONUS_SPAWN_INTERVAL: 30, // ms between each bonus coin spawn
+} as const;
+
+// Jackpot wheel configuration
+export const JACKPOT_WHEEL_CONFIG = {
+  TRIGGER_COUNT: 10, // coins through right wall to trigger spin
+  SEGMENTS: 8,
+  SEGMENT_REWARDS: [1, 2, 3, 5, 1, 2, 3, 10] as const,
+  SPIN_DURATION: 4000, // ms total spin animation time
+  WIDTH: 0.30, // meters — wheel diameter reference
+  HEIGHT: 0.40, // meters — backplate height
 } as const;
 
 // Heat system configuration

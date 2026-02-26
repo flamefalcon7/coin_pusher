@@ -168,6 +168,19 @@ export class WebSocketClient {
           pending: v.pending,
         };
       }
+      case "wheelSpin": {
+        const v = msg.value;
+        return {
+          op: "wheel_spin",
+          segment: v.segment,
+          reward: v.reward,
+        };
+      }
+      case "wheelCounter":
+        return {
+          op: "wheel_counter",
+          counter: msg.value.counter,
+        };
       default:
         return null;
     }
