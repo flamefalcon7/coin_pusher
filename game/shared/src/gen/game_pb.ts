@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file game.proto.
  */
 export const file_game: GenFile = /*@__PURE__*/
-  fileDesc("CgpnYW1lLnByb3RvEgpjb2lucHVzaGVyIocDCgtHYW1lTWVzc2FnZRItCgtzdGF0ZV9kZWx0YRgBIAEoCzIWLmNvaW5wdXNoZXIuU3RhdGVEZWx0YUgAEiYKB2Rlc3Bhd24YAiABKAsyEy5jb2lucHVzaGVyLkRlc3Bhd25IABIzCg53b3JsZF9zbmFwc2hvdBgDIAEoCzIZLmNvaW5wdXNoZXIuV29ybGRTbmFwc2hvdEgAEikKCXNsb3Rfc3BpbhgEIAEoCzIULmNvaW5wdXNoZXIuU2xvdFNwaW5IABIvCgxzbG90X2NvdW50ZXIYBSABKAsyFy5jb2lucHVzaGVyLlNsb3RDb3VudGVySAASKwoHYWJpbGl0eRgGIAEoCzIYLmNvaW5wdXNoZXIuQWJpbGl0eUV2ZW50SAASKwoKY29pbl9zcGF3bhgHIAEoCzIVLmNvaW5wdXNoZXIuQ29pblNwYXduSAASLwoMcXVldWVfdXBkYXRlGAggASgLMhcuY29pbnB1c2hlci5RdWV1ZVVwZGF0ZUgAQgUKA21zZyKBAQoKQ29pblVwZGF0ZRIKCgJpZBgBIAEoDRINCgVwb3NfeBgCIAEoAhINCgVwb3NfeRgDIAEoAhINCgVwb3NfehgEIAEoAhINCgVyb3RfeBgFIAEoAhINCgVyb3RfeRgGIAEoAhINCgVyb3RfehgHIAEoAhINCgVyb3RfdxgIIAEoAiJqCgpTdGF0ZURlbHRhEhMKC3NlcnZlcl90aW1lGAEgASgBEgwKBHRpY2sYAiABKA0SJwoHdXBkYXRlcxgDIAMoCzIWLmNvaW5wdXNoZXIuQ29pblVwZGF0ZRIQCghwdXNoZXJfehgEIAEoAiIkCgdEZXNwYXduEgwKBHRpY2sYASABKA0SCwoDaWRzGAIgAygNIpkBCglCb2R5U3RhdGUSCgoCaWQYASABKA0SDAoEdHlwZRgCIAEoCRINCgVwb3NfeBgDIAEoAhINCgVwb3NfeRgEIAEoAhINCgVwb3NfehgFIAEoAhINCgVyb3RfeBgGIAEoAhINCgVyb3RfeRgHIAEoAhINCgVyb3RfehgIIAEoAhINCgVyb3RfdxgJIAEoAhIJCgF6GAogASgCInMKDVdvcmxkU25hcHNob3QSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRITCgtzZXJ2ZXJfdGltZRgCIAEoARIMCgR0aWNrGAMgASgNEiUKBmJvZGllcxgEIAMoCzIVLmNvaW5wdXNoZXIuQm9keVN0YXRlIioKCFNsb3RTcGluEg0KBXJlZWxzGAEgAygJEg8KB2phY2twb3QYAiABKAgiHgoLU2xvdENvdW50ZXISDwoHY291bnRlchgBIAEoDSJLCgxBYmlsaXR5RXZlbnQSDwoHYWJpbGl0eRgBIAEoCRIOCgF4GAIgASgCSACIAQESDgoBehgDIAEoAkgBiAEBQgQKAl94QgQKAl96IjYKCUNvaW5TcGF3bhIpCgVjb2lucxgBIAMoCzIaLmNvaW5wdXNoZXIuQ29pblNwYXduRW50cnkiLgoOQ29pblNwYXduRW50cnkSCgoCaWQYASABKA0SEAoIb3duZXJfaWQYAiABKAkiLwoLUXVldWVVcGRhdGUSDwoHdXNlcl9pZBgBIAEoCRIPCgdwZW5kaW5nGAIgASgNYgZwcm90bzM");
+  fileDesc("CgpnYW1lLnByb3RvEgpjb2lucHVzaGVyIucDCgtHYW1lTWVzc2FnZRItCgtzdGF0ZV9kZWx0YRgBIAEoCzIWLmNvaW5wdXNoZXIuU3RhdGVEZWx0YUgAEiYKB2Rlc3Bhd24YAiABKAsyEy5jb2lucHVzaGVyLkRlc3Bhd25IABIzCg53b3JsZF9zbmFwc2hvdBgDIAEoCzIZLmNvaW5wdXNoZXIuV29ybGRTbmFwc2hvdEgAEikKCXNsb3Rfc3BpbhgEIAEoCzIULmNvaW5wdXNoZXIuU2xvdFNwaW5IABIvCgxzbG90X2NvdW50ZXIYBSABKAsyFy5jb2lucHVzaGVyLlNsb3RDb3VudGVySAASKwoHYWJpbGl0eRgGIAEoCzIYLmNvaW5wdXNoZXIuQWJpbGl0eUV2ZW50SAASKwoKY29pbl9zcGF3bhgHIAEoCzIVLmNvaW5wdXNoZXIuQ29pblNwYXduSAASLwoMcXVldWVfdXBkYXRlGAggASgLMhcuY29pbnB1c2hlci5RdWV1ZVVwZGF0ZUgAEisKCndoZWVsX3NwaW4YCSABKAsyFS5jb2lucHVzaGVyLldoZWVsU3BpbkgAEjEKDXdoZWVsX2NvdW50ZXIYCiABKAsyGC5jb2lucHVzaGVyLldoZWVsQ291bnRlckgAQgUKA21zZyKBAQoKQ29pblVwZGF0ZRIKCgJpZBgBIAEoDRINCgVwb3NfeBgCIAEoAhINCgVwb3NfeRgDIAEoAhINCgVwb3NfehgEIAEoAhINCgVyb3RfeBgFIAEoAhINCgVyb3RfeRgGIAEoAhINCgVyb3RfehgHIAEoAhINCgVyb3RfdxgIIAEoAiJqCgpTdGF0ZURlbHRhEhMKC3NlcnZlcl90aW1lGAEgASgBEgwKBHRpY2sYAiABKA0SJwoHdXBkYXRlcxgDIAMoCzIWLmNvaW5wdXNoZXIuQ29pblVwZGF0ZRIQCghwdXNoZXJfehgEIAEoAiIkCgdEZXNwYXduEgwKBHRpY2sYASABKA0SCwoDaWRzGAIgAygNIpkBCglCb2R5U3RhdGUSCgoCaWQYASABKA0SDAoEdHlwZRgCIAEoCRINCgVwb3NfeBgDIAEoAhINCgVwb3NfeRgEIAEoAhINCgVwb3NfehgFIAEoAhINCgVyb3RfeBgGIAEoAhINCgVyb3RfeRgHIAEoAhINCgVyb3RfehgIIAEoAhINCgVyb3RfdxgJIAEoAhIJCgF6GAogASgCInMKDVdvcmxkU25hcHNob3QSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRITCgtzZXJ2ZXJfdGltZRgCIAEoARIMCgR0aWNrGAMgASgNEiUKBmJvZGllcxgEIAMoCzIVLmNvaW5wdXNoZXIuQm9keVN0YXRlIioKCFNsb3RTcGluEg0KBXJlZWxzGAEgAygJEg8KB2phY2twb3QYAiABKAgiHgoLU2xvdENvdW50ZXISDwoHY291bnRlchgBIAEoDSJLCgxBYmlsaXR5RXZlbnQSDwoHYWJpbGl0eRgBIAEoCRIOCgF4GAIgASgCSACIAQESDgoBehgDIAEoAkgBiAEBQgQKAl94QgQKAl96IjYKCUNvaW5TcGF3bhIpCgVjb2lucxgBIAMoCzIaLmNvaW5wdXNoZXIuQ29pblNwYXduRW50cnkiLgoOQ29pblNwYXduRW50cnkSCgoCaWQYASABKA0SEAoIb3duZXJfaWQYAiABKAkiLwoLUXVldWVVcGRhdGUSDwoHdXNlcl9pZBgBIAEoCRIPCgdwZW5kaW5nGAIgASgNIiwKCVdoZWVsU3BpbhIPCgdzZWdtZW50GAEgASgNEg4KBnJld2FyZBgCIAEoDSIfCgxXaGVlbENvdW50ZXISDwoHY291bnRlchgBIAEoDWIGcHJvdG8z");
 
 /**
  * @generated from message coinpusher.GameMessage
@@ -67,6 +67,18 @@ export type GameMessage = Message<"coinpusher.GameMessage"> & {
      */
     value: QueueUpdate;
     case: "queueUpdate";
+  } | {
+    /**
+     * @generated from field: coinpusher.WheelSpin wheel_spin = 9;
+     */
+    value: WheelSpin;
+    case: "wheelSpin";
+  } | {
+    /**
+     * @generated from field: coinpusher.WheelCounter wheel_counter = 10;
+     */
+    value: WheelCounter;
+    case: "wheelCounter";
   } | { case: undefined; value?: undefined };
 };
 
@@ -403,4 +415,43 @@ export type QueueUpdate = Message<"coinpusher.QueueUpdate"> & {
  */
 export const QueueUpdateSchema: GenMessage<QueueUpdate> = /*@__PURE__*/
   messageDesc(file_game, 11);
+
+/**
+ * @generated from message coinpusher.WheelSpin
+ */
+export type WheelSpin = Message<"coinpusher.WheelSpin"> & {
+  /**
+   * @generated from field: uint32 segment = 1;
+   */
+  segment: number;
+
+  /**
+   * @generated from field: uint32 reward = 2;
+   */
+  reward: number;
+};
+
+/**
+ * Describes the message coinpusher.WheelSpin.
+ * Use `create(WheelSpinSchema)` to create a new message.
+ */
+export const WheelSpinSchema: GenMessage<WheelSpin> = /*@__PURE__*/
+  messageDesc(file_game, 12);
+
+/**
+ * @generated from message coinpusher.WheelCounter
+ */
+export type WheelCounter = Message<"coinpusher.WheelCounter"> & {
+  /**
+   * @generated from field: uint32 counter = 1;
+   */
+  counter: number;
+};
+
+/**
+ * Describes the message coinpusher.WheelCounter.
+ * Use `create(WheelCounterSchema)` to create a new message.
+ */
+export const WheelCounterSchema: GenMessage<WheelCounter> = /*@__PURE__*/
+  messageDesc(file_game, 13);
 

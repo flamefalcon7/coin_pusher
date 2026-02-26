@@ -11,7 +11,7 @@ import type {
   StateUpdate,
   SlotSymbol,
 } from "@coin-pusher/shared";
-import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG, SLOT_MACHINE_CONFIG, DespawnZone } from "@coin-pusher/shared";
+import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG, SLOT_MACHINE_CONFIG, JACKPOT_WHEEL_CONFIG, DespawnZone } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
 
 export class GameLoop {
@@ -51,6 +51,10 @@ export class GameLoop {
   // Slot machine state
   private slotCounter: number = 0;
   private slotSpinning: boolean = false;
+
+  // Jackpot wheel state
+  private wheelCounter: number = 0;
+  private wheelSpinning: boolean = false;
 
   // Tick timing stats
   private tickTimings: number[] = [];
@@ -186,6 +190,7 @@ export class GameLoop {
             this.onLeftWallCoinDespawn();
           } else if (pos.x > -SLOT_MACHINE_CONFIG.X_THRESHOLD && pos.z < SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD) {
             zone = DespawnZone.RIGHT_WALL;
+            this.onRightWallCoinDespawn();
           } else {
             zone = DespawnZone.OTHER;
           }
@@ -809,6 +814,73 @@ export class GameLoop {
     const interval = SLOT_MACHINE_CONFIG.BONUS_SPAWN_INTERVAL;
 
     console.log(`🎰 Spawning ${count} bonus coins...`);
+
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => {
+        // Random X across platform width, high Y for rain effect
+        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
+        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
+        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
+
+        const angle = (Math.random() - 0.5) * Math.PI;
+        const rot: { x: number; y: number; z: number; w: number } = {
+          x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
+        };
+
+        const coinId = this.coinManager.spawnCoinUnchecked(x, y, z, [rot.x, rot.y, rot.z, rot.w]);
+        const coin = new Coin(this.physicsWorld, coinId, x, y, z, rot);
+        this.addCoin(coin);
+      }, i * interval);
+    }
+  }
+
+  // ── Jackpot Wheel ──────────────────────────────────────────────────
+
+  private onRightWallCoinDespawn(): void {
+    if (this.wheelSpinning) return;
+
+    this.wheelCounter++;
+    this.natsClient.publishWheelCounter({
+      op: "wheel_counter",
+      counter: this.wheelCounter,
+    });
+
+    console.log(`🎡 Right wall coin #${this.wheelCounter}/${JACKPOT_WHEEL_CONFIG.TRIGGER_COUNT}`);
+
+    if (this.wheelCounter >= JACKPOT_WHEEL_CONFIG.TRIGGER_COUNT) {
+      this.triggerWheelSpin();
+    }
+  }
+
+  private triggerWheelSpin(): void {
+    this.wheelSpinning = true;
+    this.wheelCounter = 0;
+
+    // Pick random segment 0-7
+    const segment = Math.floor(Math.random() * JACKPOT_WHEEL_CONFIG.SEGMENTS);
+    const reward = JACKPOT_WHEEL_CONFIG.SEGMENT_REWARDS[segment];
+
+    // Publish counter reset + spin result
+    this.natsClient.publishWheelCounter({ op: "wheel_counter", counter: 0 });
+    this.natsClient.publishWheelSpin({
+      op: "wheel_spin",
+      segment,
+      reward,
+    });
+
+    console.log(`🎡 Spin: segment=${segment}, reward=${reward} coins`);
+
+    // Wait for spin animation to finish, then spawn bonus coins
+    setTimeout(() => {
+      this.spawnWheelBonusCoins(reward);
+      this.wheelSpinning = false;
+    }, JACKPOT_WHEEL_CONFIG.SPIN_DURATION);
+  }
+
+  private spawnWheelBonusCoins(count: number): void {
+    const interval = SLOT_MACHINE_CONFIG.BONUS_SPAWN_INTERVAL;
+
+    console.log(`🎡 Spawning ${count} wheel bonus coins...`);
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {

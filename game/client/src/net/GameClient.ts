@@ -22,6 +22,8 @@ export type CoinSpawnCallback = (coins: { id: number; owner_id: string }[]) => v
 export type HeatUpdateCallback = (players: { user_id: string; share: number; raw_heat: number }[]) => void;
 export type QueueUpdateCallback = (userId: string, pending: number) => void;
 export type SlotStatusCallback = (counts: number[]) => void;
+export type WheelSpinCallback = (segment: number, reward: number) => void;
+export type WheelCounterCallback = (counter: number) => void;
 export type BatchInsertAckCallback = (queued: number, error?: string) => void;
 export type RewardCallback = (userId: string, amount: number, balance: string) => void;
 
@@ -39,6 +41,8 @@ export class GameClient {
   private coinSpawnCallback?: CoinSpawnCallback;
   private heatUpdateCallback?: HeatUpdateCallback;
   private queueUpdateCallback?: QueueUpdateCallback;
+  private wheelSpinCallback?: WheelSpinCallback;
+  private wheelCounterCallback?: WheelCounterCallback;
   private slotStatusCallback?: SlotStatusCallback;
   private batchInsertAckCallback?: BatchInsertAckCallback;
   private rewardCallback?: RewardCallback;
@@ -171,6 +175,18 @@ export class GameClient {
       case "queue_update":
         if (this.queueUpdateCallback) {
           this.queueUpdateCallback(message.user_id, message.pending);
+        }
+        break;
+
+      case "wheel_spin":
+        if (this.wheelSpinCallback) {
+          this.wheelSpinCallback(message.segment, message.reward);
+        }
+        break;
+
+      case "wheel_counter":
+        if (this.wheelCounterCallback) {
+          this.wheelCounterCallback(message.counter);
         }
         break;
 
@@ -323,6 +339,14 @@ export class GameClient {
 
   onQueueUpdate(callback: QueueUpdateCallback): void {
     this.queueUpdateCallback = callback;
+  }
+
+  onWheelSpin(callback: WheelSpinCallback): void {
+    this.wheelSpinCallback = callback;
+  }
+
+  onWheelCounter(callback: WheelCounterCallback): void {
+    this.wheelCounterCallback = callback;
   }
 
   onSlotStatus(callback: SlotStatusCallback): void {

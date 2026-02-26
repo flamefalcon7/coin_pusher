@@ -119,6 +119,24 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// wheel_spin: broadcast raw protobuf bytes to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicWheelSpin(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// wheel_counter: broadcast raw protobuf bytes to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicWheelCounter(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	// slot_status: JSON from game server → re-encode as msgpack for WS clients.
 	sub, err = rl.nc.Subscribe(TopicSlotStatus(rl.room), func(msg *nats.Msg) {
 		var status struct {

@@ -11,6 +11,8 @@ message GameMessage {
     AbilityEvent ability = 6;
     CoinSpawn coin_spawn = 7;
     QueueUpdate queue_update = 8;
+    WheelSpin wheel_spin = 9;
+    WheelCounter wheel_counter = 10;
   }
 }
 
@@ -84,4 +86,13 @@ message CoinSpawnEntry {
 message QueueUpdate {
   string user_id = 1;
   uint32 pending = 2;
+}
+
+message WheelSpin {
+  uint32 segment = 1;
+  uint32 reward = 2;
+}
+
+message WheelCounter {
+  uint32 counter = 1;
 }
