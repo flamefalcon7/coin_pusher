@@ -28,8 +28,9 @@ export class HolePortalVFX {
   private particleTexture: Texture;
   private elapsed: number = 0;
 
-  // Progress state (shared for both, but only left has mechanics)
-  private progress: number = 0; // 0..1
+  // Per-side progress
+  private leftProgress: number = 0; // 0..1
+  private rightProgress: number = 0; // 0..1
 
   // Color constants
   private static TEAL = new Color3(0.3, 0.9, 0.85);
@@ -238,26 +239,35 @@ export class HolePortalVFX {
     return ps;
   }
 
-  setProgress(counter: number, triggerCount: number): void {
-    this.progress = Math.min(1, counter / triggerCount);
+  setProgress(holeId: "left" | "right", counter: number, triggerCount: number): void {
+    const progress = Math.min(1, counter / triggerCount);
+    if (holeId === "left") {
+      this.leftProgress = progress;
+    } else {
+      this.rightProgress = progress;
+    }
 
-    // Update particle emit rates based on progress
+    // Update particle emit rate for the matching portal
     for (const portal of this.portals) {
-      portal.particles.emitRate = 15 + this.progress * 15;
+      if (portal.holeId === holeId) {
+        portal.particles.emitRate = 15 + progress * 15;
+      }
     }
   }
 
   update(dt: number): void {
     this.elapsed += dt;
 
-    // Pulse speed: 1 Hz at 0% -> 4 Hz at 100%
-    const pulseHz = 1 + this.progress * 3;
-    const pulse = (Math.sin(this.elapsed * pulseHz * Math.PI * 2) + 1) * 0.5;
-
-    // Frame color: teal at low progress -> gold at high progress
-    const frameColor = Color3.Lerp(HolePortalVFX.TEAL, HolePortalVFX.GOLD, this.progress);
-
     for (const portal of this.portals) {
+      const progress = portal.holeId === "left" ? this.leftProgress : this.rightProgress;
+
+      // Pulse speed: 1 Hz at 0% -> 4 Hz at 100%
+      const pulseHz = 1 + progress * 3;
+      const pulse = (Math.sin(this.elapsed * pulseHz * Math.PI * 2) + 1) * 0.5;
+
+      // Frame color: teal at low progress -> gold at high progress
+      const frameColor = Color3.Lerp(HolePortalVFX.TEAL, HolePortalVFX.GOLD, progress);
+
       // Frame emissive intensity pulsing
       const intensity = 0.6 + pulse * 0.8;
       const frameMat = portal.frame.material as StandardMaterial;
@@ -268,7 +278,7 @@ export class HolePortalVFX {
       );
 
       // Corner gem scale pulse (amplified by progress)
-      const gemPulseAmp = 0.8 + this.progress * 0.6;
+      const gemPulseAmp = 0.8 + progress * 0.6;
       const gemScale = 1.0 + pulse * 0.3 * gemPulseAmp;
       for (const gem of portal.cornerGems) {
         gem.scaling.setAll(gemScale);

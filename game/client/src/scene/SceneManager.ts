@@ -1,6 +1,6 @@
 import { Engine, Scene, Color3, Color4, ArcRotateCamera, ShaderMaterial, Vector3 } from "@babylonjs/core";
 import type { SlotSymbol } from "@coin-pusher/shared";
-import { SLOT_MACHINE_CONFIG, SUPER_PUSH_CONFIG } from "@coin-pusher/shared";
+import { SLOT_MACHINE_CONFIG, SUPER_PUSH_CONFIG, JACKPOT_WHEEL_CONFIG } from "@coin-pusher/shared";
 import { CameraSetup } from "./CameraSetup";
 import { Lighting } from "./Lighting";
 import { StaticMeshes } from "./StaticMeshes";
@@ -574,7 +574,7 @@ export class SceneManager {
   updateSlotCounter(counter: number): void {
     const slotMachine = this.staticMeshes.getSlotMachine();
     slotMachine?.updateCounter(counter);
-    this.vfxManager.updateHoleProgress(counter, SLOT_MACHINE_CONFIG.TRIGGER_COUNT);
+    this.vfxManager.updateHoleProgress("left", counter, SLOT_MACHINE_CONFIG.TRIGGER_COUNT);
   }
 
   // ── Jackpot Wheel ───────────────────────────────────────────────────────
@@ -588,6 +588,7 @@ export class SceneManager {
   updateWheelCounter(counter: number): void {
     const wheel = this.staticMeshes.getJackpotWheel();
     wheel?.updateCounter(counter);
+    this.vfxManager.updateHoleProgress("right", counter, JACKPOT_WHEEL_CONFIG.TRIGGER_COUNT);
   }
 
   getJackpotWheel() {
