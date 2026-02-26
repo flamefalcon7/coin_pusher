@@ -37,6 +37,8 @@ services:
       BACKEND_NATS_URL: nats://nats:4222
       BACKEND_AUTH_DEV_MODE: "false"
       BACKEND_AUTH_KEYS_FOLDER: /app/zarf/keys
+      BACKEND_WEB_CORS_ORIGINS: ${CORS_ORIGINS}
+      BACKEND_GAME_API_KEY: ${GAME_API_KEY}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }

@@ -8,7 +8,8 @@ import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 import { HeatMeter } from "./ui/HeatMeter";
 import { RewardToast } from "./ui/RewardToast";
 import { WalletLogin } from "./ui/WalletLogin";
-import { getSavedToken, clearToken, type AuthResult } from "./net/auth";
+import { getSavedAuth, clearAuth, type AuthResult, type Account } from "./net/auth";
+import { PlayerInfo } from "./ui/PlayerInfo";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -24,30 +25,31 @@ const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:4000`;
 
 function App() {
-  const [token, setToken] = useState<string | null>(() => getSavedToken());
+  const [auth, setAuth] = useState(() => getSavedAuth());
 
   const handleLoginSuccess = useCallback((result: AuthResult) => {
-    setToken(result.token);
+    setAuth({ token: result.token, account: result.account });
   }, []);
 
   const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setToken(null);
+    clearAuth();
+    setAuth(null);
   }, []);
 
-  if (!token) {
+  if (!auth) {
     return <WalletLogin apiBase={API_URL} onSuccess={handleLoginSuccess} />;
   }
 
-  return <Game token={token} onAuthFailure={handleAuthFailure} />;
+  return <Game token={auth.token} account={auth.account} onAuthFailure={handleAuthFailure} />;
 }
 
 interface GameProps {
   token: string;
+  account: Account | null;
   onAuthFailure: () => void;
 }
 
-function Game({ token, onAuthFailure }: GameProps) {
+function Game({ token, account, onAuthFailure }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gameClientRef = useRef<GameClient | null>(null);
@@ -82,6 +84,7 @@ function Game({ token, onAuthFailure }: GameProps) {
   const rewardIdRef = useRef(0);
   const [insertAckMsg, setInsertAckMsg] = useState<string | null>(null);
   const lastRequestedAmount = useRef(0);
+  const [balance, setBalance] = useState<string>(account?.balance_play ?? "0");
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -201,7 +204,8 @@ function Game({ token, onAuthFailure }: GameProps) {
       setSlotCounts(counts);
     });
 
-    gameClient.onBatchInsertAck((queued, error) => {
+    gameClient.onBatchInsertAck((queued, error, bal) => {
+      if (bal) setBalance(bal);
       if (error === "slot_full") {
         setInsertAckMsg("Slot is full!");
         setTimeout(() => setInsertAckMsg(null), 2000);
@@ -212,9 +216,10 @@ function Game({ token, onAuthFailure }: GameProps) {
       lastRequestedAmount.current = 0;
     });
 
-    gameClient.onReward((userId, amount, _balance) => {
+    gameClient.onReward((userId, amount, bal) => {
       const myUserId = gameClient.getUserId();
       if (userId === myUserId) {
+        if (bal) setBalance(bal);
         rewardIdRef.current++;
         setRewardToast({ amount, id: rewardIdRef.current });
       }
@@ -589,6 +594,7 @@ function Game({ token, onAuthFailure }: GameProps) {
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
+      <PlayerInfo balance={balance} onLogout={onAuthFailure} />
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
 
       <Toolbar

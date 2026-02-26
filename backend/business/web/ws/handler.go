@@ -62,30 +62,31 @@ func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, g
 
 // ServeHTTP upgrades to WS, validates auth, starts read/write pumps.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Auth check: get token from ?token= query param.
-	var userID string
-	if h.auth.IsDevMode() {
-		userID = uuid.NewString()
-	} else {
-		tokenStr := r.URL.Query().Get("token")
-		if tokenStr == "" {
-			http.Error(w, `{"error":"missing token"}`, http.StatusUnauthorized)
-			return
-		}
-		claims, err := h.auth.ValidateToken(tokenStr)
-		if err != nil {
-			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
-			return
-		}
-		userID = claims.AccountID
-	}
-
-	// Upgrade to WebSocket.
+	// Upgrade to WebSocket first, then validate auth.
+	// This lets us send a proper WS close code (4401) instead of HTTP 401,
+	// which the client can detect reliably (HTTP errors only produce code 1006).
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Errorw("ws upgrade failed", "error", err)
 		return
 	}
+
+	// Auth check: get token from ?token= query param.
+	tokenStr := r.URL.Query().Get("token")
+	if tokenStr == "" {
+		conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(4401, "missing token"))
+		conn.Close()
+		return
+	}
+	claims, err := h.auth.ValidateToken(tokenStr)
+	if err != nil {
+		conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(4401, "invalid token"))
+		conn.Close()
+		return
+	}
+	userID := claims.AccountID
 
 	c := NewConnection(conn, h.hub, userID)
 	h.hub.Add(c)
@@ -439,31 +440,23 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		accepted = space
 	}
 
-	var userID uuid.UUID
-	var balanceStr string
-
 	userID, err := uuid.Parse(c.userID)
 	if err != nil {
 		h.log.Errorw("batch_insert invalid user_id", "user_id", c.userID, "error", err)
 		return
 	}
 
-	if h.auth.IsDevMode() {
-		// Dev mode: skip balance checks.
-		balanceStr = "dev"
-	} else {
-		refKey := uuid.NewString()
-		result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey)
-		if err != nil {
-			h.log.Errorw("batch_insert process error", "error", err, "user_id", c.userID)
-			return
-		}
-		if !result.Success {
-			h.log.Warnw("batch_insert failed", "error", result.Error, "user_id", c.userID)
-			return
-		}
-		balanceStr = result.BalancePlay
+	refKey := uuid.NewString()
+	result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey)
+	if err != nil {
+		h.log.Errorw("batch_insert process error", "error", err, "user_id", c.userID)
+		return
 	}
+	if !result.Success {
+		h.log.Warnw("batch_insert failed", "error", result.Error, "user_id", c.userID)
+		return
+	}
+	balanceStr := result.BalancePlay
 
 	// Optimistic increment slot count.
 	atomic.AddInt64(&h.slotCounts[slotID], accepted)

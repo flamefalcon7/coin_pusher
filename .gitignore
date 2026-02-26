@@ -51,6 +51,10 @@ logs/
 .agents/
 .cursor/
 
+# Go build artifacts
+backend/api
+backend/admin
+
 # ssl
 backend/zarf/keys/
 .claude/settings.local.json

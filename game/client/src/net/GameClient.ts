@@ -24,7 +24,7 @@ export type QueueUpdateCallback = (userId: string, pending: number) => void;
 export type SlotStatusCallback = (counts: number[]) => void;
 export type WheelSpinCallback = (segment: number, reward: number) => void;
 export type WheelCounterCallback = (counter: number) => void;
-export type BatchInsertAckCallback = (queued: number, error?: string) => void;
+export type BatchInsertAckCallback = (queued: number, error?: string, balance?: string) => void;
 export type RewardCallback = (userId: string, amount: number, balance: string) => void;
 
 export class GameClient {
@@ -72,10 +72,9 @@ export class GameClient {
     });
 
     this.wsClient.onClose((code) => {
-      if (code === 4401 || code === 4403) {
-        if (this.authFailureCallback) {
-          this.authFailureCallback();
-        }
+      if ((code === 4401 || code === 4403) && this.authFailureCallback) {
+        this.authFailureCallback();
+        return;
       }
       if (this.connectionStatusCallback) {
         this.connectionStatusCallback("disconnected");
@@ -204,7 +203,7 @@ export class GameClient {
 
       case "batch_insert_ack":
         if (this.batchInsertAckCallback) {
-          this.batchInsertAckCallback(message.queued, message.error);
+          this.batchInsertAckCallback(message.queued, message.error, message.balance);
         }
         break;
 
