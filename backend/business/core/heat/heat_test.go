@@ -139,14 +139,14 @@ func TestShares_Whale(t *testing.T) {
 	}
 }
 
-func TestShares_TooManyPlayers(t *testing.T) {
+func TestShares_ManyPlayers_SmoothGuaranteed(t *testing.T) {
 	t.Parallel()
 
 	h := New()
 	ids := make([]uuid.UUID, 25)
 	for i := range ids {
 		ids[i] = uuid.New()
-		h.AddHeat(ids[i], 100)
+		h.AddHeat(ids[i], 100) // equal heat
 	}
 
 	shares := h.GetShares()
@@ -154,13 +154,23 @@ func TestShares_TooManyPlayers(t *testing.T) {
 		t.Fatalf("expected 25 shares, got %d", len(shares))
 	}
 
-	// With 25 players, guaranteed total = 25 * 0.05 = 1.25 >= 1.0
-	// So all players should get even split = 1/25 = 0.04.
+	// With 25 equal players: guaranteed = min(0.05, 1/(2*25)) = 0.02
+	// guaranteedTotal = 0.50, competitive pool = 0.50
+	// Equal heat → equal competitive → each gets 0.02 + 0.50/25 = 0.04.
 	expected := 1.0 / 25.0
 	for _, s := range shares {
 		if math.Abs(s.Share-expected) > 0.001 {
-			t.Errorf("player %s share = %f, want %f (even split)", s.UserID, s.Share, expected)
+			t.Errorf("player %s share = %f, want %f", s.UserID, s.Share, expected)
 		}
+	}
+
+	// Verify competitive pool is still meaningful (not near zero).
+	// n=25 → guaranteed=0.02, total guaranteed=0.50, pool=0.50.
+	n := float64(len(shares))
+	guaranteed := math.Min(0.05, 1.0/(2.0*n))
+	pool := 1.0 - n*guaranteed
+	if pool < 0.49 {
+		t.Errorf("competitive pool = %f, want >= 0.50", pool)
 	}
 }
 

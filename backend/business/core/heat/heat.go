@@ -101,29 +101,18 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 	}
 
 	n := float64(len(active))
-	guaranteed := h.guaranteed
-	guaranteedTotal := n * guaranteed
+	// Smooth guaranteed: shrinks with player count, competitive pool ≥ 50%.
+	// n≤10 → 0.05 each (total 0.05n), n>10 → 1/(2n) each (total 0.50).
+	guaranteed := math.Min(h.guaranteed, 1.0/(2.0*n))
+	competitivePool := 1.0 - n*guaranteed
 
 	shares := make([]PlayerShare, 0, len(active))
-
-	if guaranteedTotal >= 1.0 {
-		// Too many players, just split evenly.
-		for _, e := range active {
-			shares = append(shares, PlayerShare{
-				UserID:  e.id,
-				Share:   1.0 / n,
-				RawHeat: e.raw,
-			})
-		}
-	} else {
-		competitivePool := 1.0 - guaranteedTotal
-		for _, e := range active {
-			shares = append(shares, PlayerShare{
-				UserID:  e.id,
-				Share:   guaranteed + competitivePool*(e.eff/totalEff),
-				RawHeat: e.raw,
-			})
-		}
+	for _, e := range active {
+		shares = append(shares, PlayerShare{
+			UserID:  e.id,
+			Share:   guaranteed + competitivePool*(e.eff/totalEff),
+			RawHeat: e.raw,
+		})
 	}
 
 	return shares
