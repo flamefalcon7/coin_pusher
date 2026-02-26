@@ -1,0 +1,620 @@
+# Coin Pusher - Product Spec
+
+## 1. Core Game Loop
+
+### 1.1 What is this game?
+
+A multiplayer online coin pusher — the arcade machine where you drop coins onto a moving platform, hoping to push other coins off the edge for rewards. This version runs in the browser with server-authoritative 3D physics, real-time multiplayer, and a crypto-based economy (USDC deposit/withdraw via multi-chain).
+
+### 1.2 Core Experience Pillars
+
+The game is designed around four reinforcing pillars:
+
+| Pillar | What it feels like | What drives it |
+|---|---|---|
+| **Physical Satisfaction** | Watching a wall of coins cascade off the edge | Rapier 3D physics, dynamic pusher amplitude, BabylonJS rendering |
+| **Multiplayer Tension** | Competing for the same falling coins in real-time | Heat-based reward distribution, shared platform |
+| **Strategic Depth** | Choosing where, when, and how much to invest | Slot targeting, ability timing, batch insert sizing |
+| **Economic Thrill** | The uncertainty of risk vs reward | House edge economy, slot machine jackpots, variable payout |
+
+These aren't independent — the physical cascade creates the payout event, which triggers the competitive tension, which motivates strategic coin placement, which feeds back into bigger cascades.
+
+### 1.3 Player Session Flow
+
+```
+Deposit USDC (multi-chain) → Receive chips (in-game balance)
+    → Insert coins (spend chips)
+    → Watch physics play out on shared platform
+    → Coins fall off edges → Earn rewards (chips)
+    → Withdraw chips as USDC
+```
+
+**House edge**: Long-term RTP < 100%. The platform takes a cut on net payouts. Players can win in the short term through skill and luck, but the math favors the house over time.
+
+> Status: Deposit/withdraw not yet implemented. Currently free-play with unlimited coins.
+
+### 1.4 The Core Cycle (Second-by-Second)
+
+**Drop** — Player chooses a slot (5 positions across the platform) and batch-inserts coins. Coins spawn at the top of the back wall and fall through a pin field that randomizes their landing position.
+
+**Push** — The pusher oscillates forward and back at 0.5 Hz. Each forward stroke nudges coins toward the front edge. The more coins on the platform, the larger the pusher's amplitude (dynamic difficulty: keeps the action flowing when the board is loaded, prevents stagnation).
+
+**Cascade** — Coins near the edge get pushed off. Due to physics stacking, a single push can trigger a chain reaction — this is the core dopamine moment. The unpredictability of which coins fall and how many is what makes each push exciting.
+
+**Reward** — Coins that fall off the front edge are distributed to all active players proportional to their "heat" (recent investment). Side-wall exits feed the slot machine counter.
+
+**Reinvest** — Player decides: insert more coins to maintain heat share, use an ability to trigger a bigger cascade, or wait and conserve.
+
+### 1.5 Why the Pusher Amplitude Scales
+
+| Coin Count | Amplitude | Effect |
+|---|---|---|
+| < 250 | 0.08m (base) | Normal pace, coins accumulate |
+| 250–400 | 0.08m → 0.16m (smoothstep) | Increasing action as board fills |
+| > 400 | 0.16m (max) | Aggressive pushing, frequent cascades |
+
+**Design intent**: Prevents the "dead board" problem where too many coins pile up and nothing moves. As the board fills, the pusher automatically works harder, ensuring a steady flow of payoff events. This also creates a natural rhythm — the board loads up, then clears in a satisfying wave.
+
+### 1.6 Drop Mechanics & Fairness
+
+Players don't drop coins one at a time — they batch-insert into one of 5 slots. Each slot has an independent queue with round-robin dispatch across users.
+
+**Why 5 fixed slots (not free-aim)?**
+- Pin field is aligned with slot positions — each slot feeds a consistent physics path
+- Prevents "pixel-perfect aiming" from dominating — there's still randomness from pin bounces
+- Enables strategic choice: left/right slots feed side-wall exits (slot machine), center slots maximize front-edge cascades
+
+**Why round-robin?**
+- If player A queues 100 coins and player B queues 10, they alternate turns: A, B, A, B... until B runs out, then A continues. No one can flood a slot and starve others.
+
+**Why per-slot caps (500)?**
+- Prevents a single player from locking up a slot for minutes. If you hit the cap, you must wait for coins to drain before queuing more.
+
+### 1.7 Coin Physics & Feel
+
+Coins spawn at the top of the back wall, fall through a pin field, and land on the pusher platform.
+
+**Pin field**: 5 rows of staggered pins on the back wall. Each pin collision applies a small random lateral impulse — this is what turns a predictable drop into a chaotic scatter. The pin layout is aligned with slot positions so each slot has a distinct but overlapping distribution of landing zones.
+
+**Platform tilt**: 2° forward tilt. Coins naturally want to roll toward the front edge, but friction (0.7) keeps them in place until the pusher shoves them. This creates tension — coins are always "almost" falling.
+
+**Front lip**: A small wedge (0.035m) at the front edge. Coins don't just slide off — they need enough momentum to clear the lip. This makes near-edge coins more valuable (one more push might send them over) and creates the "will it fall?" anticipation.
+
+**Sleeping optimization**: Coins that stop moving go to sleep (no physics cost). They only wake when the pusher or another coin hits them. This allows 1000+ coins on the board without killing performance.
+
+### 1.8 Reward Distribution (Heat System)
+
+When coins fall off the front edge, they're not credited to whoever "pushed" them — that's impossible to attribute in a shared physics simulation. Instead, rewards are distributed based on **heat** (recent investment).
+
+**How heat works**:
+- Insert coins → gain heat
+- Heat decays exponentially (half-life: 180 seconds)
+- Your share = your effective heat / total effective heat
+- Effective heat = raw_heat ^ 0.7 (diminishing returns)
+- Every player gets at least 5% guaranteed floor
+
+**Why this design?**
+
+| Rule | Prevents | Enables |
+|---|---|---|
+| Exponential decay (180s) | AFK leeching — stop investing, your share drops to zero in ~15 min | Active play rewarded |
+| Diminishing returns (α=0.7) | Whale domination — spending 10× more doesn't give 10× the share | Smaller players stay competitive |
+| 5% guaranteed floor | New player gets nothing on first join | Immediate reward feedback, encourages continued play |
+
+### 1.9 Side Exits & Slot Machine
+
+Coins can also exit through openings in the left and right side walls.
+
+**Left wall exits** feed a slot machine counter. Every 10 coins that exit through the left wall trigger a slot spin with 3 reels (BTC/ETH/SOL symbols).
+
+- **Jackpot** (all 3 match): 1/27 probability → 100 bonus coins rain onto the platform
+- **No match**: Spin animation plays, no bonus
+
+**Design intent**: Side exits are the "bonus game within the game." Players can strategically target left slots to feed the slot machine, but it comes at the cost of fewer front-edge cascades. The 1/27 jackpot rate with 100-coin payout creates high-variance excitement — most spins give nothing, but a jackpot floods the board and benefits everyone.
+
+> Right wall exits: Currently counted but not tied to a reward mechanic. Reserved for future expansion.
+
+> Slot machine numbers (1/27, 100 coins) are placeholder values, not yet tuned for target RTP.
+
+---
+
+## 2. Abilities
+
+### 2.1 Design Philosophy
+
+Abilities are the player's tools to **actively influence physics** instead of passively watching the pusher work. They serve three purposes:
+
+1. **Agency** — Without abilities, the game is "insert coin and wait." Abilities give the player meaningful decisions every few seconds.
+2. **Spectacle** — Tornado, lightning, explosions create visual drama. Even when they don't optimize rewards, they're fun to watch and feel powerful.
+3. **Strategic tradeoffs** — Each ability has different strengths. Choosing the right one at the right time separates skilled players from random button-mashers.
+
+All abilities are **server-authoritative** — the client sends a request, the server validates cooldowns and executes the physics. No client-side prediction for abilities.
+
+### 2.2 Ability Roster
+
+#### Shock — The Bread and Butter
+
+| | |
+|---|---|
+| **Cooldown** | 2 seconds |
+| **Effect** | Instant — wakes all coins stuck in the pin zone and nudges them forward |
+| **Target** | Automatic (pin zone near back wall) |
+| **Radius** | ~25cm from back wall, pin Y-range |
+
+**What it does**: Coins that get stuck between pins stop contributing to cascades. Shock dislodges them with a small forward + random lateral impulse, feeding them back into the pusher zone.
+
+**When to use**: Whenever you see coins piling up on the back wall. At 2s cooldown, this is meant to be spammed — it's the "basic attack" of the ability kit.
+
+**Strategic role**: Maintenance. Keeps coins flowing from back wall → pusher zone → front edge. Without shock, a significant portion of dropped coins would get stuck and never pay out.
+
+#### Tornado — Area Control
+
+| | |
+|---|---|
+| **Cooldown** | 10 seconds |
+| **Duration** | 4 seconds (0.5s ramp up, 3s full, 0.5s ramp down) |
+| **Effect** | Swirling vortex that pulls coins inward + upward + rotates them |
+| **Target** | Player-aimed (x, z position) |
+| **Radius** | 0.4m |
+
+**What it does**: Creates a sustained vortex at a chosen location. Coins within range get pulled toward the center with centripetal force, spun tangentially, and lifted (capped at 0.9m to stay on-screen). When the tornado fades, coins scatter outward from the gathered cluster.
+
+**When to use**:
+- **Gather-and-drop**: Place tornado at a coin-dense area to gather coins, then let them scatter toward the front edge when it ends
+- **Feed side walls**: Aim tornado near a side wall opening to funnel coins through for slot machine triggers
+- **Disruption**: In competitive play, disrupt an opponent's carefully placed coin stack
+
+**Strategic role**: The most tactical ability. Position matters — a well-placed tornado can redirect 20+ coins toward the front edge. A poorly placed one wastes its 10s cooldown on empty space.
+
+#### Explosion — Burst Clear
+
+| | |
+|---|---|
+| **Cooldown** | 8 seconds |
+| **Effect** | Instant — blasts coins outward + upward from center with quadratic falloff |
+| **Target** | Player-aimed (x, z position) |
+| **Radius** | 0.6m |
+
+**What it does**: One-shot radial blast. Coins at the center get hit hardest (quadratic falloff: center = full force, edge = almost none). Adds random torque for visual tumbling. No sustained effect — it's a single impulse.
+
+**When to use**:
+- **Edge clear**: Aim at a dense cluster near the front lip to blast coins over the edge
+- **Unstick**: Break up a stubborn coin pile that shock can't reach
+- **Combo**: Use after tornado gathers coins into a tight cluster, then explode the cluster toward the edge
+
+**Strategic role**: High-impact, instant payoff. The largest radius (0.6m) makes it forgiving to aim, but the quadratic falloff means only coins near the center get significant force. Best for converting a dense cluster into immediate front-edge drops.
+
+#### Lightning — Chaos Rain
+
+| | |
+|---|---|
+| **Cooldown** | 6 seconds |
+| **Duration** | 3 seconds (~22 random strikes) |
+| **Effect** | Repeated mini-explosions at random positions across the platform |
+| **Target** | Automatic (random positions within platform bounds) |
+| **Radius** | 0.35m per strike |
+
+**What it does**: Every ~133ms, a lightning bolt strikes a random position on the platform (anywhere from pusher back edge to platform front edge, respecting flare width). Each strike is a mini-explosion with 0.35m radius — same physics as explosion but smaller and weaker. Over 3 seconds, ~22 strikes cover the board with chaotic energy.
+
+**When to use**:
+- **Board-wide activation**: When coins are spread across the entire platform and no single ability target is optimal
+- **Entertainment**: The most visually dramatic ability — good for "just want to see things happen"
+- **Hail mary**: When you can't see a clear strategic play, lightning's randomness might find value you missed
+
+**Strategic role**: The "shotgun" ability. Low precision, high coverage. It won't optimize a specific cluster like tornado+explosion, but it activates sleeping coins across the entire board. Best when the board state is diffuse rather than clustered.
+
+#### Super Push — The Slam
+
+| | |
+|---|---|
+| **Cooldown** | 12 seconds |
+| **Effect** | Pusher performs a dramatic pull-back → explosive forward thrust → hold → recovery |
+| **Target** | Automatic (pusher) |
+| **Duration** | 1.7 seconds total |
+
+**Phase breakdown**:
+
+| Phase | Duration | Motion | Easing |
+|---|---|---|---|
+| Pullback | 400ms | Current → -0.05m (pull back) | easeInCubic (slow start, fast end) |
+| Thrust | 350ms | -0.05m → 0.6m (slam forward) | easeOutExpo (explosive start, smooth stop) |
+| Hold | 250ms | Stay at 0.6m | Linear |
+| Recovery | 700ms | 0.6m → resume normal oscillation | easeInOutQuad (smooth both ends) |
+
+**What it does**: The pusher pulls back dramatically, then slams forward to z=0.6m — far beyond its normal oscillation range (max 0.16m amplitude from z=0.1m center). This pushes the entire front half of the board forward in one massive stroke.
+
+**When to use**:
+- **Board loaded**: Maximum value when there are many coins near the front edge — the slam pushes them all over at once, creating the biggest cascade possible
+- **Combo finisher**: Use after tornado gathers coins to the front, then slam to finish
+
+**Strategic role**: The "ultimate." Longest cooldown (12s), biggest single-event impact. The pullback phase is intentional — it briefly creates a gap that can let some coins settle, building anticipation before the slam. This is the ability most likely to generate the satisfying "coin avalanche" moment.
+
+### 2.3 Ability Economy & Cooldown Design
+
+| Ability | Cooldown | Fires per minute | Role |
+|---|---|---|---|
+| Shock | 2s | 30 | Maintenance — always available |
+| Lightning | 6s | 10 | Filler — use between big cooldowns |
+| Explosion | 8s | 7.5 | Tactical burst |
+| Tornado | 10s | 6 | Setup / positioning |
+| Super Push | 12s | 5 | Ultimate — plan around it |
+
+**Cooldown progression** is intentional: low-impact abilities cycle fast, high-impact abilities cycle slow. This creates a natural rhythm:
+
+```
+[shock] [shock] [shock] [lightning] [shock] [shock] [explosion] [shock] [shock] [tornado] ....... [SUPER PUSH]
+```
+
+The player always has *something* to press (shock is almost always ready), but the powerful abilities require timing and planning.
+
+### 2.4 Emergent Combos
+
+Abilities are not designed with explicit combo chains in mind. However, because they operate on real physics, players naturally discover effective sequences through play:
+
+- Tornado gathers coins → explosion scatters the cluster toward the edge
+- Shock feeds coins off the back wall → tornado or super push clears them
+- Lightning wakes sleeping coins across the board → super push clears the front
+
+These emerge from physics interactions, not from coded combo bonuses. Whether to encourage or reward these patterns is an open design question.
+
+### 2.5 Planned: Ability Activation & Loot System
+
+> Status: Not yet implemented. Current abilities fire freely on cooldown.
+
+**Activation conditions**: All abilities (including shock) will require **ability coins** to activate. Ability coins are special tokens that appear on the platform alongside regular coins. Players must push them off the edge to collect them.
+
+**Loot system**: Collected ability coins can be spent to open **loot boxes** that grant ability charges or other rewards.
+
+**Design intent**: This changes abilities from "free cooldown buttons" to a **resource you earn through play**. Strategic implications:
+
+- Abilities become scarce — you can't spam shock every 2 seconds unless you've collected enough ability coins
+- Ability coins on the platform create targeting decisions — do you aim for regular coins (immediate reward) or ability coins (future power)?
+- Loot boxes add another layer of variable reward (what ability did I get? how rare?)
+- Players who invest in pushing ability coins off the edge are rewarded with more tools to create bigger cascades
+
+> Open questions: How many ability coin types? One generic type, or per-ability? Loot table design? Ability coin spawn rate and placement?
+
+---
+
+## 3. Economy & RTP
+
+### 3.1 Economic Model Overview
+
+```
+Real money (USDC)          In-game economy              Real money (USDC)
+─────────────────     ─────────────────────────     ─────────────────────
+                      ┌─────────┐
+Deposit (multi-chain) │ Deposit │ ← can only be spent inserting coins
+        ──────────────│ Chips   │   (cannot withdraw)
+                      └────┬────┘
+                           │ insert coins
+                           ▼
+                      ┌─────────┐
+                      │ Physics │ ← coins on platform
+                      │Platform │
+                      └────┬────┘
+                     ┌─────┼─────┐
+                     ▼     ▼     ▼
+                   Front  Side  Other
+                   Edge   Wall  (lost)
+                     │     │
+                     ▼     │
+                  ┌──────┐ │
+                  │Reward│ │ side wall = platform revenue (house edge)
+                  │Chips │ │
+                  └──┬───┘ │
+                     │     ▼
+                     │  ┌──────┐
+                     │  │ Slot │ ← jackpot returns coins to platform
+                     │  │Machine│
+                     │  └──────┘
+                     ▼
+               Withdraw as USDC
+```
+
+### 3.2 Two-Chip System
+
+| Chip Type | Source | Can Insert | Can Withdraw |
+|---|---|---|---|
+| **Deposit Chips** | USDC deposit | Yes | No |
+| **Reward Chips** | Front-edge coin drops | No (insert uses deposit chips) | Yes |
+
+**Why separate?**
+- Prevents instant deposit → withdraw arbitrage
+- Players must actually play (push coins through physics) to generate withdrawable value
+- House edge is enforced by physics: not all deposited coins make it to the front edge
+
+Reward chips **can be re-invested** (inserted back into the game). This creates a compounding loop — a lucky streak can sustain play without additional deposits, which keeps players engaged longer. The house edge still applies on every cycle through the physics, so compounding doesn't break the math.
+
+### 3.3 Where the House Edge Lives
+
+The house edge is **embedded in the physics itself**, not as an explicit fee or tax:
+
+1. **Front edge drops** → distributed as rewards to players (this is the player's return)
+2. **Side wall drops** → platform revenue (not returned to players)
+3. **Other drops** (bottom, stuck, etc.) → lost (neither player nor platform)
+
+The ratio of front-edge drops to total drops determines the base RTP. This ratio is controlled by:
+
+- Platform geometry (tilt angle, lip height, wall opening size)
+- Pusher amplitude and frequency
+- Coin physics (friction, restitution, mass)
+- Pin field layout (scatter pattern)
+
+**Key insight**: The house doesn't "take" money — coins physically exit through side walls instead of the front edge. This feels fair to the player because they can see it happening. It's the same mechanic as a real arcade coin pusher.
+
+### 3.4 RTP Variables
+
+RTP is not a single fixed number. It's a complex function of multiple interacting systems:
+
+| Variable | Effect on RTP | Direction |
+|---|---|---|
+| **Platform tilt** | Steeper = more coins reach front edge | ↑ RTP |
+| **Front lip height** | Higher = harder to push coins over | ↓ RTP |
+| **Side wall opening size** | Larger = more coins exit to house | ↓ RTP |
+| **Pusher amplitude** | Larger = more aggressive pushing | ↑ RTP |
+| **Coin friction** | Higher = coins stick, need more pushes | ↓ RTP |
+| **Pin field scatter** | More scatter = more side wall hits | ↓ RTP |
+| **Abilities** | More abilities = more coins pushed off | ↑ RTP |
+| **Slot machine** | Jackpot returns coins to platform | ↑ RTP |
+| **Ability coin system** (planned) | Ability scarcity = fewer forced cascades | ↓ RTP |
+
+### 3.5 RTP Calibration Strategy
+
+RTP is not designed analytically — it's **measured empirically** through simulation:
+
+1. **Local Monte Carlo simulation**: Run headless physics simulation with automated coin insertion, measure front-edge drops / total drops over millions of iterations
+2. **Parameter tuning**: Adjust physics parameters (tilt, lip, friction, openings) until simulated RTP hits target range
+3. **Production monitoring**: Track live RTP in real-time, alert if it deviates from target
+4. **Guardrails** (planned): Dynamic parameter adjustment when live RTP deviates from target. Which parameters to adjust is an open design question — candidates include pusher amplitude, side wall opening size, coin friction, or slot machine payout. The choice affects player experience (some knobs are more noticeable to players than others)
+
+> Status: Monte Carlo simulation infrastructure exists (`game/server/src/simulation/`). Target RTP range not yet defined — requires simulation runs to understand the parameter space before setting a target.
+
+**Why not analytical RTP?**
+- The physics simulation is chaotic — small changes in coin placement create vastly different outcomes
+- Abilities introduce high-variance events that are hard to model analytically
+- Slot machine jackpots are rare but high-impact (100 coins)
+- Player behavior (where they drop, when they use abilities) is unpredictable
+- Empirical measurement is the only reliable approach for a physics-based system
+
+### 3.6 Revenue Flows
+
+```
+Player deposits USDC
+    → Platform holds deposit
+    → Player inserts coins (deposit chips consumed)
+    → Physics plays out
+    → Front edge: reward chips created (player can withdraw)
+    → Side wall: platform revenue (retained by house)
+    → Player withdraws reward chips as USDC
+    → Platform pays out from deposit pool
+
+Net platform revenue = total deposits - total withdrawals
+                     = total side-wall drops (in chip value)
+```
+
+### 3.7 Slot Machine Economics
+
+The slot machine is a **secondary reward loop** that recycles coins back onto the platform:
+
+- **Input**: 10 coins exit through left wall (these are already "house revenue")
+- **Output**: On jackpot, 100 coins rain onto the platform
+- **Jackpot**: 3 reels × 3 symbols (BTC/ETH/SOL). All 3 must match. 3 winning combos out of 27 total = **1/9 probability**
+- **Expected value per trigger**: 100 × (1/9) ≈ 11.1 coins returned to platform
+
+The slot machine returns more coins than it consumes per trigger (~111%), but those recycled coins re-enter the physics simulation where the house edge applies again. A portion will exit through side walls (house revenue), so the effective return is lower than 111%. The slot machine's net effect on RTP depends on the base front-edge-to-side-wall ratio of the physics simulation.
+
+> Numbers are placeholder. Jackpot size (100), trigger threshold (10), symbol count (3), and reel count (3) are all tunable parameters for RTP calibration.
+
+### 3.8 Planned: Loot Box Economics
+
+> Status: Not yet designed.
+
+The ability coin + loot box system will add another economic layer:
+
+- Ability coins have no direct cash value — they're a **utility token** within the game
+- Loot boxes convert ability coins into ability charges
+- Abilities influence RTP (more abilities = more coins pushed off = higher return)
+- This creates an indirect economic loop: better loot → better abilities → higher personal RTP
+
+The loot system's impact on overall RTP must be factored into Monte Carlo simulations once implemented.
+
+---
+
+## 4. Multiplayer & Social
+
+### 4.1 Core Social Dynamic: Cooperative Competition
+
+The game creates a paradox: **players must cooperate to generate value, but compete to capture it.**
+
+- **Cooperation**: The more coins everyone inserts, the more loaded the board gets, the bigger the cascades. A single player on an empty board gets small, boring drops. A crowded board with 500+ coins creates satisfying avalanches. Players benefit from each other's investment.
+- **Competition**: When those cascades happen, rewards are split by heat share. You want the biggest possible cascade (requires everyone investing), but you also want the largest possible slice (requires you investing more than others).
+
+This is a **positive-sum game in the short term** (more players = more action) with a **zero-sum reward split** (your gain is someone else's loss of share). The tension between these two forces is the social engine.
+
+### 4.2 The Heat Arms Race
+
+The heat system creates an implicit social pressure:
+
+```
+You invest 50 coins → your heat share is 60%
+Another player joins and invests 30 coins → your share drops to 45%
+You invest 20 more to stay ahead → your share recovers to 55%
+But now there are 100 coins on the board → bigger cascades incoming
+```
+
+**Nobody explicitly competes** — there's no "attack" or PvP mechanic. The competition is purely economic: who has the higher heat share when coins fall. This makes the game feel social without feeling hostile.
+
+**The decay creates urgency**: If you stop investing, your share decays to zero in ~15 minutes. You can't "coast" on an early lead. Active play is always rewarded, and leaving the game means giving up your share to remaining players.
+
+### 4.3 Room System
+
+**Single lobby**: All players share one room and one physics platform. There is no matchmaking, room creation, or player caps.
+
+**Why single lobby?**
+- Maximizes coin density on the board → bigger cascades → more exciting gameplay
+- Creates a persistent "world" that players drop into and out of
+- Simpler architecture — one game server instance, one physics simulation
+- The heat system naturally handles player scaling (more players = each gets smaller share, but bigger total pool)
+
+**Scaling considerations**: If player count exceeds what a single physics simulation can handle (CPU-bound on Rapier WASM), future options include:
+- Multiple lobbies with different minimum bet sizes (whale room vs casual room)
+- Geographic lobbies (Asia, US, EU) for latency
+- Themed lobbies with different physics parameters or ability sets
+
+> Current implementation: Single room named "main". The NATS topic scheme (`game.{room}.*`) already supports multiple rooms at the protocol level.
+
+### 4.4 What Players See of Each Other
+
+Players share a platform but have limited visibility into each other's actions:
+
+| Visible | Not Visible |
+|---|---|
+| All coins on the platform (physics state) | Who dropped which coin |
+| Ability effects (tornado, explosion, etc.) | Who activated which ability |
+| Heat shares (planned: real-time leaderboard) | Other players' exact chip balance |
+| Slot machine spins (broadcast to all) | Other players' deposit/withdraw history |
+| Coin drops from all slots | Which user is queued in which slot |
+
+**Design intent**: Players feel each other's presence through the shared physics (coins appearing, abilities firing, board state changing) without needing avatars, chat, or explicit social features. The game is "social through physics."
+
+### 4.5 Implicit Social Signals
+
+Even without direct communication, players broadcast intent through their actions:
+
+- **Heavy investment in left slot** → this player is farming the slot machine
+- **Rapid batch inserts** → someone is going aggressive, expect heat competition
+- **Tornado near the front edge** → someone is trying to trigger a cascade, maybe ride the wave
+- **Long pause in drops** → a player might be leaving, your heat share will grow
+
+Skilled players read these signals and adjust their strategy. This creates a "metagame" layer that doesn't require chat or explicit social features.
+
+### 4.6 The Free Rider Problem
+
+The cooperative-competitive tension creates a potential free rider issue:
+
+**Scenario**: A player inserts 1 coin, gets the 5% guaranteed floor, and waits for other players' coins to cascade. They earn rewards without meaningful investment.
+
+**How heat addresses this**:
+- 5% floor is small — in a room with 5+ active players, the floor player gets minimal rewards
+- The guaranteed floor exists for **onboarding** (new player gets immediate feedback), not as a viable strategy
+- Diminishing returns (α=0.7) makes moderate investment competitive against whale spending, but the floor (near-zero investment) is not competitive at all
+- The decay means even the floor share requires periodic re-investment to maintain
+
+**Known vulnerability: multi-account abuse**. A player can open multiple accounts to claim multiple 5% guaranteed floors. With 10 accounts, that's 50% of rewards captured with near-zero investment per account. The guaranteed floor mechanism needs hardening — possible mitigations include:
+
+- Minimum investment threshold before floor kicks in
+- Floor only activates after N coins inserted in the session
+- Anti-sybil measures (wallet linkage detection, IP/device fingerprinting)
+- Replace fixed floor with a dynamic minimum (e.g., floor = f(active player count))
+
+> This is an open problem. The current 5% fixed floor is a placeholder for onboarding UX and will need revision before real-money play.
+
+---
+
+## 5. Planned Features (TODO)
+
+### 5.1 Jackpot Wheel (Right Side Wall)
+
+> Depends on: Right side wall opening (geometry exists, no reward mechanic yet)
+
+The right side wall opening will have a **jackpot wheel** — a physical spinning wheel mounted at the wall exit. When coins exit through the right wall, they interact with the wheel:
+
+- The wheel spins and drops **loot coins** onto the platform
+- Loot coins are visually distinct from regular coins (different model/color)
+- Loot coins follow normal physics — they can be pushed around, stacked, etc.
+- When a loot coin falls off the **front edge**, it's assigned to a player based on heat share (same distribution as regular rewards)
+- The assigned player receives the loot coin in their inventory
+
+**Design intent**: Creates a second bonus mechanic parallel to the left-wall slot machine. The wheel adds physical spectacle (spinning, coins dropping) and the loot coins create new targeting decisions on the platform.
+
+> Open questions: Wheel spin trigger (per-coin? per-N-coins?), loot coin spawn rate, loot coin types/rarities, wheel visual design.
+
+### 5.2 Loot System
+
+> Depends on: Loot coins from jackpot wheel (5.1), ability coin concept (2.5)
+
+Players accumulate loot coins in their inventory. These can be spent to **open loot boxes**:
+
+- **Input**: N loot coins → open 1 loot box
+- **Output**: Ability charges (shock ×3, tornado ×1, etc.)
+- Loot table determines rarity and quantity of ability charges
+
+This replaces the current free-cooldown ability system:
+
+```
+Current:  abilities are free, just wait for cooldown
+Planned:  abilities require charges earned through loot → earned through pushing loot coins off the edge
+```
+
+**Full loop**:
+```
+Right wall exit → wheel drops loot coins onto platform
+    → push loot coins off front edge → earn loot coins (by heat share)
+    → spend loot coins to open loot box → receive ability charges
+    → use abilities to trigger cascades → more coins fall off → more rewards
+```
+
+> Open questions: Loot box cost (how many loot coins?), loot table (ability types × rarity), can loot coins be traded/sold?, should different loot coin types map to different ability tiers?
+
+### 5.3 Multi-Chain Deposit System
+
+> Depends on: Backend wallet infrastructure
+
+Players need a blockchain address to deposit USDC. The onboarding flow:
+
+1. Player registers → backend generates and assigns a **Base chain address** to the player
+2. Player sends USDC to their assigned address
+3. Backend indexer detects the deposit → credits deposit chips to player balance
+4. Player can now insert coins in the game
+
+**Phase 1**: Base chain only (EVM, low fees, Coinbase ecosystem)
+
+**Future expansion**: Support additional chains:
+- **SUI** — Move-based, existing SDK wrapper in `foundation/blockchain/sui/`
+- **Solana** — high throughput, large crypto-gaming audience
+- Additional EVM chains as needed
+
+**Per-chain implementation**:
+- Each chain needs: address generation, deposit indexer, withdrawal signer
+- Player can have multiple deposit addresses (one per chain), all feeding the same chip balance
+- Withdrawal chain selected by player at withdrawal time
+
+> Open questions: Custodial vs MPC wallet? Minimum deposit amount? Deposit confirmation time per chain? Withdrawal fee structure?
+
+### 5.4 Referral System
+
+> Depends on: User registration (5.3)
+
+Every player gets a unique **referral code** on registration. When a new player signs up using a referral code:
+
+- **Referrer** receives a reward (bonus chips, loot coins, or progress points — TBD)
+- **Referee** may receive a welcome bonus (TBD)
+
+Referral tracking:
+- Store referrer → referee relationship in backend
+- Track referee's lifetime activity for ongoing referral rewards (if applicable)
+
+> Open questions: Reward structure (one-time vs ongoing rev-share?), referral code format (random vs custom — see 5.5), anti-abuse (self-referral, referral farming)?
+
+### 5.5 Progress System
+
+> Depends on: Deposit tracking, referral system (5.4)
+
+A progression track that rewards cumulative engagement:
+
+**Progress sources**:
+- Total USDC deposited (lifetime)
+- Number of successful referrals
+
+**Milestone rewards** (unlock at thresholds):
+
+| Milestone | Example Threshold | Reward |
+|---|---|---|
+| Custom username | Deposit $50 or 3 referrals | Replace anonymous ID with chosen name |
+| Custom referral code | Deposit $100 or 5 referrals | Replace random code with personalized one |
+| ... | ... | Additional tiers TBD |
+
+**Design intent**: Gives players long-term goals beyond individual sessions. The custom username/referral code rewards are social — they create identity and make referrals more personal ("use code ALICE" vs "use code X7K9M2").
+
+> Open questions: Full milestone table, can progress be lost (decay/reset)?, visual indicators (badges, borders, profile flair)?, leaderboard integration with heat system?
