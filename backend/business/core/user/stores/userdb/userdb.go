@@ -91,56 +91,48 @@ func (s *Store) QueryByProvider(ctx context.Context, providerType, providerUID s
 	return acct, nil
 }
 
-// UpdateBalance atomically updates an account's balance using SELECT FOR UPDATE.
-func (s *Store) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
-	tx, err := s.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	// Lock the row.
-	const lockQ = `SELECT balance_usdc, balance_play, balance_cash FROM accounts WHERE account_id = $1 FOR UPDATE`
-	var balUSDC, balPlay, balCash decimal.Decimal
-	if err := tx.QueryRowContext(ctx, lockQ, accountID).Scan(&balUSDC, &balPlay, &balCash); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return v1.NewRequestError(v1.ErrNotFound, 404)
-		}
-		return fmt.Errorf("lock account row: %w", err)
-	}
-
-	// Check for negative result.
+// UpdateBalance atomically updates an account's balance using a single
+// UPDATE ... RETURNING statement. Returns the updated balance_play value.
+// On insufficient funds (negative result), returns ErrInsufficientFund.
+func (s *Store) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+	var q string
 	switch currency {
 	case "USDC":
-		if balUSDC.Add(delta).IsNegative() {
-			return v1.NewRequestError(v1.ErrInsufficientFund, 402)
-		}
+		q = `UPDATE accounts SET balance_usdc = balance_usdc + $2, updated_at = NOW()
+			WHERE account_id = $1 AND balance_usdc + $2 >= 0
+			RETURNING balance_play`
 	case "PLAY":
-		if balPlay.Add(delta).IsNegative() {
-			return v1.NewRequestError(v1.ErrInsufficientFund, 402)
-		}
+		q = `UPDATE accounts SET balance_play = balance_play + $2, updated_at = NOW()
+			WHERE account_id = $1 AND balance_play + $2 >= 0
+			RETURNING balance_play`
 	case "CASH":
-		if balCash.Add(delta).IsNegative() {
-			return v1.NewRequestError(v1.ErrInsufficientFund, 402)
-		}
+		q = `UPDATE accounts SET balance_cash = balance_cash + $2, updated_at = NOW()
+			WHERE account_id = $1 AND balance_cash + $2 >= 0
+			RETURNING balance_play`
 	default:
-		return fmt.Errorf("unknown currency: %s", currency)
+		return decimal.Zero, fmt.Errorf("unknown currency: %s", currency)
 	}
 
-	// Apply update.
-	var updateQ string
-	switch currency {
-	case "USDC":
-		updateQ = `UPDATE accounts SET balance_usdc = balance_usdc + $2, updated_at = NOW() WHERE account_id = $1`
-	case "PLAY":
-		updateQ = `UPDATE accounts SET balance_play = balance_play + $2, updated_at = NOW() WHERE account_id = $1`
-	case "CASH":
-		updateQ = `UPDATE accounts SET balance_cash = balance_cash + $2, updated_at = NOW() WHERE account_id = $1`
+	var balPlay decimal.Decimal
+	err := s.db.QueryRowContext(ctx, q, accountID, delta).Scan(&balPlay)
+	if err == nil {
+		return balPlay, nil
 	}
 
-	if _, err := tx.ExecContext(ctx, updateQ, accountID, delta); err != nil {
-		return fmt.Errorf("updating balance: %w", err)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return decimal.Zero, fmt.Errorf("updating balance: %w", err)
 	}
 
-	return tx.Commit()
+	// No rows returned: either account doesn't exist or insufficient funds.
+	const existsQ = `SELECT EXISTS(SELECT 1 FROM accounts WHERE account_id = $1)`
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, existsQ, accountID).Scan(&exists); err != nil {
+		return decimal.Zero, fmt.Errorf("checking account existence: %w", err)
+	}
+
+	if !exists {
+		return decimal.Zero, v1.NewRequestError(v1.ErrNotFound, 404)
+	}
+
+	return decimal.Zero, v1.NewRequestError(v1.ErrInsufficientFund, 402)
 }

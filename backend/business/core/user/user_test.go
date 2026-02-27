@@ -21,7 +21,7 @@ type mockStorer struct {
 	createAuthProviderFn  func(ctx context.Context, ap AuthProvider) error
 	queryByIDFn           func(ctx context.Context, accountID uuid.UUID) (Account, error)
 	queryByProviderFn     func(ctx context.Context, providerType, providerUID string) (Account, error)
-	updateBalanceFn       func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
+	updateBalanceFn       func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error)
 	createNonceFn         func(ctx context.Context, nonce, address string, expiresAt time.Time) error
 	consumeNonceFn        func(ctx context.Context, nonce string) (NonceRecord, error)
 	purgeExpiredNoncesFn  func(ctx context.Context) (int64, error)
@@ -55,11 +55,11 @@ func (m *mockStorer) QueryByProvider(ctx context.Context, providerType, provider
 	return Account{}, nil
 }
 
-func (m *mockStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
+func (m *mockStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 	if m.updateBalanceFn != nil {
 		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
-	return nil
+	return decimal.Zero, nil
 }
 
 func (m *mockStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {
@@ -250,21 +250,24 @@ func TestDecrementPlayBalance(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		balance    decimal.Decimal
 		amount     decimal.Decimal
+		mockReturn decimal.Decimal
+		mockErr    error
 		wantErr    bool
 		wantInsuff bool
+		wantBal    decimal.Decimal
 	}{
 		{
-			name:    "sufficient balance",
-			balance: decimal.NewFromInt(100),
-			amount:  decimal.NewFromInt(50),
-			wantErr: false,
+			name:       "sufficient balance",
+			amount:     decimal.NewFromInt(50),
+			mockReturn: decimal.NewFromInt(50),
+			wantErr:    false,
+			wantBal:    decimal.NewFromInt(50),
 		},
 		{
 			name:       "insufficient balance",
-			balance:    decimal.NewFromInt(5),
 			amount:     decimal.NewFromInt(10),
+			mockErr:    v1.NewInsufficientFundError("PLAY", decimal.NewFromInt(10), decimal.NewFromInt(5)),
 			wantErr:    true,
 			wantInsuff: true,
 		},
@@ -275,22 +278,19 @@ func TestDecrementPlayBalance(t *testing.T) {
 			t.Parallel()
 
 			storer := &mockStorer{
-				queryByIDFn: func(ctx context.Context, id uuid.UUID) (Account, error) {
-					return Account{ID: accountID, BalancePlay: tc.balance}, nil
-				},
-				updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) error {
+				updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 					if currency != "PLAY" {
 						t.Errorf("currency = %q, want PLAY", currency)
 					}
 					if !delta.IsNegative() {
 						t.Error("delta should be negative for decrement")
 					}
-					return nil
+					return tc.mockReturn, tc.mockErr
 				},
 			}
 
 			core := NewCore(storer)
-			err := core.DecrementPlayBalance(context.Background(), accountID, tc.amount)
+			bal, err := core.DecrementPlayBalance(context.Background(), accountID, tc.amount)
 
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error")
@@ -300,6 +300,9 @@ func TestDecrementPlayBalance(t *testing.T) {
 			}
 			if tc.wantInsuff && !errors.Is(err, v1.ErrInsufficientFund) {
 				t.Errorf("should be ErrInsufficientFund, got: %v", err)
+			}
+			if !tc.wantErr && !bal.Equal(tc.wantBal) {
+				t.Errorf("balance = %s, want %s", bal, tc.wantBal)
 			}
 		})
 	}
@@ -317,10 +320,10 @@ func TestIncrementPlayBalance(t *testing.T) {
 	var gotDelta decimal.Decimal
 
 	storer := &mockStorer{
-		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) error {
+		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 			gotCurrency = currency
 			gotDelta = delta
-			return nil
+			return decimal.Zero, nil
 		},
 	}
 
@@ -349,9 +352,9 @@ func TestIncrementUSDCBalance(t *testing.T) {
 	var gotCurrency string
 
 	storer := &mockStorer{
-		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) error {
+		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 			gotCurrency = currency
-			return nil
+			return decimal.Zero, nil
 		},
 	}
 
@@ -377,9 +380,9 @@ func TestIncrementCashBalance(t *testing.T) {
 	var gotCurrency string
 
 	storer := &mockStorer{
-		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) error {
+		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 			gotCurrency = currency
-			return nil
+			return decimal.Zero, nil
 		},
 	}
 

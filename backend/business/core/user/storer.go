@@ -14,7 +14,7 @@ type Storer interface {
 	CreateAuthProvider(ctx context.Context, ap AuthProvider) error
 	QueryByID(ctx context.Context, accountID uuid.UUID) (Account, error)
 	QueryByProvider(ctx context.Context, providerType, providerUID string) (Account, error)
-	UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
+	UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error)
 
 	// Nonce operations for wallet login.
 	CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error

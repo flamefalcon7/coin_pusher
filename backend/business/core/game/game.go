@@ -43,18 +43,14 @@ func (c *Core) processInsertCoin(ctx context.Context, evt GameEvent) (GameEventR
 		count = 1
 	}
 
-	if err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, count, evt.IdempotencyKey); err != nil {
-		return GameEventResult{Success: false, Error: err.Error()}, nil
-	}
-
-	acct, err := c.userCore.QueryByID(ctx, evt.UserID)
+	newPlay, err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, count, evt.IdempotencyKey)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
 	return GameEventResult{
 		Success:     true,
-		BalancePlay: acct.BalancePlay.String(),
+		BalancePlay: newPlay.String(),
 	}, nil
 }
 
@@ -68,18 +64,14 @@ func (c *Core) processSpawnStack(ctx context.Context, evt GameEvent) (GameEventR
 	}
 
 	refKey := evt.IdempotencyKey
-	if err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, cost, refKey); err != nil {
-		return GameEventResult{Success: false, Error: err.Error()}, nil
-	}
-
-	acct, err := c.userCore.QueryByID(ctx, evt.UserID)
+	newPlay, err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, cost, refKey)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
 	return GameEventResult{
 		Success:     true,
-		BalancePlay: acct.BalancePlay.String(),
+		BalancePlay: newPlay.String(),
 	}, nil
 }
 
@@ -90,17 +82,13 @@ func (c *Core) ProcessBatchInsert(ctx context.Context, accountID uuid.UUID, coin
 		return GameEventResult{Success: false, Error: "coin count must be positive"}, nil
 	}
 
-	if err := c.acctCore.ProcessGameInsert(ctx, accountID, coinCount, referenceID); err != nil {
-		return GameEventResult{Success: false, Error: err.Error()}, nil
-	}
-
-	acct, err := c.userCore.QueryByID(ctx, accountID)
+	newPlay, err := c.acctCore.ProcessGameInsert(ctx, accountID, coinCount, referenceID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
 
 	return GameEventResult{
 		Success:     true,
-		BalancePlay: acct.BalancePlay.String(),
+		BalancePlay: newPlay.String(),
 	}, nil
 }

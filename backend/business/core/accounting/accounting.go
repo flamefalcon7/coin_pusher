@@ -71,12 +71,14 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 
 // ProcessGameInsert handles a coin insertion game event.
 // Debits the account's play balance and creates a ledger entry.
-func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) error {
+// Returns the new balance_play value.
+func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (decimal.Decimal, error) {
 	amount := decimal.NewFromInt(int64(coinCount))
 
 	// Debit account play balance.
-	if err := c.userCore.DecrementPlayBalance(ctx, accountID, amount); err != nil {
-		return err
+	newPlay, err := c.userCore.DecrementPlayBalance(ctx, accountID, amount)
+	if err != nil {
+		return decimal.Zero, err
 	}
 
 	now := time.Now().UTC()
@@ -91,10 +93,10 @@ func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinC
 	}
 
 	if err := c.storer.Create(ctx, log); err != nil {
-		return fmt.Errorf("creating game insert log: %w", err)
+		return decimal.Zero, fmt.Errorf("creating game insert log: %w", err)
 	}
 
-	return nil
+	return newPlay, nil
 }
 
 // ProcessGameReward handles a game reward event (coins distributed via heat shares).
