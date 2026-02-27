@@ -12,9 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
-	"github.com/flamefalcon/coin-pusher/backend/foundation/ethereum"
-
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/ethereum"
 )
 
 // Core manages the set of APIs for account access.
@@ -85,33 +84,27 @@ func (c *Core) QueryByID(ctx context.Context, accountID uuid.UUID) (Account, err
 }
 
 // DecrementPlayBalance decreases an account's play balance atomically.
-// Returns an error if the balance is insufficient.
-func (c *Core) DecrementPlayBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
-	acct, err := c.storer.QueryByID(ctx, accountID)
-	if err != nil {
-		return fmt.Errorf("query account: %w", err)
-	}
-
-	if acct.BalancePlay.LessThan(amount) {
-		return v1.NewInsufficientFundError("PLAY", amount, acct.BalancePlay)
-	}
-
+// Returns the new balance_play value and an error if the balance is insufficient.
+func (c *Core) DecrementPlayBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) (decimal.Decimal, error) {
 	return c.storer.UpdateBalance(ctx, accountID, CurrencyPlay, amount.Neg())
 }
 
 // IncrementPlayBalance increases an account's play balance atomically.
 func (c *Core) IncrementPlayBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
-	return c.storer.UpdateBalance(ctx, accountID, CurrencyPlay, amount)
+	_, err := c.storer.UpdateBalance(ctx, accountID, CurrencyPlay, amount)
+	return err
 }
 
 // IncrementCashBalance increases an account's cash balance atomically.
 func (c *Core) IncrementCashBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
-	return c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount)
+	_, err := c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount)
+	return err
 }
 
 // IncrementUSDCBalance increases an account's USDC balance atomically.
 func (c *Core) IncrementUSDCBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
-	return c.storer.UpdateBalance(ctx, accountID, CurrencyUSDC, amount)
+	_, err := c.storer.UpdateBalance(ctx, accountID, CurrencyUSDC, amount)
+	return err
 }
 
 // -------------------------------------------------------------------------

@@ -49,7 +49,7 @@ type mockUserStorer struct {
 	createAuthProviderFn func(ctx context.Context, ap user.AuthProvider) error
 	queryByIDFn          func(ctx context.Context, accountID uuid.UUID) (user.Account, error)
 	queryByProviderFn    func(ctx context.Context, providerType, providerUID string) (user.Account, error)
-	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
+	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error)
 }
 
 func (m *mockUserStorer) Create(ctx context.Context, acct user.Account) error {
@@ -80,11 +80,11 @@ func (m *mockUserStorer) QueryByProvider(ctx context.Context, providerType, prov
 	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
+func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 	if m.updateBalanceFn != nil {
 		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
-	return nil
+	return decimal.Zero, nil
 }
 
 func (m *mockUserStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {
@@ -205,20 +205,21 @@ func TestProcessGameInsert(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		balance decimal.Decimal
 		count   int
+		mockBal decimal.Decimal
+		mockErr error
 		wantErr bool
 	}{
 		{
 			name:    "sufficient balance",
-			balance: decimal.NewFromInt(100),
 			count:   5,
+			mockBal: decimal.NewFromInt(95),
 			wantErr: false,
 		},
 		{
 			name:    "insufficient balance",
-			balance: decimal.NewFromInt(2),
 			count:   5,
+			mockErr: v1.NewInsufficientFundError("PLAY", decimal.NewFromInt(5), decimal.NewFromInt(2)),
 			wantErr: true,
 		},
 	}
@@ -228,8 +229,11 @@ func TestProcessGameInsert(t *testing.T) {
 			t.Parallel()
 
 			userStr := &mockUserStorer{
-				queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
-					return user.Account{ID: accountID, BalancePlay: tc.balance}, nil
+				updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+					if tc.mockErr != nil {
+						return decimal.Zero, tc.mockErr
+					}
+					return tc.mockBal, nil
 				},
 			}
 			acctStr := &mockAcctStorer{}
@@ -237,13 +241,16 @@ func TestProcessGameInsert(t *testing.T) {
 			userCore := user.NewCore(userStr)
 			core := NewCore(acctStr, userCore)
 
-			err := core.ProcessGameInsert(context.Background(), accountID, tc.count, "ref-123")
+			newPlay, err := core.ProcessGameInsert(context.Background(), accountID, tc.count, "ref-123")
 
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
 			}
 			if !tc.wantErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.wantErr && !newPlay.Equal(tc.mockBal) {
+				t.Errorf("newPlay = %s, want %s", newPlay, tc.mockBal)
 			}
 		})
 	}
@@ -262,10 +269,10 @@ func TestProcessGameReward(t *testing.T) {
 	var updatedDelta decimal.Decimal
 
 	userStr := &mockUserStorer{
-		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) error {
+		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 			updatedCurrency = currency
 			updatedDelta = delta
-			return nil
+			return decimal.Zero, nil
 		},
 	}
 	acctStr := &mockAcctStorer{}

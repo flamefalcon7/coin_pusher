@@ -30,7 +30,7 @@ type mockUserStorer struct {
 	createAuthProviderFn func(ctx context.Context, ap user.AuthProvider) error
 	queryByIDFn          func(ctx context.Context, accountID uuid.UUID) (user.Account, error)
 	queryByProviderFn    func(ctx context.Context, providerType, providerUID string) (user.Account, error)
-	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error
+	updateBalanceFn      func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error)
 }
 
 func (m *mockUserStorer) Create(ctx context.Context, acct user.Account) error {
@@ -61,11 +61,11 @@ func (m *mockUserStorer) QueryByProvider(ctx context.Context, providerType, prov
 	return user.Account{}, nil
 }
 
-func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) error {
+func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 	if m.updateBalanceFn != nil {
 		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
-	return nil
+	return decimal.Zero, nil
 }
 
 func (m *mockUserStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {
@@ -116,9 +116,15 @@ func errHandler(log *zap.SugaredLogger, handler v1.Handler) http.HandlerFunc {
 }
 
 func newGameCore(accountID uuid.UUID, balance decimal.Decimal) *game.Core {
+	currentBalance := balance
 	userStr := &mockUserStorer{
-		queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
-			return user.Account{ID: accountID, BalancePlay: balance}, nil
+		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			newBal := currentBalance.Add(delta)
+			if newBal.IsNegative() {
+				return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), currentBalance)
+			}
+			currentBalance = newBal
+			return currentBalance, nil
 		},
 	}
 	acctStr := &mockAcctStorer{}

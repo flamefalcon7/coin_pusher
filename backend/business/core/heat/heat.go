@@ -134,14 +134,48 @@ func (h *HeatEngine) DistributeFrontEdgeDrop(coinCount int) map[uuid.UUID]float6
 }
 
 // GetShareForUser returns the current share for a specific user.
+// Inlines the share computation for a single user without building the
+// intermediate []PlayerShare slice. Single RLock, no allocation, single pass.
 func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
-	shares := h.GetShares()
-	for _, s := range shares {
-		if s.UserID == userID {
-			return s.Share
-		}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	now := time.Now()
+
+	// First check if the target user has meaningful heat.
+	ph, ok := h.players[userID]
+	if !ok {
+		return 0
 	}
-	return 0
+	dt := now.Sub(ph.LastUpdated).Seconds()
+	targetDecayed := ph.RawHeat * math.Exp(-h.lambda*dt)
+	if targetDecayed < 0.01 {
+		return 0
+	}
+
+	targetEff := math.Pow(targetDecayed, h.alpha)
+
+	// Compute total effective heat and count active players.
+	var totalEff float64
+	var activeCount float64
+	for _, p := range h.players {
+		dt := now.Sub(p.LastUpdated).Seconds()
+		decayed := p.RawHeat * math.Exp(-h.lambda*dt)
+		if decayed < 0.01 {
+			continue
+		}
+		totalEff += math.Pow(decayed, h.alpha)
+		activeCount++
+	}
+
+	if activeCount == 0 {
+		return 0
+	}
+
+	guaranteed := math.Min(h.guaranteed, 1.0/(2.0*activeCount))
+	competitivePool := 1.0 - activeCount*guaranteed
+
+	return guaranteed + competitivePool*(targetEff/totalEff)
 }
 
 // Prune removes players with negligible heat to prevent unbounded growth.

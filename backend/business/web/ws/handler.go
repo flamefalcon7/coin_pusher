@@ -419,6 +419,10 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		return
 	}
 
+	if !c.CanBatchInsert() {
+		return
+	}
+
 	slotID := msg.SlotID
 	if slotID < 0 || slotID >= numSlots {
 		slotID = 0

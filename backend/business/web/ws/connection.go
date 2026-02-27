@@ -21,8 +21,9 @@ type Connection struct {
 	send           chan []byte
 	hub            *Hub
 	userID         string
-	lastCoinInsert time.Time
-	lastShock      time.Time
+	lastCoinInsert  time.Time
+	lastBatchInsert time.Time
+	lastShock       time.Time
 	lastTornado    time.Time
 	lastExplosion  time.Time
 	lastLightning  time.Time
@@ -93,6 +94,19 @@ func (c *Connection) SendMessage(msg interface{}) error {
 	}
 	c.SendRaw(data)
 	return nil
+}
+
+// CanBatchInsert checks rate limit (200ms cooldown).
+func (c *Connection) CanBatchInsert() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastBatchInsert) < 200*time.Millisecond {
+		return false
+	}
+	c.lastBatchInsert = now
+	return true
 }
 
 // CanInsertCoin checks rate limit (100ms cooldown).
