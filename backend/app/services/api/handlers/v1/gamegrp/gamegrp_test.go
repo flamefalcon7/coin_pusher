@@ -130,7 +130,7 @@ func newGameCore(accountID uuid.UUID, balance decimal.Decimal) *game.Core {
 	acctStr := &mockAcctStorer{}
 
 	userCore := user.NewCore(userStr)
-	acctCore := accounting.NewCore(acctStr, userCore)
+	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
 	return game.NewCore(userCore, acctCore)
 }
 

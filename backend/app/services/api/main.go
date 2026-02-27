@@ -140,7 +140,13 @@ func run() error {
 	if cfg.Auth.DevMode {
 		userCore.SetInitialBalance(decimal.NewFromInt(10000))
 	}
-	acctCore := accounting.NewCore(ledgerdb.NewStore(db), userCore)
+	acctCore := accounting.NewCore(
+		db,
+		ledgerdb.NewStore(db),
+		userCore,
+		func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
+		func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
+	)
 	gameCore := game.NewCore(userCore, acctCore)
 	heatEngine := heat.New()
 

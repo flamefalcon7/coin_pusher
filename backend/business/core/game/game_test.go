@@ -122,7 +122,7 @@ func newTestCore(t *testing.T, balance decimal.Decimal) (*Core, uuid.UUID) {
 	acctStr := &mockAcctStorer{}
 
 	userCore := user.NewCore(userStr)
-	acctCore := accounting.NewCore(acctStr, userCore)
+	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
 	return NewCore(userCore, acctCore), accountID
 }
 
