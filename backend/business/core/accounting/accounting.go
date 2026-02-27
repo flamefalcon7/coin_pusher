@@ -6,31 +6,74 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 )
+
+// StorerFactory builds a Storer bound to the given DBTX (db or tx).
+type StorerFactory func(database.DBTX) Storer
+
+// UserStorerFactory builds a user.Storer bound to the given DBTX.
+type UserStorerFactory func(database.DBTX) user.Storer
 
 // Core manages the set of APIs for accounting access.
 type Core struct {
+	db              *sqlx.DB         // needed to start transactions; nil in unit tests
+	storer          Storer           // default storer (non-tx)
+	userCore        *user.Core       // default user core (non-tx)
+	newStorer       StorerFactory    // creates tx-bound accounting storer
+	newUserStorer   UserStorerFactory // creates tx-bound user storer
+}
+
+// NewCore constructs an accounting Core.
+//
+// In production, pass factory funcs so that execTx can build tx-bound stores.
+// In unit tests, pass nil for db and factories — methods fall back to the
+// default storer/userCore (which are mocks).
+func NewCore(db *sqlx.DB, storer Storer, userCore *user.Core, newStorer StorerFactory, newUserStorer UserStorerFactory) *Core {
+	return &Core{
+		db:            db,
+		storer:        storer,
+		userCore:      userCore,
+		newStorer:     newStorer,
+		newUserStorer: newUserStorer,
+	}
+}
+
+// txStores holds tx-bound instances used inside execTx.
+type txStores struct {
 	storer   Storer
 	userCore *user.Core
 }
 
-// NewCore constructs an accounting Core.
-func NewCore(storer Storer, userCore *user.Core) *Core {
-	return &Core{
-		storer:   storer,
-		userCore: userCore,
+// execTx runs fn inside a database transaction. Factory funcs create
+// tx-bound stores so every SQL call within fn shares the same tx.
+//
+// When db is nil (unit tests), fn receives the default (mock) stores directly.
+func (c *Core) execTx(ctx context.Context, fn func(s txStores) error) error {
+	if c.db == nil {
+		return fn(txStores{storer: c.storer, userCore: c.userCore})
 	}
+
+	return database.ExecTx(ctx, c.db, func(tx *sqlx.Tx) error {
+		s := txStores{
+			storer:   c.newStorer(tx),
+			userCore: user.NewCore(c.newUserStorer(tx)),
+		}
+		return fn(s)
+	})
 }
 
 // ProcessDeposit handles an on-chain deposit event idempotently.
 // The reference_id (tx hash) ensures each deposit is only applied once.
+// The log insert and balance credit are wrapped in a single transaction.
 func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, currency, referenceID string) error {
-	// Check if this deposit was already processed.
+	// Check if this deposit was already processed (read-only, outside tx).
 	_, err := c.storer.QueryByReference(ctx, ActionDeposit, referenceID)
 	if err == nil {
 		// Already processed — idempotent success.
@@ -40,7 +83,6 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 		return fmt.Errorf("checking reference: %w", err)
 	}
 
-	// Create accounting log.
 	now := time.Now().UTC()
 	log := AccountingLog{
 		LogID:       uuid.New(),
@@ -52,74 +94,83 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 		CreatedAt:   now,
 	}
 
-	if err := c.storer.Create(ctx, log); err != nil {
-		return fmt.Errorf("creating deposit log: %w", err)
-	}
+	return c.execTx(ctx, func(s txStores) error {
+		if err := s.storer.Create(ctx, log); err != nil {
+			return fmt.Errorf("creating deposit log: %w", err)
+		}
 
-	// Credit account balance.
-	switch currency {
-	case CurrencyUSDC:
-		return c.userCore.IncrementUSDCBalance(ctx, accountID, amount)
-	case CurrencyPlay:
-		return c.userCore.IncrementPlayBalance(ctx, accountID, amount)
-	case CurrencyCash:
-		return c.userCore.IncrementCashBalance(ctx, accountID, amount)
-	default:
-		return fmt.Errorf("unknown currency: %s", currency)
-	}
+		switch currency {
+		case CurrencyUSDC:
+			return s.userCore.IncrementUSDCBalance(ctx, accountID, amount)
+		case CurrencyPlay:
+			return s.userCore.IncrementPlayBalance(ctx, accountID, amount)
+		case CurrencyCash:
+			return s.userCore.IncrementCashBalance(ctx, accountID, amount)
+		default:
+			return fmt.Errorf("unknown currency: %s", currency)
+		}
+	})
 }
 
 // ProcessGameInsert handles a coin insertion game event.
-// Debits the account's play balance and creates a ledger entry.
+// Debits the account's play balance and creates a ledger entry atomically.
 // Returns the new balance_play value.
 func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (decimal.Decimal, error) {
 	amount := decimal.NewFromInt(int64(coinCount))
 
-	// Debit account play balance.
-	newPlay, err := c.userCore.DecrementPlayBalance(ctx, accountID, amount)
+	var newPlay decimal.Decimal
+	err := c.execTx(ctx, func(s txStores) error {
+		var txErr error
+		newPlay, txErr = s.userCore.DecrementPlayBalance(ctx, accountID, amount)
+		if txErr != nil {
+			return txErr
+		}
+
+		now := time.Now().UTC()
+		log := AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  ActionGameInsert,
+			Amount:      amount,
+			Currency:    CurrencyPlay,
+			ReferenceID: referenceID,
+			CreatedAt:   now,
+		}
+
+		if txErr = s.storer.Create(ctx, log); txErr != nil {
+			return fmt.Errorf("creating game insert log: %w", txErr)
+		}
+		return nil
+	})
+
 	if err != nil {
 		return decimal.Zero, err
 	}
-
-	now := time.Now().UTC()
-	log := AccountingLog{
-		LogID:       uuid.New(),
-		AccountID:   accountID,
-		ActionType:  ActionGameInsert,
-		Amount:      amount,
-		Currency:    CurrencyPlay,
-		ReferenceID: referenceID,
-		CreatedAt:   now,
-	}
-
-	if err := c.storer.Create(ctx, log); err != nil {
-		return decimal.Zero, fmt.Errorf("creating game insert log: %w", err)
-	}
-
 	return newPlay, nil
 }
 
 // ProcessGameReward handles a game reward event (coins distributed via heat shares).
-// Credits the account's cash balance and creates a ledger entry.
+// Credits the account's cash balance and creates a ledger entry atomically.
 func (c *Core) ProcessGameReward(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, referenceID string) error {
-	if err := c.userCore.IncrementCashBalance(ctx, accountID, amount); err != nil {
-		return err
-	}
+	return c.execTx(ctx, func(s txStores) error {
+		if err := s.userCore.IncrementCashBalance(ctx, accountID, amount); err != nil {
+			return err
+		}
 
-	now := time.Now().UTC()
-	log := AccountingLog{
-		LogID:       uuid.New(),
-		AccountID:   accountID,
-		ActionType:  ActionGameReward,
-		Amount:      amount,
-		Currency:    CurrencyCash,
-		ReferenceID: referenceID,
-		CreatedAt:   now,
-	}
+		now := time.Now().UTC()
+		log := AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  ActionGameReward,
+			Amount:      amount,
+			Currency:    CurrencyCash,
+			ReferenceID: referenceID,
+			CreatedAt:   now,
+		}
 
-	if err := c.storer.Create(ctx, log); err != nil {
-		return fmt.Errorf("creating game reward log: %w", err)
-	}
-
-	return nil
+		if err := s.storer.Create(ctx, log); err != nil {
+			return fmt.Errorf("creating game reward log: %w", err)
+		}
+		return nil
+	})
 }

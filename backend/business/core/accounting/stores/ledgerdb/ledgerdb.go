@@ -8,19 +8,19 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 )
 
 // Store manages the PostgreSQL interactions for accounting logs.
 type Store struct {
-	db *sqlx.DB
+	db database.DBTX
 }
 
 // NewStore constructs a Store for accounting database operations.
-func NewStore(db *sqlx.DB) *Store {
+func NewStore(db database.DBTX) *Store {
 	return &Store{db: db}
 }
 

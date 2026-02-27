@@ -180,7 +180,7 @@ func TestProcessDeposit(t *testing.T) {
 			t.Parallel()
 
 			userCore := user.NewCore(tc.userStr)
-			core := NewCore(tc.acctStr, userCore)
+			core := NewCore(nil, tc.acctStr, userCore, nil, nil)
 
 			err := core.ProcessDeposit(context.Background(), accountID, decimal.NewFromInt(100), tc.currency, "tx-hash-123")
 
@@ -239,7 +239,7 @@ func TestProcessGameInsert(t *testing.T) {
 			acctStr := &mockAcctStorer{}
 
 			userCore := user.NewCore(userStr)
-			core := NewCore(acctStr, userCore)
+			core := NewCore(nil, acctStr, userCore, nil, nil)
 
 			newPlay, err := core.ProcessGameInsert(context.Background(), accountID, tc.count, "ref-123")
 
@@ -278,7 +278,7 @@ func TestProcessGameReward(t *testing.T) {
 	acctStr := &mockAcctStorer{}
 
 	userCore := user.NewCore(userStr)
-	core := NewCore(acctStr, userCore)
+	core := NewCore(nil, acctStr, userCore, nil, nil)
 
 	amount := decimal.NewFromFloat(10.5)
 	err := core.ProcessGameReward(context.Background(), accountID, amount, "ref-reward-1")
