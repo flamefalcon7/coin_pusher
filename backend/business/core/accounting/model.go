@@ -15,9 +15,10 @@ const (
 	ActionExchangeCashPlay = "EXCHANGE_CASH_PLAY"
 	ActionGameInsert       = "GAME_INSERT"
 	ActionGameReward       = "GAME_REWARD"
-	ActionWithdraw         = "WITHDRAW"
-	ActionWithdrawRefund   = "WITHDRAW_REFUND"
-	ActionWithdrawFee      = "WITHDRAW_FEE"
+	ActionWithdraw          = "WITHDRAW"
+	ActionWithdrawRefund    = "WITHDRAW_REFUND"
+	ActionWithdrawFee       = "WITHDRAW_FEE"
+	ActionWithdrawFeeRefund = "WITHDRAW_FEE_REFUND"
 )
 
 // Currency types.

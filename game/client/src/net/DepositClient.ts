@@ -26,6 +26,8 @@ export interface WithdrawalRecord {
   to_address: string;
   tx_hash: string | null;
   created_at: string;
+  submitted_at?: string;
+  confirmed_at?: string;
 }
 
 export interface WithdrawRequest {

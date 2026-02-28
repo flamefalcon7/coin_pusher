@@ -55,8 +55,31 @@ var WithdrawalFee = decimal.NewFromFloat(0.50)
 // MinWithdrawal is the minimum withdrawal amount.
 var MinWithdrawal = decimal.NewFromInt(1)
 
-// MinDeposit is the minimum deposit amount.
+// MinDeposit is the minimum deposit amount (filters dust deposits in indexer).
 var MinDeposit = decimal.NewFromInt(1)
+
+// AutoApproveThreshold — withdrawals ≤ this amount are auto-approved.
+var AutoApproveThreshold = decimal.NewFromInt(100)
+
+// DailyWithdrawLimit — maximum total non-rejected withdrawals in 24h.
+var DailyWithdrawLimit = decimal.NewFromInt(500)
+
+// Sweep represents a deposit-address → hot-wallet USDC sweep.
+type Sweep struct {
+	SweepID          uuid.UUID        `db:"sweep_id" json:"sweep_id"`
+	DepositAddressID uuid.UUID        `db:"deposit_address_id" json:"deposit_address_id"`
+	AccountID        uuid.UUID        `db:"account_id" json:"account_id"`
+	Chain            string           `db:"chain" json:"chain"`
+	FromAddress      string           `db:"from_address" json:"from_address"`
+	ToAddress        string           `db:"to_address" json:"to_address"`
+	AmountUSDC       decimal.Decimal  `db:"amount_usdc" json:"amount_usdc"`
+	GasFundTxHash    *string          `db:"gas_fund_tx_hash" json:"gas_fund_tx_hash"`
+	SweepTxHash      *string          `db:"sweep_tx_hash" json:"sweep_tx_hash"`
+	Status           string           `db:"status" json:"status"`
+	ErrorMsg         *string          `db:"error_msg" json:"error_msg"`
+	CreatedAt        time.Time        `db:"created_at" json:"created_at"`
+	ConfirmedAt      *time.Time       `db:"confirmed_at" json:"confirmed_at"`
+}
 
 // Base USDC contract address.
 const USDCContractBase = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"

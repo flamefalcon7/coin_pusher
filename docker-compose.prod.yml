@@ -63,6 +63,28 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  executor:
+    build:
+      context: ./backend
+      dockerfile: zarf/docker/Dockerfile.backend
+    restart: unless-stopped
+    command: ["/bin/executor"]
+    environment:
+      BACKEND_DB_HOST: postgres:5432
+      BACKEND_DB_USER: ${DB_USER}
+      BACKEND_DB_PASSWORD: ${DB_PASSWORD}
+      BACKEND_DB_NAME: ${DB_NAME}
+      BACKEND_DB_DISABLE_TLS: "true"
+      BACKEND_WALLET_SEED: ${WALLET_SEED}
+      BACKEND_EXECUTOR_RPC_URL: ${EXECUTOR_RPC_URL:-https://mainnet.base.org}
+      BACKEND_EXECUTOR_USDC_CONTRACT: ${EXECUTOR_USDC_CONTRACT:-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   game:
     build:
       context: .

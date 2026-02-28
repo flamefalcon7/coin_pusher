@@ -180,6 +180,8 @@ type withdrawalItem struct {
 	ToAddress    string  `json:"to_address"`
 	TxHash       *string `json:"tx_hash"`
 	CreatedAt    string  `json:"created_at"`
+	SubmittedAt  *string `json:"submitted_at,omitempty"`
+	ConfirmedAt  *string `json:"confirmed_at,omitempty"`
 }
 
 type withdrawalsResponse struct {
@@ -205,7 +207,7 @@ func (g *Group) ListWithdrawals(ctx context.Context, w http.ResponseWriter, r *h
 
 	items := make([]withdrawalItem, 0, len(wrs))
 	for _, wr := range wrs {
-		items = append(items, withdrawalItem{
+		item := withdrawalItem{
 			WithdrawalID: wr.RequestID.String(),
 			Status:       wr.Status,
 			Amount:       wr.AmountCash.StringFixed(6),
@@ -214,7 +216,16 @@ func (g *Group) ListWithdrawals(ctx context.Context, w http.ResponseWriter, r *h
 			ToAddress:    wr.ToAddress,
 			TxHash:       wr.TxHash,
 			CreatedAt:    wr.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		})
+		}
+		if wr.SubmittedAt != nil {
+			s := wr.SubmittedAt.Format("2006-01-02T15:04:05Z")
+			item.SubmittedAt = &s
+		}
+		if wr.ConfirmedAt != nil {
+			s := wr.ConfirmedAt.Format("2006-01-02T15:04:05Z")
+			item.ConfirmedAt = &s
+		}
+		items = append(items, item)
 	}
 
 	return v1.Respond(w, http.StatusOK, withdrawalsResponse{Withdrawals: items})
