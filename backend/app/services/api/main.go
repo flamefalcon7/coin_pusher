@@ -574,9 +574,6 @@ func buildAPIMux(
 	mux.Use(mid.Panics(log))
 	mux.Use(mid.Logger(log))
 
-	// Debug routes (also on the API mux for convenience).
-	debug.Routes(mux, db)
-
 	// WebSocket route (no auth middleware -- auth happens during WS upgrade).
 	mux.Get("/ws", wsHandler.ServeHTTP)
 
