@@ -1,6 +1,7 @@
 import type { PhysicsWorld } from "../physics/PhysicsWorld.js";
 import type { Pusher } from "../physics/Pusher.js";
 import { Coin } from "../physics/Coin.js";
+import { KeyCoin } from "../physics/KeyCoin.js";
 import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
@@ -21,8 +22,9 @@ export class GameLoop {
   private coinManager: CoinManager;
   private natsClient: NATSClient;
   private dropScheduler: DropScheduler;
-  private coins: Map<number, Coin> = new Map();
+  private coins: Map<number, Coin | KeyCoin> = new Map();
   private coinOwners: Map<number, string> = new Map(); // coinId → userId
+  private keyCoinIds: Set<number> = new Set();
   private running: boolean = false;
   private intervalId?: NodeJS.Timeout;
   private statsIntervalId?: NodeJS.Timeout;
@@ -239,15 +241,21 @@ export class GameLoop {
     const tAfterStateCollect = performance.now();
 
     // 5. Handle despawns
+    let keyCoinFrontCount = 0;
     if (despawnIds.length > 0) {
       for (let i = 0; i < despawnIds.length; i++) {
         const id = despawnIds[i];
         const coin = this.coins.get(id);
         if (coin) {
+          // Track key coins that fell off the front edge
+          if (this.keyCoinIds.has(id) && classifiedDespawns[i]?.zone === DespawnZone.FRONT_EDGE) {
+            keyCoinFrontCount++;
+          }
           coin.destroy(this.physicsWorld);
           this.coins.delete(id);
           this.coinManager.removeCoin(id);
           this.coinOwners.delete(id);
+          this.keyCoinIds.delete(id);
         }
       }
 
@@ -264,6 +272,14 @@ export class GameLoop {
     if (classifiedDespawns.length > 0) {
       this.natsClient.publishCoinDespawn({
         coins: classifiedDespawns,
+        tick: this.gameState.getTick(),
+      });
+    }
+
+    // 5c. Publish key coin front despawn events to NATS for backend lucky draw
+    if (keyCoinFrontCount > 0) {
+      this.natsClient.publishKeyCoinFrontDespawn({
+        count: keyCoinFrontCount,
         tick: this.gameState.getTick(),
       });
     }
@@ -441,7 +457,7 @@ export class GameLoop {
     this.tickCount = 0;
   }
 
-  addCoin(coin: Coin): void {
+  addCoin(coin: Coin | KeyCoin): void {
     this.coins.set(coin.getId(), coin);
   }
 
@@ -454,6 +470,7 @@ export class GameLoop {
     });
     this.coins.clear();
     this.coinOwners.clear();
+    this.keyCoinIds.clear();
 
     if (ids.length > 0) {
       this.natsClient.publishDespawn({
@@ -872,15 +889,15 @@ export class GameLoop {
 
     // Wait for spin animation to finish, then spawn bonus coins
     setTimeout(() => {
-      this.spawnWheelBonusCoins(reward);
+      this.spawnWheelBonusKeyCoins(reward);
       this.wheelSpinning = false;
     }, JACKPOT_WHEEL_CONFIG.SPIN_DURATION);
   }
 
-  private spawnWheelBonusCoins(count: number): void {
+  private spawnWheelBonusKeyCoins(count: number): void {
     const interval = SLOT_MACHINE_CONFIG.BONUS_SPAWN_INTERVAL;
 
-    console.log(`🎡 Spawning ${count} wheel bonus coins...`);
+    console.log(`🎡 Spawning ${count} wheel bonus key coins...`);
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
@@ -894,9 +911,16 @@ export class GameLoop {
           x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
         };
 
-        const coinId = this.coinManager.spawnCoinUnchecked(x, y, z, [rot.x, rot.y, rot.z, rot.w]);
-        const coin = new Coin(this.physicsWorld, coinId, x, y, z, rot);
-        this.addCoin(coin);
+        const coinId = this.coinManager.spawnKeyCoinUnchecked(x, y, z, [rot.x, rot.y, rot.z, rot.w]);
+        const keyCoin = new KeyCoin(this.physicsWorld, coinId, x, y, z, rot);
+        this.addCoin(keyCoin);
+        this.keyCoinIds.add(coinId);
+
+        // Publish key coin spawn event
+        this.natsClient.publishCoinSpawn({
+          op: "coin_spawn",
+          coins: [{ id: coinId, owner_id: "", is_key_coin: true }],
+        });
       }, i * interval);
     }
   }

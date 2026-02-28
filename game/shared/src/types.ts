@@ -2,7 +2,10 @@
 export const PROTOCOL_VERSION = 1;
 
 // Body types in the physics world
-export type BodyType = "coin" | "pusher";
+export type BodyType = "coin" | "key_coin" | "pusher";
+
+// Skill scroll types
+export type SkillScrollType = "shock" | "tornado" | "explosion" | "lightning" | "superPush";
 
 // Editor primitive types
 export type EditorPrimitiveType = "box" | "sphere" | "cylinder" | "prism";
@@ -196,7 +199,33 @@ export type SlotMachineCounterMessage = {
 // Server → Client: Coin spawn notification (one-time per coin drop)
 export type CoinSpawnMessage = {
   op: "coin_spawn";
-  coins: { id: number; owner_id: string }[];
+  coins: { id: number; owner_id: string; is_key_coin?: boolean }[];
+};
+
+// Server → Client: Key coin lucky draw result (broadcast)
+export type KeyCoinDrawMessage = {
+  op: "key_coin_draw";
+  winner_id: string;
+  winner_name: string;
+  count: number;
+};
+
+// Server → Client: Inventory update (targeted to specific user)
+export type InventoryUpdateMessage = {
+  op: "inventory_update";
+  key_coins: number;
+  scroll_shock: number;
+  scroll_tornado: number;
+  scroll_explosion: number;
+  scroll_lightning: number;
+  scroll_super_push: number;
+};
+
+// Server → Client: Chest open result
+export type ChestOpenResultMessage = {
+  op: "chest_open_result";
+  scroll_type: SkillScrollType;
+  scroll_count: number;
 };
 
 // Server → Client: Heat state update (1Hz from backend via relay)
@@ -287,7 +316,10 @@ export type ServerMessage =
   | RewardMessage
   | WelcomeMessage
   | SlotStatusMessage
-  | BatchInsertAckMessage;
+  | BatchInsertAckMessage
+  | KeyCoinDrawMessage
+  | InventoryUpdateMessage
+  | ChestOpenResultMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
@@ -317,6 +349,18 @@ export const PUSHER_CONFIG = {
   FREQUENCY: 0.6, // Hz
   INITIAL_PHASE: 0,
   Z_OFFSET: 0.1, // meters
+} as const;
+
+// Key coin configuration (~33% larger than regular coin)
+export const KEY_COIN_CONFIG = {
+  RADIUS: 0.08, // meters
+  THICKNESS: 0.015, // meters
+  MASS: 0.015, // kg
+  FRICTION: 0.7,
+  RESTITUTION: 0.0,
+  CCD_DISABLE_VELOCITY: 0.5,
+  CCD_DISABLE_HEIGHT: 0.5,
+  BORDER_RADIUS: 0.0001,
 } as const;
 
 // Coin configuration
@@ -490,7 +534,7 @@ export const SLOT_MACHINE_CONFIG = {
 export const JACKPOT_WHEEL_CONFIG = {
   TRIGGER_COUNT: 10, // coins through right wall to trigger spin
   SEGMENTS: 8,
-  SEGMENT_REWARDS: [1, 2, 3, 5, 1, 2, 3, 10] as const,
+  SEGMENT_REWARDS: [1, 1, 1, 2, 1, 1, 1, 3] as const,
   SPIN_DURATION: 4000, // ms total spin animation time
   WIDTH: 0.30, // meters — wheel diameter reference
   HEIGHT: 0.40, // meters — backplate height

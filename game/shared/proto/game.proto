@@ -13,6 +13,7 @@ message GameMessage {
     QueueUpdate queue_update = 8;
     WheelSpin wheel_spin = 9;
     WheelCounter wheel_counter = 10;
+    KeyCoinDraw key_coin_draw = 11;
   }
 }
 
@@ -81,6 +82,13 @@ message CoinSpawn {
 message CoinSpawnEntry {
   uint32 id = 1;
   string owner_id = 2;
+  bool is_key_coin = 3;
+}
+
+message KeyCoinDraw {
+  string winner_id = 1;
+  string winner_name = 2;
+  uint32 count = 3;
 }
 
 message QueueUpdate {

@@ -160,6 +160,30 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// key_coin_draw: JSON from backend → re-encode as msgpack for WS clients.
+	sub, err = rl.nc.Subscribe(TopicKeyCoinDraw(rl.room), func(msg *nats.Msg) {
+		var draw struct {
+			Op         string `json:"op"          msgpack:"op"`
+			WinnerID   string `json:"winner_id"   msgpack:"winner_id"`
+			WinnerName string `json:"winner_name" msgpack:"winner_name"`
+			Count      int    `json:"count"        msgpack:"count"`
+		}
+		if err := json.Unmarshal(msg.Data, &draw); err != nil {
+			rl.log.Errorw("key_coin_draw json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(draw)
+		if err != nil {
+			rl.log.Errorw("key_coin_draw msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.Broadcast(packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	rl.log.Infow("nats relay started", "room", rl.room)
 	return nil
 }

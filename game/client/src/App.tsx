@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import "./App.css";
 import { HUD } from "./ui/HUD";
 import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
-import { Toolbar } from "./ui/Toolbar";
+import { Toolbar, type ScrollCounts } from "./ui/Toolbar";
 import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 import { HeatMeter } from "./ui/HeatMeter";
 import { RewardToast } from "./ui/RewardToast";
+import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
+import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
 import { getSavedAuth, clearAuth, type AuthResult, type Account } from "./net/auth";
+import { InventoryClient } from "./net/InventoryClient";
 import { PlayerInfo } from "./ui/PlayerInfo";
+import { ChestPage } from "./pages/ChestPage";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -50,6 +55,7 @@ interface GameProps {
 }
 
 function Game({ token, account, onAuthFailure }: GameProps) {
+  const location = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gameClientRef = useRef<GameClient | null>(null);
@@ -75,6 +81,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   const [muted, setMuted] = useState(false);
   const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [slotCounter, setSlotCounter] = useState(0);
+  const [wheelCounter, setWheelCounter] = useState(0);
   const [holeTooltip, setHoleTooltip] = useState<HoleTooltipData | null>(null);
   const lastHolePickTime = useRef(0);
   const [heatShare, setHeatShare] = useState(0);
@@ -83,6 +90,18 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   const [rewardToast, setRewardToast] = useState<{ amount: number; id: number } | null>(null);
   const rewardIdRef = useRef(0);
   const [insertAckMsg, setInsertAckMsg] = useState<string | null>(null);
+
+  // Inventory state
+  const [keyCoins, setKeyCoins] = useState(0);
+  const [scrollCounts, setScrollCounts] = useState<ScrollCounts>({
+    shock: 0, tornado: 0, explosion: 0, lightning: 0, superPush: 0,
+  });
+  const [keyCoinDraw, setKeyCoinDraw] = useState<{
+    winnerName: string; count: number; isMe: boolean; id: number;
+  } | null>(null);
+  const keyCoinDrawIdRef = useRef(0);
+  // Track which coin IDs are key coins for rendering
+  const keyCoinIdsRef = useRef<Set<number>>(new Set());
   const lastRequestedAmount = useRef(0);
   const [balance, setBalance] = useState<string>(account?.balance_play ?? "0");
 
@@ -139,6 +158,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
 
     gameClient.onWheelCounter((counter) => {
       sceneManager.updateWheelCounter(counter);
+      setWheelCounter(counter);
     });
 
     // Set ability event callback — plays VFX/sound + syncs cooldown for ALL clients
@@ -185,6 +205,9 @@ function Game({ token, account, onAuthFailure }: GameProps) {
         if (coin.owner_id === myUserId) {
           sceneManager.addCoinHighlight(coin.id);
         }
+        if (coin.is_key_coin) {
+          keyCoinIdsRef.current.add(coin.id);
+        }
       }
     });
 
@@ -225,8 +248,45 @@ function Game({ token, account, onAuthFailure }: GameProps) {
       }
     });
 
+    gameClient.onKeyCoinDraw((winnerId, winnerName, count) => {
+      const myUserId = gameClient.getUserId();
+      keyCoinDrawIdRef.current++;
+      setKeyCoinDraw({
+        winnerName,
+        count,
+        isMe: winnerId === myUserId,
+        id: keyCoinDrawIdRef.current,
+      });
+    });
+
+    gameClient.onInventoryUpdate((inv) => {
+      setKeyCoins(inv.key_coins);
+      setScrollCounts({
+        shock: inv.scroll_shock,
+        tornado: inv.scroll_tornado,
+        explosion: inv.scroll_explosion,
+        lightning: inv.scroll_lightning,
+        superPush: inv.scroll_super_push,
+      });
+    });
+
     // Connect to server
     gameClient.connect();
+
+    // Fetch initial inventory
+    const inventoryClient = new InventoryClient(API_URL);
+    inventoryClient.getInventory(token).then((inv) => {
+      setKeyCoins(inv.key_coins);
+      setScrollCounts({
+        shock: inv.scroll_shock,
+        tornado: inv.scroll_tornado,
+        explosion: inv.scroll_explosion,
+        lightning: inv.scroll_lightning,
+        superPush: inv.scroll_super_push,
+      });
+    }).catch((err) => {
+      console.warn("Failed to fetch inventory:", err);
+    });
 
     // Start render loop with interpolation
     sceneManager.startRenderLoop();
@@ -281,6 +341,11 @@ function Game({ token, account, onAuthFailure }: GameProps) {
           const isSnapshotFrame = gameClient.consumeSnapshotFlag();
           if (isSnapshotFrame) {
             knownCoins.clear();
+            // Seed key coin IDs from snapshot body types
+            const snapshotKeyCoinIds = gameClient.consumeSnapshotKeyCoinIds();
+            if (snapshotKeyCoinIds) {
+              keyCoinIdsRef.current = snapshotKeyCoinIds;
+            }
           }
 
           // Update pusher position
@@ -295,8 +360,9 @@ function Game({ token, account, onAuthFailure }: GameProps) {
             currentCoinIds.add(coin.id);
 
             if (!knownCoins.has(coin.id)) {
-              // New coin
-              sceneManager.addCoin(coin.id, coin.pos, coin.rot);
+              // New coin — check if it's a key coin
+              const isKeyCoin = keyCoinIdsRef.current.has(coin.id);
+              sceneManager.addCoin(coin.id, coin.pos, coin.rot, isKeyCoin);
               knownCoins.add(coin.id);
               // Skip sound for snapshot coins (bulk load on connect/reconnect)
               if (!isSnapshotFrame) {
@@ -315,6 +381,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
             if (!currentCoinIds.has(id)) {
               sceneManager.removeCoinWithEffect(id);
               knownCoins.delete(id);
+              keyCoinIdsRef.current.delete(id);
               despawnCount++;
             }
           }
@@ -591,6 +658,13 @@ function Game({ token, account, onAuthFailure }: GameProps) {
     setGizmoMode(mgr.getGizmoMode());
   }, []);
 
+  const handleInventoryChange = useCallback((newKeyCoins: number, newScrollCounts: ScrollCounts) => {
+    setKeyCoins(newKeyCoins);
+    setScrollCounts(newScrollCounts);
+  }, []);
+
+  const showChestPage = location.pathname === '/chest';
+
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
@@ -621,6 +695,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
         onSuperPush={handleSuperPush}
         superPushDisabled={connectionStatus !== "connected"}
         superPushCooldown={superPushCooldown}
+        scrollCounts={scrollCounts}
       />
 
       <button
@@ -722,7 +797,28 @@ function Game({ token, account, onAuthFailure }: GameProps) {
       )}
 
       {holeTooltip && (
-        <HoleTooltip data={holeTooltip} slotCounter={slotCounter} />
+        <HoleTooltip data={holeTooltip} slotCounter={slotCounter} wheelCounter={wheelCounter} />
+      )}
+
+      <InventoryBar keyCoins={keyCoins} />
+
+      {keyCoinDraw && (
+        <KeyCoinDrawToast
+          winnerName={keyCoinDraw.winnerName}
+          count={keyCoinDraw.count}
+          isMe={keyCoinDraw.isMe}
+          id={keyCoinDraw.id}
+        />
+      )}
+
+      {showChestPage && (
+        <ChestPage
+          token={token}
+          apiUrl={API_URL}
+          keyCoins={keyCoins}
+          scrollCounts={scrollCounts}
+          onInventoryChange={handleInventoryChange}
+        />
       )}
     </div>
   );

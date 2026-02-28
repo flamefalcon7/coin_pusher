@@ -18,7 +18,7 @@ export type PingCallback = (ping: number) => void;
 export type SlotSpinCallback = (reels: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean) => void;
 export type SlotCounterCallback = (counter: number) => void;
 export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number) => void;
-export type CoinSpawnCallback = (coins: { id: number; owner_id: string }[]) => void;
+export type CoinSpawnCallback = (coins: { id: number; owner_id: string; is_key_coin?: boolean }[]) => void;
 export type HeatUpdateCallback = (players: { user_id: string; share: number; raw_heat: number }[]) => void;
 export type QueueUpdateCallback = (userId: string, pending: number) => void;
 export type SlotStatusCallback = (counts: number[]) => void;
@@ -26,6 +26,15 @@ export type WheelSpinCallback = (segment: number, reward: number) => void;
 export type WheelCounterCallback = (counter: number) => void;
 export type BatchInsertAckCallback = (queued: number, error?: string, balance?: string) => void;
 export type RewardCallback = (userId: string, amount: number, balance: string) => void;
+export type KeyCoinDrawCallback = (winnerId: string, winnerName: string, count: number) => void;
+export type InventoryUpdateCallback = (inventory: {
+  key_coins: number;
+  scroll_shock: number;
+  scroll_tornado: number;
+  scroll_explosion: number;
+  scroll_lightning: number;
+  scroll_super_push: number;
+}) => void;
 
 export class GameClient {
   private wsClient: WebSocketClient;
@@ -46,10 +55,13 @@ export class GameClient {
   private slotStatusCallback?: SlotStatusCallback;
   private batchInsertAckCallback?: BatchInsertAckCallback;
   private rewardCallback?: RewardCallback;
+  private keyCoinDrawCallback?: KeyCoinDrawCallback;
+  private inventoryUpdateCallback?: InventoryUpdateCallback;
   private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
   private _snapshotJustLoaded: boolean = false;
+  private _snapshotKeyCoinIds: Set<number> | null = null;
 
   constructor(url: string, token?: string) {
     this.wsClient = new WebSocketClient(url, token);
@@ -92,7 +104,7 @@ export class GameClient {
     switch (message.op) {
       case "world_snapshot":
         console.log(
-          "📸 World snapshot received:",
+          "World snapshot received:",
           message.bodies.length,
           "bodies"
         );
@@ -100,13 +112,20 @@ export class GameClient {
         this.interpolator.clear();
         // Initialize state buffer with snapshot
         this.stateBuffer.clear();
+        // Track key coin IDs from snapshot for rendering
+        this._snapshotKeyCoinIds = new Set<number>();
         const snapshotCoins = message.bodies
-          .filter((b) => b.type === "coin" && b.pos && b.rot)
-          .map((b) => ({
-            id: b.id,
-            pos: b.pos!,
-            rot: b.rot!,
-          }));
+          .filter((b) => (b.type === "coin" || b.type === "key_coin") && b.pos && b.rot)
+          .map((b) => {
+            if (b.type === "key_coin") {
+              this._snapshotKeyCoinIds!.add(b.id);
+            }
+            return {
+              id: b.id,
+              pos: b.pos!,
+              rot: b.rot!,
+            };
+          });
         this.stateBuffer.addState({
           serverTime: message.serverTime,
           tick: message.tick,
@@ -213,9 +232,28 @@ export class GameClient {
         }
         break;
 
+      case "key_coin_draw":
+        if (this.keyCoinDrawCallback) {
+          this.keyCoinDrawCallback(message.winner_id, message.winner_name, message.count);
+        }
+        break;
+
+      case "inventory_update":
+        if (this.inventoryUpdateCallback) {
+          this.inventoryUpdateCallback({
+            key_coins: message.key_coins,
+            scroll_shock: message.scroll_shock,
+            scroll_tornado: message.scroll_tornado,
+            scroll_explosion: message.scroll_explosion,
+            scroll_lightning: message.scroll_lightning,
+            scroll_super_push: message.scroll_super_push,
+          });
+        }
+        break;
+
       case "welcome":
         this.userId = message.user_id;
-        console.log("👤 Assigned user ID:", this.userId);
+        console.log("Assigned user ID:", this.userId);
         break;
     }
   }
@@ -370,6 +408,14 @@ export class GameClient {
     this.rewardCallback = callback;
   }
 
+  onKeyCoinDraw(callback: KeyCoinDrawCallback): void {
+    this.keyCoinDrawCallback = callback;
+  }
+
+  onInventoryUpdate(callback: InventoryUpdateCallback): void {
+    this.inventoryUpdateCallback = callback;
+  }
+
   batchInsert(slotId: number, count: number): void {
     const message: ClientMessage = {
       op: "batch_insert",
@@ -402,5 +448,12 @@ export class GameClient {
       return true;
     }
     return false;
+  }
+
+  /** Returns key coin IDs from the last world_snapshot, then clears. */
+  consumeSnapshotKeyCoinIds(): Set<number> | null {
+    const ids = this._snapshotKeyCoinIds;
+    this._snapshotKeyCoinIds = null;
+    return ids;
   }
 }

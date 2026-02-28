@@ -15,6 +15,7 @@ import (
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
 )
 
@@ -37,26 +38,28 @@ var upgrader = websocket.Upgrader{
 
 // Handler upgrades HTTP connections to WebSocket and manages the read loop.
 type Handler struct {
-	log        *zap.SugaredLogger
-	hub        *Hub
-	nc         *nats.Conn
-	auth       *auth.Auth
-	room       string
-	gameCore   *game.Core
-	heat       *heat.HeatEngine
-	slotCounts [numSlots]int64 // atomic — optimistic per-slot pending count
+	log           *zap.SugaredLogger
+	hub           *Hub
+	nc            *nats.Conn
+	auth          *auth.Auth
+	room          string
+	gameCore      *game.Core
+	heat          *heat.HeatEngine
+	inventoryCore *inventory.Core
+	slotCounts    [numSlots]int64 // atomic — optimistic per-slot pending count
 }
 
 // NewHandler constructs a WS Handler.
-func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine) *Handler {
+func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core) *Handler {
 	return &Handler{
-		log:      log,
-		hub:      hub,
-		nc:       nc,
-		auth:     a,
-		room:     "main",
-		gameCore: gameCore,
-		heat:     heat,
+		log:           log,
+		hub:           hub,
+		nc:            nc,
+		auth:          a,
+		room:          "main",
+		gameCore:      gameCore,
+		heat:          heat,
+		inventoryCore: inventoryCore,
 	}
 }
 
@@ -249,6 +252,10 @@ func (h *Handler) handleShock(c *Connection) {
 		return
 	}
 
+	if err := h.consumeScroll(c, inventory.ScrollShock); err != nil {
+		return
+	}
+
 	cmd := NATSShockCmd{
 		UserID: c.userID,
 	}
@@ -264,6 +271,10 @@ func (h *Handler) handleShock(c *Connection) {
 
 func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 	if !c.CanTornado() {
+		return
+	}
+
+	if err := h.consumeScroll(c, inventory.ScrollTornado); err != nil {
 		return
 	}
 
@@ -307,6 +318,10 @@ func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 		return
 	}
 
+	if err := h.consumeScroll(c, inventory.ScrollExplosion); err != nil {
+		return
+	}
+
 	// Clamp x to valid range.
 	x := msg.X
 	if x < -maxXPosition {
@@ -347,6 +362,10 @@ func (h *Handler) handleLightning(c *Connection) {
 		return
 	}
 
+	if err := h.consumeScroll(c, inventory.ScrollLightning); err != nil {
+		return
+	}
+
 	cmd := NATSLightningCmd{
 		UserID: c.userID,
 	}
@@ -362,6 +381,10 @@ func (h *Handler) handleLightning(c *Connection) {
 
 func (h *Handler) handleSuperPush(c *Connection) {
 	if !c.CanSuperPush() {
+		return
+	}
+
+	if err := h.consumeScroll(c, inventory.ScrollSuperPush); err != nil {
 		return
 	}
 
@@ -495,6 +518,48 @@ func (h *Handler) handlePing(c *Connection) {
 	c.SendMessage(PongMessage{
 		Op:         "pong",
 		ServerTime: time.Now().UnixMilli(),
+	})
+}
+
+// consumeScroll attempts to consume a scroll of the given type for the user.
+// On success it sends an inventory_update to the client and returns nil.
+// On failure it sends an error message and returns the error.
+func (h *Handler) consumeScroll(c *Connection, scrollType string) error {
+	userID, err := uuid.Parse(c.userID)
+	if err != nil {
+		h.log.Errorw("consumeScroll invalid user_id", "user_id", c.userID, "error", err)
+		return err
+	}
+
+	if err := h.inventoryCore.ConsumeScroll(context.Background(), userID, scrollType); err != nil {
+		c.SendMessage(map[string]interface{}{
+			"op":    "ability_error",
+			"type":  scrollType,
+			"error": "no_scroll",
+		})
+		return err
+	}
+
+	// Send updated inventory to the user.
+	h.sendInventoryUpdate(c, userID)
+	return nil
+}
+
+// sendInventoryUpdate fetches the user's inventory and sends it to the connection.
+func (h *Handler) sendInventoryUpdate(c *Connection, userID uuid.UUID) {
+	inv, err := h.inventoryCore.GetInventory(context.Background(), userID)
+	if err != nil {
+		h.log.Errorw("sendInventoryUpdate get inventory error", "user_id", userID, "error", err)
+		return
+	}
+	c.SendMessage(map[string]interface{}{
+		"op":                "inventory_update",
+		"key_coins":         inv.KeyCoins,
+		"scroll_shock":      inv.ScrollShock,
+		"scroll_tornado":    inv.ScrollTornado,
+		"scroll_explosion":  inv.ScrollExplosion,
+		"scroll_lightning":  inv.ScrollLightning,
+		"scroll_super_push": inv.ScrollSuperPush,
 	})
 }
 

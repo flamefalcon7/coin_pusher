@@ -1,4 +1,4 @@
-import type { BodyState, WorldState } from "@coin-pusher/shared";
+import type { BodyState, BodyType, WorldState } from "@coin-pusher/shared";
 import { PROTOCOL_VERSION } from "@coin-pusher/shared";
 
 export class GameState {
@@ -25,7 +25,8 @@ export class GameState {
     x: number,
     y: number,
     z: number,
-    rotation?: [number, number, number, number]
+    rotation?: [number, number, number, number],
+    bodyType: BodyType = "coin"
   ): void {
     // Default rotation: 90 degrees around X-axis (coin standing up)
     const rot: [number, number, number, number] = rotation || [
@@ -36,7 +37,7 @@ export class GameState {
     ];
     this.bodies.set(id, {
       id,
-      type: "coin",
+      type: bodyType,
       pos: [x, y, z],
       rot,
     });
@@ -48,7 +49,7 @@ export class GameState {
     rot: [number, number, number, number]
   ): void {
     const body = this.bodies.get(id);
-    if (body && body.type === "coin") {
+    if (body && (body.type === "coin" || body.type === "key_coin")) {
       body.pos = pos;
       body.rot = rot;
     }

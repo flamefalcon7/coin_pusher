@@ -7,7 +7,7 @@ import {
   Mesh,
   Matrix,
 } from "@babylonjs/core";
-import { COIN_CONFIG } from "@coin-pusher/shared";
+import { COIN_CONFIG, KEY_COIN_CONFIG } from "@coin-pusher/shared";
 import { createToonMaterial } from "./ToonMaterial";
 
 // ── Spiral spawn animation constants ─────────────────────────────────
@@ -42,9 +42,18 @@ export class CoinMeshManager {
   // buffer index -> coinId (flat array is faster than Map for integer keys)
   private indexToId: Int32Array;
 
+  // ── Key coin separate prototype + thin-instance buffers ─────────────
+  private keyCoinPrototype!: Mesh;
+  private kcBuffer: Float32Array;
+  private kcIdToIndex: Map<number, number> = new Map();
+  private kcIndexToId: Int32Array;
+  private kcActive: number = 0;
+  private kcCapacity: number = 200;
+  private keyCoinIds: Set<number> = new Set();
+
   // ── Spiral spawn animation state ───────────────────────────────────
   private spawnAnims: Map<number, SpawnAnim> = new Map(); // coinId -> anim
-  private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[] = [];
+  private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number]; isKeyCoin?: boolean }[] = [];
 
   // ── Highlight mesh for owned coins ────────────────────────────────
   private highlightMesh!: Mesh;
@@ -70,10 +79,14 @@ export class CoinMeshManager {
     // Initialize buffers with default capacity
     this.matrixBuffer = new Float32Array(this.capacity * 16);
     this.indexToId = new Int32Array(this.capacity);
+    // Initialize key coin buffers
+    this.kcBuffer = new Float32Array(this.kcCapacity * 16);
+    this.kcIndexToId = new Int32Array(this.kcCapacity);
     // Initialize highlight buffers
     this.hlBuffer = new Float32Array(this.hlCapacity * 16);
     this.hlIndexToId = new Int32Array(this.hlCapacity);
     this.createPrototype();
+    this.createKeyCoinPrototype();
     this.createHighlightPrototype();
   }
 
@@ -100,7 +113,34 @@ export class CoinMeshManager {
 
     this.prototypeMesh.thinInstanceEnablePicking = false;
 
-    console.log("🪙 Coin prototype created");
+    console.log("Coin prototype created");
+  }
+
+  private createKeyCoinPrototype(): void {
+    const { RADIUS, THICKNESS } = KEY_COIN_CONFIG;
+    this.keyCoinPrototype = MeshBuilder.CreateCylinder(
+      "keyCoinPrototype",
+      {
+        height: THICKNESS,
+        diameter: RADIUS * 2,
+        tessellation: 32,
+      },
+      this.scene
+    );
+
+    const material = createToonMaterial(this.scene, {
+      name: "keyCoinMat",
+      baseColor: new Color3(0.85, 0.88, 0.92), // silver
+      highlightColor: new Color3(1.0, 1.0, 1.0),
+      shadowColor: new Color3(0.45, 0.48, 0.55),
+      rimColor: new Color3(0.7, 0.85, 1.0), // cool blue-ish rim
+      rimPower: 2.0,
+      specPower: 64.0,
+      thinInstances: true,
+    });
+    material.setColor3("emissiveColor", new Color3(0.3, 0.4, 0.6));
+    this.keyCoinPrototype.material = material;
+    this.keyCoinPrototype.thinInstanceEnablePicking = false;
   }
 
   private createHighlightPrototype(): void {
@@ -127,15 +167,20 @@ export class CoinMeshManager {
   addCoin(
     id: number,
     pos: [number, number, number],
-    rot: [number, number, number, number]
+    rot: [number, number, number, number],
+    isKeyCoin?: boolean
   ): void {
-    if (this.idToIndex.has(id)) {
+    if (this.idToIndex.has(id) || this.kcIdToIndex.has(id)) {
       console.warn(`Coin ${id} already exists`);
       return;
     }
 
+    if (isKeyCoin) {
+      this.keyCoinIds.add(id);
+    }
+
     // Collect into pending batch — commitNewCoins() decides if animated or instant
-    this.pendingNewCoins.push({ id, pos, rot });
+    this.pendingNewCoins.push({ id, pos, rot, isKeyCoin });
   }
 
   /**
@@ -147,24 +192,34 @@ export class CoinMeshManager {
     if (batch.length === 0) return;
     this.pendingNewCoins = [];
 
-    const isBatch = batch.length >= BATCH_THRESHOLD;
+    // Separate key coins from regular coins for batch handling
+    const regularBatch = batch.filter(c => !c.isKeyCoin);
+    const keyCoinBatch = batch.filter(c => c.isKeyCoin);
+
+    // Key coins: always instant placement into key coin buffer
+    for (const coin of keyCoinBatch) {
+      this.allocateKeyCoin(coin.id, coin.pos, coin.rot);
+    }
+
+    // Regular coins: batch animation logic
+    const isBatch = regularBatch.length >= BATCH_THRESHOLD;
 
     if (isBatch) {
       // Sort by Y (bottom first) for staggered reveal
-      batch.sort((a, b) => a.pos[1] - b.pos[1]);
+      regularBatch.sort((a, b) => a.pos[1] - b.pos[1]);
 
       // Compute centroid for spiral center
       let cx = 0, cz = 0;
-      for (const c of batch) { cx += c.pos[0]; cz += c.pos[2]; }
-      cx /= batch.length;
-      cz /= batch.length;
+      for (const c of regularBatch) { cx += c.pos[0]; cz += c.pos[2]; }
+      cx /= regularBatch.length;
+      cz /= regularBatch.length;
 
       // Assign layers by Y — coins at similar Y share the same layer
       const layerThreshold = COIN_CONFIG.THICKNESS * 1.5;
-      let currentLayerY = batch[0].pos[1];
+      let currentLayerY = regularBatch[0].pos[1];
       let layerIndex = 0;
 
-      for (const coin of batch) {
+      for (const coin of regularBatch) {
         if (coin.pos[1] > currentLayerY + layerThreshold) {
           layerIndex++;
           currentLayerY = coin.pos[1];
@@ -188,10 +243,10 @@ export class CoinMeshManager {
         this.writeAnimatedMatrix(index, coin.pos, coin.rot, 0, 0, cx, cz);
       }
 
-      console.log(`🌀 Spiral spawn: ${batch.length} coins, ${layerIndex + 1} layers`);
+      console.log(`Spiral spawn: ${regularBatch.length} coins, ${layerIndex + 1} layers`);
     } else {
       // Normal instant placement
-      for (const coin of batch) {
+      for (const coin of regularBatch) {
         this.allocateCoin(coin.id, coin.pos, coin.rot);
       }
     }
@@ -199,7 +254,7 @@ export class CoinMeshManager {
     // Flush deferred highlights for coins that are now allocated
     if (this.hlPending.size > 0) {
       for (const coinId of this.hlPending) {
-        if (this.idToIndex.has(coinId)) {
+        if (this.idToIndex.has(coinId) || this.kcIdToIndex.has(coinId)) {
           this.hlPending.delete(coinId);
           this.addHighlight(coinId);
         }
@@ -226,14 +281,40 @@ export class CoinMeshManager {
     this.writeMatrixToBuffer(index, pos, rot);
   }
 
+  /** Internal: allocate buffer slot for a key coin. */
+  private allocateKeyCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
+    if (this.kcActive >= this.kcCapacity) {
+      this.resizeKeyCoinBuffer();
+    }
+
+    const index = this.kcActive;
+    this.kcActive++;
+
+    this.kcIdToIndex.set(id, index);
+    this.kcIndexToId[index] = id;
+
+    this.writeMatrixToBuffer2(this.kcBuffer, index, pos, rot);
+  }
+
   updateCoin(
     id: number,
     pos: [number, number, number],
     rot: [number, number, number, number]
   ): void {
+    // Check key coin buffer first
+    const kcIndex = this.kcIdToIndex.get(id);
+    if (kcIndex !== undefined) {
+      this.writeMatrixToBuffer2(this.kcBuffer, kcIndex, pos, rot);
+      return;
+    }
+
     const index = this.idToIndex.get(id);
     if (index === undefined) {
-      // Coin doesn't exist yet, add it
+      // Coin doesn't exist yet, add it (as regular coin — key coin status comes from addCoin)
       this.addCoin(id, pos, rot);
       return;
     }
@@ -328,6 +409,12 @@ export class CoinMeshManager {
   }
 
   removeCoin(id: number): void {
+    // Check if it's a key coin
+    if (this.keyCoinIds.has(id)) {
+      this.removeKeyCoin(id);
+      return;
+    }
+
     const index = this.idToIndex.get(id);
     if (index === undefined) {
       return;
@@ -366,14 +453,40 @@ export class CoinMeshManager {
     this.hlPending.delete(id);
   }
 
+  private removeKeyCoin(id: number): void {
+    const index = this.kcIdToIndex.get(id);
+    if (index === undefined) return;
+
+    const lastIndex = this.kcActive - 1;
+
+    if (index !== lastIndex) {
+      const lastCoinId = this.kcIndexToId[lastIndex];
+      this.kcBuffer.copyWithin(index * 16, lastIndex * 16, (lastIndex + 1) * 16);
+      this.kcIdToIndex.set(lastCoinId, index);
+      this.kcIndexToId[index] = lastCoinId;
+    }
+
+    this.kcIdToIndex.delete(id);
+    this.keyCoinIds.delete(id);
+    this.kcActive--;
+
+    // Clean up highlight if present
+    this.removeHighlight(id);
+    this.hlPending.delete(id);
+  }
+
   // ── Highlight Methods ─────────────────────────────────────────────────
 
   addHighlight(coinId: number): void {
     if (this.hlIdToIndex.has(coinId)) return;
 
-    // Get the main mesh matrix for this coin
+    // Get the main mesh matrix for this coin (check both regular and key coin buffers)
     const mainIndex = this.idToIndex.get(coinId);
-    if (mainIndex === undefined) {
+    const kcIndex = this.kcIdToIndex.get(coinId);
+    const srcBuffer = mainIndex !== undefined ? this.matrixBuffer : (kcIndex !== undefined ? this.kcBuffer : null);
+    const srcIndex = mainIndex !== undefined ? mainIndex : kcIndex;
+
+    if (srcBuffer === null || srcIndex === undefined) {
       // Coin not yet added (coin_spawn arrives before state delta) — defer
       this.hlPending.add(coinId);
       return;
@@ -388,9 +501,9 @@ export class CoinMeshManager {
     this.hlIdToIndex.set(coinId, index);
     this.hlIndexToId[index] = coinId;
 
-    // Copy matrix from main buffer
+    // Copy matrix from source buffer
     this.hlBuffer.set(
-      this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
+      srcBuffer.subarray(srcIndex * 16, (srcIndex + 1) * 16),
       index * 16
     );
 
@@ -426,17 +539,24 @@ export class CoinMeshManager {
       }
     }
 
-    // Update positions from main buffer for active highlights
+    // Update positions from main/key coin buffer for active highlights
     for (const [coinId, hlIndex] of this.hlIdToIndex) {
       const mainIndex = this.idToIndex.get(coinId);
-      if (mainIndex === undefined) {
+      const kcIndex = this.kcIdToIndex.get(coinId);
+      if (mainIndex !== undefined) {
+        this.hlBuffer.set(
+          this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
+          hlIndex * 16
+        );
+      } else if (kcIndex !== undefined) {
+        this.hlBuffer.set(
+          this.kcBuffer.subarray(kcIndex * 16, (kcIndex + 1) * 16),
+          hlIndex * 16
+        );
+      } else {
         this.removeHighlight(coinId);
         continue;
       }
-      this.hlBuffer.set(
-        this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
-        hlIndex * 16
-      );
     }
 
     // Update instances
@@ -462,16 +582,25 @@ export class CoinMeshManager {
   }
 
   public updateInstances(): void {
+    // Regular coins
     if (this.activeCoins === 0) {
       this.prototypeMesh.thinInstanceSetBuffer("matrix", null);
       this.prototypeMesh.isVisible = false;
-      return;
+    } else {
+      this.prototypeMesh.isVisible = true;
+      const activeMatrixData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
+      this.prototypeMesh.thinInstanceSetBuffer("matrix", activeMatrixData, 16, false);
     }
 
-    this.prototypeMesh.isVisible = true;
-    // Pass the active portion of the buffer to BabylonJS
-    const activeMatrixData = this.matrixBuffer.subarray(0, this.activeCoins * 16);
-    this.prototypeMesh.thinInstanceSetBuffer("matrix", activeMatrixData, 16, false);
+    // Key coins
+    if (this.kcActive === 0) {
+      this.keyCoinPrototype.thinInstanceSetBuffer("matrix", null);
+      this.keyCoinPrototype.isVisible = false;
+    } else {
+      this.keyCoinPrototype.isVisible = true;
+      const kcMatrixData = this.kcBuffer.subarray(0, this.kcActive * 16);
+      this.keyCoinPrototype.thinInstanceSetBuffer("matrix", kcMatrixData, 16, false);
+    }
   }
 
   private writeMatrixToBuffer(
@@ -493,6 +622,36 @@ export class CoinMeshManager {
 
     // Copy to the Float32Array buffer at the correct offset
     CoinMeshManager.tmpMatrix.copyToArray(this.matrixBuffer, index * 16);
+  }
+
+  private writeMatrixToBuffer2(
+    buffer: Float32Array,
+    index: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number]
+  ): void {
+    CoinMeshManager.tmpVector.set(pos[0], pos[1], pos[2]);
+    CoinMeshManager.tmpQuaternion.set(rot[0], rot[1], rot[2], rot[3]);
+
+    Matrix.ComposeToRef(
+      CoinMeshManager.tmpScale,
+      CoinMeshManager.tmpQuaternion,
+      CoinMeshManager.tmpVector,
+      CoinMeshManager.tmpMatrix
+    );
+
+    CoinMeshManager.tmpMatrix.copyToArray(buffer, index * 16);
+  }
+
+  private resizeKeyCoinBuffer(): void {
+    const newCapacity = this.kcCapacity * 2;
+    const newBuffer = new Float32Array(newCapacity * 16);
+    newBuffer.set(this.kcBuffer);
+    this.kcBuffer = newBuffer;
+    const newIndexToId = new Int32Array(newCapacity);
+    newIndexToId.set(this.kcIndexToId);
+    this.kcIndexToId = newIndexToId;
+    this.kcCapacity = newCapacity;
   }
 
   private resizeBuffer(): void {
@@ -519,10 +678,16 @@ export class CoinMeshManager {
   /** Get world position of a coin by id (reads translation from matrix buffer). */
   getCoinPosition(id: number): [number, number, number] | null {
     const index = this.idToIndex.get(id);
-    if (index === undefined) return null;
-    const off = index * 16;
-    // Translation is at indices 12, 13, 14 of the 4x4 row-major matrix
-    return [this.matrixBuffer[off + 12], this.matrixBuffer[off + 13], this.matrixBuffer[off + 14]];
+    if (index !== undefined) {
+      const off = index * 16;
+      return [this.matrixBuffer[off + 12], this.matrixBuffer[off + 13], this.matrixBuffer[off + 14]];
+    }
+    const kcIndex = this.kcIdToIndex.get(id);
+    if (kcIndex !== undefined) {
+      const off = kcIndex * 16;
+      return [this.kcBuffer[off + 12], this.kcBuffer[off + 13], this.kcBuffer[off + 14]];
+    }
+    return null;
   }
 
   clear(): void {
@@ -531,6 +696,10 @@ export class CoinMeshManager {
     this.pendingNewCoins = [];
     // No need to zero indexToId — entries beyond activeCoins are never read
     this.activeCoins = 0;
+    // Clear key coins
+    this.kcIdToIndex.clear();
+    this.keyCoinIds.clear();
+    this.kcActive = 0;
     this.updateInstances();
     // Clear highlights
     this.hlIdToIndex.clear();

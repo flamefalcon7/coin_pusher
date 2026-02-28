@@ -1,0 +1,63 @@
+.inventory-bar {
+  position: absolute;
+  bottom: calc(clamp(8px, 2vw, 14px) + env(safe-area-inset-bottom, 0px));
+  left: calc(clamp(8px, 2vw, 14px) + env(safe-area-inset-left, 0px));
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(40, 20, 70, 0.9), rgba(20, 10, 50, 0.95));
+  border: 1.5px solid rgba(180, 160, 255, 0.4);
+  border-radius: clamp(10px, 2vw, 14px);
+  padding: 8px 14px;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  user-select: none;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+.inventory-bar:hover {
+  border-color: rgba(200, 180, 255, 0.8);
+  transform: scale(1.05);
+  box-shadow: 0 4px 20px rgba(120, 80, 220, 0.4);
+}
+
+.inventory-bar:active {
+  transform: scale(0.97);
+}
+
+.inventory-bar-chest {
+  font-size: clamp(22px, 5vw, 28px);
+  line-height: 1;
+}
+
+.inventory-bar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.inventory-bar-label {
+  color: rgba(220, 200, 255, 0.85);
+  font-size: clamp(10px, 2.2vw, 12px);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+.inventory-bar-keys {
+  color: #FFD700;
+  font-size: clamp(14px, 3vw, 17px);
+  font-weight: 800;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.inventory-bar-key-icon {
+  font-size: clamp(11px, 2.4vw, 13px);
+}

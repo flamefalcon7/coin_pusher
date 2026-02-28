@@ -119,13 +119,16 @@ export class WebSocketClient {
           protocolVersion: v.protocolVersion,
           serverTime: v.serverTime,
           tick: v.tick,
-          bodies: v.bodies.map((b) => ({
-            id: b.id,
-            type: b.type as "coin" | "pusher",
-            pos: b.type === "coin" ? [b.posX, b.posY, b.posZ] as [number, number, number] : undefined,
-            rot: b.type === "coin" ? [b.rotX, b.rotY, b.rotZ, b.rotW] as [number, number, number, number] : undefined,
-            z: b.type === "pusher" ? b.z : undefined,
-          })),
+          bodies: v.bodies.map((b) => {
+            const isCoinType = b.type === "coin" || b.type === "key_coin";
+            return {
+              id: b.id,
+              type: b.type as "coin" | "key_coin" | "pusher",
+              pos: isCoinType ? [b.posX, b.posY, b.posZ] as [number, number, number] : undefined,
+              rot: isCoinType ? [b.rotX, b.rotY, b.rotZ, b.rotW] as [number, number, number, number] : undefined,
+              z: b.type === "pusher" ? b.z : undefined,
+            };
+          }),
         };
       }
       case "slotSpin": {
@@ -157,6 +160,7 @@ export class WebSocketClient {
           coins: v.coins.map((c) => ({
             id: c.id,
             owner_id: c.ownerId,
+            is_key_coin: c.isKeyCoin || undefined,
           })),
         };
       }
