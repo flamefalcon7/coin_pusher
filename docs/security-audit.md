@@ -10,7 +10,7 @@
 
 | Severity | Count | Key Themes |
 |----------|-------|------------|
-| P0 | 8 (2 fixed) | Free coin injection, ~~auth bypass~~, pprof exposure, ~~admin commands unguarded~~, reward system broken, CSRF via WS, weak HD wallet KDF, deposit double-credit |
+| P0 | 8 (3 fixed) | Free coin injection, ~~auth bypass~~, ~~pprof exposure~~, ~~admin commands unguarded~~, reward system broken, CSRF via WS, weak HD wallet KDF, deposit double-credit |
 | P1 | 19 | Predictable RNG, NATS fragility, token leakage, timing attacks, missing rate limits, float64 financials, reorg handling, fire-and-forget NATS |
 
 ---
@@ -55,23 +55,9 @@ func (h *Handler) handleCoinInsert(c *Connection, msg ClientMessage) {
 
 ---
 
-### P0-3: Debug/pprof Endpoints Exposed on Public API Mux
+### P0-3: Debug/pprof Endpoints Exposed on Public API Mux — **FIXED**
 
-**Location**: `backend/app/services/api/main.go:577`
-
-```go
-debug.Routes(mux, db) // Registered on public port 4000
-```
-
-The pprof endpoints (`/debug/pprof/*`) are unauthenticated and registered on the public API mux:
-- `/debug/pprof/` — heap profiles, goroutine dumps
-- `/debug/pprof/cmdline` — command-line arguments (may expose secrets)
-- `/debug/pprof/profile` — CPU profiling (DoS vector)
-- `/debug/pprof/trace` — execution tracing
-
-**Impact**: Heap dumps can contain the HD wallet master seed (`wallet.masterKey`), JWT signing keys, database credentials, and user session data. Compromising the master seed means all deposit addresses and the hot wallet are compromised — total loss of funds.
-
-**Recommendation**: Remove `debug.Routes(mux, db)` from `buildAPIMux`. The debug server on port 4010 already serves these routes and should be firewalled to internal access only.
+**Status**: Fixed — removed `debug.Routes(mux, db)` from `buildAPIMux`. Debug/pprof endpoints are now only served on the dedicated debug server (port 4010), which should be firewalled to internal access only.
 
 ---
 
@@ -346,9 +332,9 @@ type Wallet struct {
 }
 ```
 
-The master seed persists in memory for the entire lifetime of both the API server and executor process. Combined with P0-3 (pprof exposure), the seed can be extracted via heap dump.
+The master seed persists in memory for the entire lifetime of both the API server and executor process. ~~Combined with P0-3 (pprof exposure), the seed can be extracted via heap dump.~~ P0-3 is now fixed (pprof removed from public mux), but the seed is still extractable via the internal debug server.
 
-**Recommendation**: Use HSM/KMS for production signing. At minimum, fix P0-3 as immediate mitigation.
+**Recommendation**: Use HSM/KMS for production signing. Ensure debug server (port 4010) is firewalled to internal access only.
 
 ---
 
@@ -473,9 +459,9 @@ When `CORSOrigins == "*"`, defaults to `[]string{"https://*", "http://*"}`. The 
 
 **Location**: `backend/app/services/api/handlers/debug/debug.go:37-44`
 
-Since debug routes are on the public mux (P0-3), the readiness endpoint returns raw database error messages including hostnames, ports, and connection details.
+Since debug routes ~~are on the public mux (P0-3)~~ were on the public mux (now fixed — P0-3), the readiness endpoint on the internal debug server still returns raw database error messages including hostnames, ports, and connection details.
 
-**Recommendation**: Return generic "not ready" on the public mux. Detailed errors only on internal debug server.
+**Recommendation**: Return generic "not ready" even on the internal debug server. Detailed errors only in logs.
 
 ---
 
@@ -486,7 +472,7 @@ Since debug routes are on the public mux (P0-3), the readiness endpoint returns 
 | Priority | Finding | Fix |
 |----------|---------|-----|
 | ~~1st~~ | ~~P0-2~~ | ~~Add `DevMode` guard to `/v1/auth/login`~~ — **FIXED** |
-| 2nd | P0-3 | Remove `debug.Routes(mux, db)` from public mux |
+| ~~2nd~~ | ~~P0-3~~ | ~~Remove `debug.Routes(mux, db)` from public mux~~ — **FIXED** |
 | ~~3rd~~ | ~~P0-4~~ | ~~Remove or gate admin commands behind role check~~ — **FIXED** |
 | 4th | P0-1 | Add balance debit to `coin_insert` and `spawn_stack` |
 
