@@ -608,3 +608,27 @@ A progression track that rewards cumulative engagement:
 **Design intent**: Gives players long-term goals beyond individual sessions. The custom username/referral code rewards are social — they create identity and make referrals more personal ("use code ALICE" vs "use code X7K9M2").
 
 > Open questions: Full milestone table, can progress be lost (decay/reset)?, visual indicators (badges, borders, profile flair)?, leaderboard integration with heat system?
+
+---
+
+## 6. Infrastructure TODO
+
+### 6.1 Deployment Optimization
+
+**Current state**: Single DigitalOcean droplet, manual SSH deploy (`git pull` + `docker compose up`).
+
+**Planned improvements**:
+
+1. **GitHub Actions CI/CD** — auto-deploy on push to `main`, separate triggers for game server vs backend changes
+2. **Split to two machines** — Game server (Rapier physics, CPU-heavy) on dedicated droplet; Services (Backend API, PostgreSQL, NATS, Nginx) on another. Communication via NATS over DigitalOcean private network (VPC). Requires NATS auth token.
+3. **Game server graceful drain** — Before shutdown: stop accepting new coin inserts → wait for board coins to settle/fall (~30-60s) → then shutdown. Prevents players losing coins that were already paid for but not yet resolved through physics.
+
+### 6.2 Monitoring
+
+**Current state**: No monitoring. Server goes down = nobody knows until a player complains.
+
+**Planned improvements**:
+
+1. **Uptime monitoring (phase 1)** — External service (e.g. Betterstack free tier) pings health endpoint every 30s, alerts on downtime via Slack/email
+2. **Prometheus + Grafana (phase 2)** — Self-hosted on services machine (~500MB RAM). Backend exposes `/metrics` on debug port 4010. Key metrics: HTTP request rate/latency, DB connection pool, WebSocket connection count, NATS message throughput, indexer block lag
+3. **Log aggregation (phase 3)** — Loki + Promtail for centralized container log search and alerting
