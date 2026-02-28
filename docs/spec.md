@@ -31,13 +31,13 @@ Deposit USDC (multi-chain) → Receive chips (in-game balance)
 
 **House edge**: Long-term RTP < 100%. The platform takes a cut on net payouts. Players can win in the short term through skill and luck, but the math favors the house over time.
 
-> Status: Deposit/withdraw not yet implemented. Currently free-play with unlimited coins.
+> Status: Ethereum wallet login implemented. Three-currency balance model exists (BalanceUSDC, BalancePlay, BalanceCash). Deposit indexer and withdrawal API not yet implemented — currently free-play with unlimited coins.
 
 ### 1.4 The Core Cycle (Second-by-Second)
 
 **Drop** — Player chooses a slot (5 positions across the platform) and batch-inserts coins. Coins spawn at the top of the back wall and fall through a pin field that randomizes their landing position.
 
-**Push** — The pusher oscillates forward and back at 0.5 Hz. Each forward stroke nudges coins toward the front edge. The more coins on the platform, the larger the pusher's amplitude (dynamic difficulty: keeps the action flowing when the board is loaded, prevents stagnation).
+**Push** — The pusher oscillates forward and back at 0.6 Hz. Each forward stroke nudges coins toward the front edge. The more coins on the platform, the larger the pusher's amplitude (dynamic difficulty: keeps the action flowing when the board is loaded, prevents stagnation).
 
 **Cascade** — Coins near the edge get pushed off. Due to physics stacking, a single push can trigger a chain reaction — this is the core dopamine moment. The unpredictability of which coins fall and how many is what makes each push exciting.
 
@@ -50,8 +50,8 @@ Deposit USDC (multi-chain) → Receive chips (in-game balance)
 | Coin Count | Amplitude | Effect |
 |---|---|---|
 | < 250 | 0.08m (base) | Normal pace, coins accumulate |
-| 250–400 | 0.08m → 0.16m (smoothstep) | Increasing action as board fills |
-| > 400 | 0.16m (max) | Aggressive pushing, frequent cascades |
+| 250–400 | 0.08m → 0.24m (smoothstep) | Increasing action as board fills |
+| > 400 | 0.24m (max) | Aggressive pushing, frequent cascades |
 
 **Design intent**: Prevents the "dead board" problem where too many coins pile up and nothing moves. As the board fills, the pusher automatically works harder, ensuring a steady flow of payoff events. This also creates a natural rhythm — the board loads up, then clears in a satisfying wave.
 
@@ -107,14 +107,14 @@ Coins can also exit through openings in the left and right side walls.
 
 **Left wall exits** feed a slot machine counter. Every 10 coins that exit through the left wall trigger a slot spin with 3 reels (BTC/ETH/SOL symbols).
 
-- **Jackpot** (all 3 match): 1/27 probability → 100 bonus coins rain onto the platform
+- **Jackpot** (all 3 match): 3 winning combos out of 27 total = **1/9 probability** → 100 bonus coins rain onto the platform
 - **No match**: Spin animation plays, no bonus
 
-**Design intent**: Side exits are the "bonus game within the game." Players can strategically target left slots to feed the slot machine, but it comes at the cost of fewer front-edge cascades. The 1/27 jackpot rate with 100-coin payout creates high-variance excitement — most spins give nothing, but a jackpot floods the board and benefits everyone.
+**Design intent**: Side exits are the "bonus game within the game." Players can strategically target left slots to feed the slot machine, but it comes at the cost of fewer front-edge cascades. The 1/9 jackpot rate with 100-coin payout creates high-variance excitement — most spins give nothing, but a jackpot floods the board and benefits everyone.
 
-> Right wall exits: Currently counted but not tied to a reward mechanic. Reserved for future expansion.
+**Right wall exits** feed a jackpot wheel. Every 10 coins that exit through the right wall trigger a wheel spin with 8 segments (rewards: [1, 1, 1, 2, 1, 1, 1, 3] key coins). The wheel spins and drops **key coins** onto the platform — visually distinct, 33% larger coins that follow normal physics. When key coins fall off the front edge, they're awarded to a random active player via lucky draw and added to that player's inventory.
 
-> Slot machine numbers (1/27, 100 coins) are placeholder values, not yet tuned for target RTP.
+> Slot machine numbers (1/9, 100 coins) and wheel segment rewards are placeholder values, not yet tuned for target RTP.
 
 ---
 
@@ -128,7 +128,7 @@ Abilities are the player's tools to **actively influence physics** instead of pa
 2. **Spectacle** — Tornado, lightning, explosions create visual drama. Even when they don't optimize rewards, they're fun to watch and feel powerful.
 3. **Strategic tradeoffs** — Each ability has different strengths. Choosing the right one at the right time separates skilled players from random button-mashers.
 
-All abilities are **server-authoritative** — the client sends a request, the server validates cooldowns and executes the physics. No client-side prediction for abilities.
+All abilities are **server-authoritative** — the client sends a request, the Go backend validates cooldowns and consumes a scroll charge, then forwards the command to the game server which executes the physics. No client-side prediction for abilities.
 
 ### 2.2 Ability Roster
 
@@ -221,7 +221,7 @@ All abilities are **server-authoritative** — the client sends a request, the s
 | Hold | 250ms | Stay at 0.6m | Linear |
 | Recovery | 700ms | 0.6m → resume normal oscillation | easeInOutQuad (smooth both ends) |
 
-**What it does**: The pusher pulls back dramatically, then slams forward to z=0.6m — far beyond its normal oscillation range (max 0.16m amplitude from z=0.1m center). This pushes the entire front half of the board forward in one massive stroke.
+**What it does**: The pusher pulls back dramatically, then slams forward to z=0.6m — far beyond its normal oscillation range (max 0.24m amplitude). This pushes the entire front half of the board forward in one massive stroke.
 
 **When to use**:
 - **Board loaded**: Maximum value when there are many coins near the front edge — the slam pushes them all over at once, creating the biggest cascade possible
@@ -257,22 +257,44 @@ Abilities are not designed with explicit combo chains in mind. However, because 
 
 These emerge from physics interactions, not from coded combo bonuses. Whether to encourage or reward these patterns is an open design question.
 
-### 2.5 Planned: Ability Activation & Loot System
+### 2.5 Ability Activation: Scroll System
 
-> Status: Not yet implemented. Current abilities fire freely on cooldown.
+Every ability requires a **scroll charge** to activate. Scrolls are ability-specific tokens stored in the player's inventory. When a player fires an ability, the backend consumes one scroll of the matching type — if none are available, the ability is rejected and the client receives an `ability_error` message.
 
-**Activation conditions**: All abilities (including shock) will require **ability coins** to activate. Ability coins are special tokens that appear on the platform alongside regular coins. Players must push them off the edge to collect them.
+**Scroll types**: `shock`, `tornado`, `explosion`, `lightning`, `super_push`
 
-**Loot system**: Collected ability coins can be spent to open **loot boxes** that grant ability charges or other rewards.
+**How scrolls are earned**:
 
-**Design intent**: This changes abilities from "free cooldown buttons" to a **resource you earn through play**. Strategic implications:
+1. **Jackpot wheel** (right wall) drops **key coins** onto the platform
+2. Key coins follow normal physics — they can be pushed, stacked, etc.
+3. When a key coin falls off the front edge, it's awarded to a random active player via lucky draw
+4. Players spend key coins to **open chests** (1 key coin = 1 chest)
+5. Each chest awards 1 scroll via weighted random roll:
 
-- Abilities become scarce — you can't spam shock every 2 seconds unless you've collected enough ability coins
-- Ability coins on the platform create targeting decisions — do you aim for regular coins (immediate reward) or ability coins (future power)?
-- Loot boxes add another layer of variable reward (what ability did I get? how rare?)
-- Players who invest in pushing ability coins off the edge are rewarded with more tools to create bigger cascades
+| Scroll | Weight | Probability |
+|---|---|---|
+| Shock | 30 | 30% |
+| Tornado | 20 | 20% |
+| Explosion | 20 | 20% |
+| Lightning | 20 | 20% |
+| Super Push | 10 | 10% |
 
-> Open questions: How many ability coin types? One generic type, or per-ability? Loot table design? Ability coin spawn rate and placement?
+**Design intent**: This changes abilities from "free cooldown buttons" to a **resource earned through play**. Strategic implications:
+
+- Abilities are scarce — you can't spam shock every 2 seconds unless you've collected enough scrolls
+- Key coins on the platform create targeting decisions — do you aim for regular coins (immediate reward) or push key coins off the edge (future ability power)?
+- Chest opens add another layer of variable reward (which scroll did I get? will I get the rare super push?)
+- Players who invest in pushing key coins off the edge are rewarded with more tools to create bigger cascades
+
+**Full loop**:
+```
+Right wall exit → wheel drops key coins onto platform
+    → push key coins off front edge → lucky draw awards key coins to a player
+    → spend key coins to open chest → receive scroll charge
+    → use scroll to activate ability → trigger cascades → more coins fall off → more rewards
+```
+
+**Client UI**: Ability buttons show a scroll count badge and are disabled when count reaches 0. Inventory updates are pushed in real-time via WebSocket after every scroll consumption or chest open.
 
 ---
 
@@ -281,8 +303,8 @@ These emerge from physics interactions, not from coded combo bonuses. Whether to
 ### 3.1 Economic Model Overview
 
 ```
-Real money (USDC)          In-game economy              Real money (USDC)
-─────────────────     ─────────────────────────     ─────────────────────
+Real money (USDC)          In-game economy                    Real money (USDC)
+─────────────────     ────────────────────────────────     ─────────────────────
                       ┌─────────┐
 Deposit (multi-chain) │ Deposit │ ← can only be spent inserting coins
         ──────────────│ Chips   │   (cannot withdraw)
@@ -290,26 +312,26 @@ Deposit (multi-chain) │ Deposit │ ← can only be spent inserting coins
                            │ insert coins
                            ▼
                       ┌─────────┐
-                      │ Physics │ ← coins on platform
+                      │ Physics │ ← coins + key coins on platform
                       │Platform │
                       └────┬────┘
-                     ┌─────┼─────┐
-                     ▼     ▼     ▼
-                   Front  Side  Other
-                   Edge   Wall  (lost)
-                     │     │
-                     ▼     │
-                  ┌──────┐ │
-                  │Reward│ │ side wall = platform revenue (house edge)
-                  │Chips │ │
-                  └──┬───┘ │
-                     │     ▼
-                     │  ┌──────┐
-                     │  │ Slot │ ← jackpot returns coins to platform
-                     │  │Machine│
-                     │  └──────┘
-                     ▼
-               Withdraw as USDC
+                   ┌───────┼───────┐
+                   ▼       ▼       ▼
+                 Front    Left   Right    Other
+                 Edge     Wall   Wall     (lost)
+                   │       │       │
+                   ▼       │       ▼
+                ┌──────┐   │   ┌────────┐
+                │Reward│   │   │Jackpot │ ← drops key coins onto platform
+                │Chips │   │   │ Wheel  │
+                └──┬───┘   │   └────────┘
+                   │       ▼
+                   │    ┌──────┐
+                   │    │ Slot │ ← jackpot returns 100 coins to platform
+                   │    │Machine│
+                   │    └──────┘
+                   ▼
+             Withdraw as USDC
 ```
 
 ### 3.2 Two-Chip System
@@ -357,7 +379,7 @@ RTP is not a single fixed number. It's a complex function of multiple interactin
 | **Pin field scatter** | More scatter = more side wall hits | ↓ RTP |
 | **Abilities** | More abilities = more coins pushed off | ↑ RTP |
 | **Slot machine** | Jackpot returns coins to platform | ↑ RTP |
-| **Ability coin system** (planned) | Ability scarcity = fewer forced cascades | ↓ RTP |
+| **Scroll system** | Ability scarcity = fewer forced cascades | ↓ RTP |
 
 ### 3.5 RTP Calibration Strategy
 
@@ -385,12 +407,12 @@ Player deposits USDC
     → Player inserts coins (deposit chips consumed)
     → Physics plays out
     → Front edge: reward chips created (player can withdraw)
-    → Side wall: platform revenue (retained by house)
+    → Left wall: slot machine trigger (jackpot recycles 100 coins to platform)
+    → Right wall: jackpot wheel trigger (drops key coins → scroll economy)
     → Player withdraws reward chips as USDC
     → Platform pays out from deposit pool
 
 Net platform revenue = total deposits - total withdrawals
-                     = total side-wall drops (in chip value)
 ```
 
 ### 3.7 Slot Machine Economics
@@ -404,20 +426,31 @@ The slot machine is a **secondary reward loop** that recycles coins back onto th
 
 The slot machine returns more coins than it consumes per trigger (~111%), but those recycled coins re-enter the physics simulation where the house edge applies again. A portion will exit through side walls (house revenue), so the effective return is lower than 111%. The slot machine's net effect on RTP depends on the base front-edge-to-side-wall ratio of the physics simulation.
 
-> Numbers are placeholder. Jackpot size (100), trigger threshold (10), symbol count (3), and reel count (3) are all tunable parameters for RTP calibration.
+### 3.7b Jackpot Wheel Economics
 
-### 3.8 Planned: Loot Box Economics
+The jackpot wheel is a **key coin generator** that feeds the scroll economy:
 
-> Status: Not yet designed.
+- **Input**: 10 coins exit through right wall (these are already "house revenue")
+- **Output**: Wheel spins, awards key coins (1-3 per spin depending on segment)
+- **Segments**: 8 segments with rewards [1, 1, 1, 2, 1, 1, 1, 3]
+- **Expected value per trigger**: (5×1 + 1×2 + 1×1 + 1×3) / 8 = **1.375 key coins**
 
-The ability coin + loot box system will add another economic layer:
+Key coins are not regular coins — they don't contribute to chip-based RTP directly. Instead, they feed the scroll economy (key coin → chest → scroll → ability use). The wheel's net effect on gameplay is indirect: more key coins → more abilities available → more coins pushed off edges → higher effective RTP.
 
-- Ability coins have no direct cash value — they're a **utility token** within the game
-- Loot boxes convert ability coins into ability charges
-- Abilities influence RTP (more abilities = more coins pushed off = higher return)
-- This creates an indirect economic loop: better loot → better abilities → higher personal RTP
+> Numbers are placeholder. Trigger threshold (10), segment count (8), and segment rewards are all tunable parameters.
 
-The loot system's impact on overall RTP must be factored into Monte Carlo simulations once implemented.
+### 3.8 Scroll & Chest Economics
+
+The scroll system adds an economic layer on top of the base coin economy:
+
+- **Key coins** have no direct cash value — they're a **utility token** within the game
+- **Chests** convert key coins into scroll charges (1 key coin = 1 chest = 1 scroll)
+- **Scrolls** enable abilities, which influence RTP (more abilities = more coins pushed off = higher return)
+- This creates an indirect economic loop: more key coins → more chests → more scrolls → more abilities → bigger cascades → higher personal RTP
+
+The key coin spawn rate is controlled by the jackpot wheel (right wall trigger count and segment rewards). Tuning these parameters adjusts how many scrolls enter the economy per unit time, which directly impacts ability frequency and therefore RTP.
+
+> The scroll system's impact on overall RTP should be factored into Monte Carlo simulations. Current simulation infrastructure exists at `game/server/src/simulation/` but does not yet model scroll-gated abilities.
 
 ---
 
@@ -472,7 +505,7 @@ Players share a platform but have limited visibility into each other's actions:
 |---|---|
 | All coins on the platform (physics state) | Who dropped which coin |
 | Ability effects (tornado, explosion, etc.) | Who activated which ability |
-| Heat shares (planned: real-time leaderboard) | Other players' exact chip balance |
+| Heat shares (broadcast 1Hz to all clients) | Other players' exact chip balance |
 | Slot machine spins (broadcast to all) | Other players' deposit/withdraw history |
 | Coin drops from all slots | Which user is queued in which slot |
 
@@ -514,50 +547,7 @@ The cooperative-competitive tension creates a potential free rider issue:
 
 ## 5. Planned Features (TODO)
 
-### 5.1 Jackpot Wheel (Right Side Wall)
-
-> Depends on: Right side wall opening (geometry exists, no reward mechanic yet)
-
-The right side wall opening will have a **jackpot wheel** — a physical spinning wheel mounted at the wall exit. When coins exit through the right wall, they interact with the wheel:
-
-- The wheel spins and drops **loot coins** onto the platform
-- Loot coins are visually distinct from regular coins (different model/color)
-- Loot coins follow normal physics — they can be pushed around, stacked, etc.
-- When a loot coin falls off the **front edge**, it's assigned to a player based on heat share (same distribution as regular rewards)
-- The assigned player receives the loot coin in their inventory
-
-**Design intent**: Creates a second bonus mechanic parallel to the left-wall slot machine. The wheel adds physical spectacle (spinning, coins dropping) and the loot coins create new targeting decisions on the platform.
-
-> Open questions: Wheel spin trigger (per-coin? per-N-coins?), loot coin spawn rate, loot coin types/rarities, wheel visual design.
-
-### 5.2 Loot System
-
-> Depends on: Loot coins from jackpot wheel (5.1), ability coin concept (2.5)
-
-Players accumulate loot coins in their inventory. These can be spent to **open loot boxes**:
-
-- **Input**: N loot coins → open 1 loot box
-- **Output**: Ability charges (shock ×3, tornado ×1, etc.)
-- Loot table determines rarity and quantity of ability charges
-
-This replaces the current free-cooldown ability system:
-
-```
-Current:  abilities are free, just wait for cooldown
-Planned:  abilities require charges earned through loot → earned through pushing loot coins off the edge
-```
-
-**Full loop**:
-```
-Right wall exit → wheel drops loot coins onto platform
-    → push loot coins off front edge → earn loot coins (by heat share)
-    → spend loot coins to open loot box → receive ability charges
-    → use abilities to trigger cascades → more coins fall off → more rewards
-```
-
-> Open questions: Loot box cost (how many loot coins?), loot table (ability types × rarity), can loot coins be traded/sold?, should different loot coin types map to different ability tiers?
-
-### 5.3 Multi-Chain Deposit System
+### 5.1 Multi-Chain Deposit System
 
 > Depends on: Backend wallet infrastructure
 
@@ -582,9 +572,9 @@ Players need a blockchain address to deposit USDC. The onboarding flow:
 
 > Open questions: Custodial vs MPC wallet? Minimum deposit amount? Deposit confirmation time per chain? Withdrawal fee structure?
 
-### 5.4 Referral System
+### 5.2 Referral System
 
-> Depends on: User registration (5.3)
+> Depends on: User registration (5.1)
 
 Every player gets a unique **referral code** on registration. When a new player signs up using a referral code:
 
@@ -595,11 +585,11 @@ Referral tracking:
 - Store referrer → referee relationship in backend
 - Track referee's lifetime activity for ongoing referral rewards (if applicable)
 
-> Open questions: Reward structure (one-time vs ongoing rev-share?), referral code format (random vs custom — see 5.5), anti-abuse (self-referral, referral farming)?
+> Open questions: Reward structure (one-time vs ongoing rev-share?), referral code format (random vs custom — see 5.3), anti-abuse (self-referral, referral farming)?
 
-### 5.5 Progress System
+### 5.3 Progress System
 
-> Depends on: Deposit tracking, referral system (5.4)
+> Depends on: Deposit tracking, referral system (5.2)
 
 A progression track that rewards cumulative engagement:
 
