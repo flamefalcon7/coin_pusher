@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/deposit"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
@@ -191,10 +193,16 @@ func (s *Store) QueryWithdrawRequestsByAccount(ctx context.Context, accountID uu
 }
 
 // UpdateWithdrawRequestStatus updates the status of a withdrawal request.
+// Automatically sets submitted_at when status becomes 'submitted'
+// and confirmed_at when status becomes 'confirmed'.
 func (s *Store) UpdateWithdrawRequestStatus(ctx context.Context, requestID uuid.UUID, status string, txHash, errorMsg *string) error {
 	const q = `
 		UPDATE withdraw_requests
-		SET status = $2, tx_hash = COALESCE($3, tx_hash), error_msg = COALESCE($4, error_msg)
+		SET status = $2,
+		    tx_hash = COALESCE($3, tx_hash),
+		    error_msg = COALESCE($4, error_msg),
+		    submitted_at = CASE WHEN $2 = 'submitted' AND submitted_at IS NULL THEN NOW() ELSE submitted_at END,
+		    confirmed_at = CASE WHEN $2 = 'confirmed' AND confirmed_at IS NULL THEN NOW() ELSE confirmed_at END
 		WHERE request_id = $1`
 
 	result, err := s.db.ExecContext(ctx, q, requestID, status, txHash, errorMsg)
@@ -212,4 +220,168 @@ func (s *Store) UpdateWithdrawRequestStatus(ctx context.Context, requestID uuid.
 	}
 
 	return nil
+}
+
+// QueryDailyWithdrawTotal returns the sum of amount_cash for non-rejected
+// withdrawal requests created in the last 24 hours.
+func (s *Store) QueryDailyWithdrawTotal(ctx context.Context, accountID uuid.UUID) (decimal.Decimal, error) {
+	const q = `
+		SELECT COALESCE(SUM(amount_cash), 0)
+		FROM withdraw_requests
+		WHERE account_id = $1
+		  AND status NOT IN ('rejected', 'failed', 'refunded')
+		  AND created_at > NOW() - INTERVAL '24 hours'`
+
+	var total decimal.Decimal
+	if err := s.db.QueryRowContext(ctx, q, accountID).Scan(&total); err != nil {
+		return decimal.Zero, fmt.Errorf("querying daily withdraw total: %w", err)
+	}
+
+	return total, nil
+}
+
+// QueryWithdrawRequestsByStatus retrieves withdrawal requests by status list, oldest first.
+func (s *Store) QueryWithdrawRequestsByStatus(ctx context.Context, statuses []string, limit int) ([]deposit.WithdrawRequest, error) {
+	// Build IN clause manually since sqlx doesn't support slice args easily with DBTX.
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+
+	q := `SELECT * FROM withdraw_requests WHERE status IN (`
+	args := make([]any, 0, len(statuses)+1)
+	for i, s := range statuses {
+		if i > 0 {
+			q += ","
+		}
+		q += fmt.Sprintf("$%d", i+1)
+		args = append(args, s)
+	}
+	q += fmt.Sprintf(") ORDER BY created_at ASC LIMIT $%d", len(statuses)+1)
+	args = append(args, limit)
+
+	var wrs []deposit.WithdrawRequest
+	if err := s.db.SelectContext(ctx, &wrs, q, args...); err != nil {
+		return nil, fmt.Errorf("selecting withdraw requests by status: %w", err)
+	}
+
+	return wrs, nil
+}
+
+// QueryWithdrawRequestForUpdate retrieves a single withdraw request with FOR UPDATE lock.
+func (s *Store) QueryWithdrawRequestForUpdate(ctx context.Context, requestID uuid.UUID) (deposit.WithdrawRequest, error) {
+	const q = `SELECT * FROM withdraw_requests WHERE request_id = $1 FOR UPDATE`
+
+	var wr deposit.WithdrawRequest
+	if err := s.db.GetContext(ctx, &wr, q, requestID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return deposit.WithdrawRequest{}, v1.NewRequestError(v1.ErrNotFound, 404)
+		}
+		return deposit.WithdrawRequest{}, fmt.Errorf("selecting withdraw request for update[%s]: %w", requestID, err)
+	}
+
+	return wr, nil
+}
+
+// ClaimApprovedWithdrawals atomically transitions approved withdrawals to
+// 'submitted' status and returns them. Uses FOR UPDATE SKIP LOCKED to prevent
+// concurrent executor instances from claiming the same rows.
+func (s *Store) ClaimApprovedWithdrawals(ctx context.Context, limit int) ([]deposit.WithdrawRequest, error) {
+	const q = `
+		UPDATE withdraw_requests
+		SET status = 'submitted',
+		    submitted_at = CASE WHEN submitted_at IS NULL THEN NOW() ELSE submitted_at END
+		WHERE request_id IN (
+			SELECT request_id FROM withdraw_requests
+			WHERE status = 'approved'
+			ORDER BY created_at ASC
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING *`
+
+	var wrs []deposit.WithdrawRequest
+	if err := s.db.SelectContext(ctx, &wrs, q, limit); err != nil {
+		return nil, fmt.Errorf("claiming approved withdrawals: %w", err)
+	}
+
+	return wrs, nil
+}
+
+// HasActiveSweep returns true if there is already a sweep in progress
+// (pending, gas_funded, or submitted) for the given deposit address.
+func (s *Store) HasActiveSweep(ctx context.Context, depositAddressID uuid.UUID) (bool, error) {
+	const q = `
+		SELECT EXISTS(
+			SELECT 1 FROM sweeps
+			WHERE deposit_address_id = $1
+			  AND status IN ('pending', 'gas_funded', 'submitted')
+		)`
+
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, q, depositAddressID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("checking active sweep: %w", err)
+	}
+
+	return exists, nil
+}
+
+// =========================================================================
+// Sweeps
+// =========================================================================
+
+// CreateSweep inserts a new sweep record.
+func (s *Store) CreateSweep(ctx context.Context, sw deposit.Sweep) error {
+	const q = `
+		INSERT INTO sweeps (sweep_id, deposit_address_id, account_id, chain, from_address, to_address, amount_usdc, gas_fund_tx_hash, sweep_tx_hash, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+
+	if _, err := s.db.ExecContext(ctx, q,
+		sw.SweepID, sw.DepositAddressID, sw.AccountID, sw.Chain,
+		sw.FromAddress, sw.ToAddress, sw.AmountUSDC,
+		sw.GasFundTxHash, sw.SweepTxHash, sw.Status, sw.CreatedAt,
+	); err != nil {
+		return fmt.Errorf("inserting sweep: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateSweepStatus updates the status of a sweep record.
+func (s *Store) UpdateSweepStatus(ctx context.Context, sweepID uuid.UUID, status string, sweepTxHash *string, gasFundTxHash *string, errorMsg *string) error {
+	const q = `
+		UPDATE sweeps
+		SET status = $2,
+		    sweep_tx_hash = COALESCE($3, sweep_tx_hash),
+		    gas_fund_tx_hash = COALESCE($4, gas_fund_tx_hash),
+		    error_msg = COALESCE($5, error_msg),
+		    confirmed_at = CASE WHEN $2 = 'confirmed' AND confirmed_at IS NULL THEN NOW() ELSE confirmed_at END
+		WHERE sweep_id = $1`
+
+	result, err := s.db.ExecContext(ctx, q, sweepID, status, sweepTxHash, gasFundTxHash, errorMsg)
+	if err != nil {
+		return fmt.Errorf("updating sweep status: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrNotFound, 404)
+	}
+
+	return nil
+}
+
+// QuerySweepsByStatus returns sweeps matching any of the given statuses.
+func (s *Store) QuerySweepsByStatus(ctx context.Context, statuses []string, limit int) ([]deposit.Sweep, error) {
+	q := `SELECT * FROM sweeps WHERE status = ANY($1) ORDER BY created_at ASC LIMIT $2`
+
+	var sweeps []deposit.Sweep
+	if err := s.db.SelectContext(ctx, &sweeps, q, pq.Array(statuses), limit); err != nil {
+		return nil, fmt.Errorf("querying sweeps by status: %w", err)
+	}
+
+	return sweeps, nil
 }

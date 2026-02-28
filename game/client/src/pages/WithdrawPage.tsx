@@ -107,8 +107,13 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
 
   const statusIcon = (status: string) => {
     switch (status) {
-      case 'completed': return '\u2713';
-      case 'failed': return '\u2717';
+      case 'review': return '\uD83D\uDD0D';
+      case 'approved':
+      case 'submitted': return '\u23F3';
+      case 'confirmed': return '\u2713';
+      case 'failed':
+      case 'rejected': return '\u2717';
+      case 'refunded': return '\u21A9';
       default: return '\u23F3';
     }
   };

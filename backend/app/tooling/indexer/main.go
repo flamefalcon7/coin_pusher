@@ -131,6 +131,7 @@ func run() error {
 		userCore,
 		func(dbtx database.DBTX) deposit.Storer { return depositdb.NewStore(dbtx) },
 		func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
+		func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
 	)
 
 	// -------------------------------------------------------------------------

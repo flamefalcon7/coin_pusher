@@ -10,6 +10,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/api ./app/services/api
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/admin ./app/tooling/admin
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/indexer ./app/tooling/indexer
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/executor ./app/tooling/executor
 
 # Runtime stage
 FROM alpine:3.19
@@ -19,6 +21,8 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /bin/api /bin/api
 COPY --from=builder /bin/admin /bin/admin
+COPY --from=builder /bin/indexer /bin/indexer
+COPY --from=builder /bin/executor /bin/executor
 COPY --from=builder /app/zarf /app/zarf
 
 EXPOSE 4000 4010

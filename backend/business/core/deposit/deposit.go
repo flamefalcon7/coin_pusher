@@ -24,6 +24,9 @@ type StorerFactory func(database.DBTX) Storer
 // UserStorerFactory builds a user.Storer bound to the given DBTX.
 type UserStorerFactory func(database.DBTX) user.Storer
 
+// AcctStorerFactory builds an accounting.Storer bound to the given DBTX.
+type AcctStorerFactory func(database.DBTX) accounting.Storer
+
 // TxFunc is a function that runs inside a database transaction.
 // The Storer passed to it is bound to the transaction.
 type TxFunc func(ctx context.Context, txStorer Storer) error
@@ -31,16 +34,25 @@ type TxFunc func(ctx context.Context, txStorer Storer) error
 // TxRunner executes fn inside a database transaction.
 type TxRunner func(ctx context.Context, fn TxFunc) error
 
+// txStores holds tx-bound instances used inside execTx.
+type txStores struct {
+	storer    Storer
+	userCore  *user.Core
+	acctStore accounting.Storer
+}
+
 // Core manages the set of APIs for deposit/withdrawal access.
 type Core struct {
-	db            *sqlx.DB
-	storer        Storer
-	wallet        *wallet.Wallet
-	acctCore      *accounting.Core
-	userCore      *user.Core
-	newStorer     StorerFactory
-	newUserStorer UserStorerFactory
-	runTx         TxRunner
+	db              *sqlx.DB
+	storer          Storer
+	wallet          *wallet.Wallet
+	acctCore        *accounting.Core
+	userCore        *user.Core
+	newStorer       StorerFactory
+	newUserStorer   UserStorerFactory
+	newAcctStorer   AcctStorerFactory
+	defaultAcctStore accounting.Storer // for test mode (db==nil)
+	runTx           TxRunner
 }
 
 // NewCore constructs a deposit Core.
@@ -52,6 +64,7 @@ func NewCore(
 	userCore *user.Core,
 	newStorer StorerFactory,
 	newUserStorer UserStorerFactory,
+	newAcctStorer AcctStorerFactory,
 ) *Core {
 	c := &Core{
 		db:            db,
@@ -61,6 +74,7 @@ func NewCore(
 		userCore:      userCore,
 		newStorer:     newStorer,
 		newUserStorer: newUserStorer,
+		newAcctStorer: newAcctStorer,
 	}
 	c.runTx = func(ctx context.Context, fn TxFunc) error {
 		return database.ExecTx(ctx, db, func(tx *sqlx.Tx) error {
@@ -68,6 +82,23 @@ func NewCore(
 		})
 	}
 	return c
+}
+
+// execTx runs fn inside a database transaction with all tx-bound stores.
+// When db is nil (unit tests), fn receives the default (mock) stores directly.
+func (c *Core) execTx(ctx context.Context, fn func(s txStores) error) error {
+	if c.db == nil {
+		return fn(txStores{storer: c.storer, userCore: c.userCore, acctStore: c.defaultAcctStore})
+	}
+
+	return database.ExecTx(ctx, c.db, func(tx *sqlx.Tx) error {
+		s := txStores{
+			storer:    c.newStorer(tx),
+			userCore:  user.NewCore(c.newUserStorer(tx)),
+			acctStore: c.newAcctStorer(tx),
+		}
+		return fn(s)
+	})
 }
 
 // advisoryKeyDerivationIndex is the pg_advisory_xact_lock key used to
@@ -137,12 +168,19 @@ func (c *Core) GetOrCreateAddress(ctx context.Context, accountID uuid.UUID, chai
 }
 
 // ProcessDeposit records an on-chain deposit and credits the user's play balance.
-// Idempotent: if a deposit with the same tx_hash already exists, it returns nil.
+// Both operations (deposit record + accounting credit) happen in a single
+// transaction to prevent partial writes on crash.
+// Idempotent: if a deposit with the same tx_hash already exists, it verifies
+// the accounting log also exists and re-credits if missing.
 func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, txHash string, blockNumber int64, fromAddress string) error {
-	// Check idempotency via tx_hash.
+	// Check idempotency via tx_hash (read-only, outside tx).
 	_, err := c.storer.QueryDepositByTxHash(ctx, txHash)
 	if err == nil {
-		// Already processed.
+		// Deposit record exists. Verify accounting log also exists.
+		// If not, the previous attempt crashed between deposit insert and credit.
+		if err := c.acctCore.ProcessDeposit(ctx, accountID, amount, accounting.CurrencyPlay, txHash); err != nil {
+			return fmt.Errorf("re-credit accounting deposit: %w", err)
+		}
 		return nil
 	}
 	if !errors.Is(err, v1.ErrNotFound) {
@@ -162,26 +200,44 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 		CreatedAt:   now,
 	}
 
-	if err := c.storer.CreateDeposit(ctx, dep); err != nil {
-		return fmt.Errorf("create deposit: %w", err)
-	}
+	return c.execTx(ctx, func(s txStores) error {
+		if err := s.storer.CreateDeposit(ctx, dep); err != nil {
+			return fmt.Errorf("create deposit: %w", err)
+		}
 
-	// Credit balance_play via the accounting system.
-	if err := c.acctCore.ProcessDeposit(ctx, accountID, amount, accounting.CurrencyPlay, txHash); err != nil {
-		return fmt.Errorf("process accounting deposit: %w", err)
-	}
+		// Create accounting log + credit balance in same tx.
+		refID := txHash
+		depositLog := accounting.AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  accounting.ActionDeposit,
+			Amount:      amount,
+			Currency:    accounting.CurrencyPlay,
+			ReferenceID: refID,
+			CreatedAt:   now,
+		}
+		if err := s.acctStore.Create(ctx, depositLog); err != nil {
+			return fmt.Errorf("creating deposit accounting log: %w", err)
+		}
 
-	return nil
+		if err := s.userCore.IncrementPlayBalance(ctx, accountID, amount); err != nil {
+			return fmt.Errorf("crediting play balance: %w", err)
+		}
+
+		return nil
+	})
 }
 
-// RequestWithdrawal validates and creates a pending withdrawal request.
+// RequestWithdrawal validates and creates a withdrawal request.
 // Steps:
 // 1. Validate to_address format (EIP-55)
-// 2. Check balance_cash >= amount (minimum 1 USDC)
-// 3. Calculate fee (flat 0.50 USDC for Phase 1)
-// 4. Debit balance_cash by amount
-// 5. Create WITHDRAW + WITHDRAW_FEE accounting logs
-// 6. Create withdraw_request record with status="pending"
+// 2. Check withdraw_locked_until
+// 3. Check balance_cash >= amount (minimum 1 USDC)
+// 4. Check daily withdraw limit ($500/day)
+// 5. Calculate fee (flat 0.50 USDC for Phase 1)
+// 6. Debit balance_cash by amount
+// 7. Create WITHDRAW + WITHDRAW_FEE accounting logs
+// 8. Create withdraw_request record (auto-approve ≤ $100, else pending)
 func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAddress string, amount decimal.Decimal, chain string) (WithdrawRequest, error) {
 	// Validate address.
 	normalizedAddr, err := ethereum.NormalizeAddress(toAddress)
@@ -200,32 +256,89 @@ func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAdd
 		return WithdrawRequest{}, v1.NewRequestError(fmt.Errorf("withdrawal amount must be greater than fee (%s USDC)", fee), 400)
 	}
 
+	// Determine status: auto-approve ≤ $100, else pending (requires manual review).
+	status := "pending"
+	if amount.LessThanOrEqual(AutoApproveThreshold) {
+		status = "approved"
+	}
+
 	now := time.Now().UTC()
+	requestID := uuid.New()
 	wr := WithdrawRequest{
-		RequestID:  uuid.New(),
+		RequestID:  requestID,
 		AccountID:  accountID,
 		AmountCash: amount,
 		AmountUSDC: netAmount,
 		FeeUSDC:    fee,
 		Chain:      chain,
 		ToAddress:  normalizedAddr,
-		Status:     "pending",
+		Status:     status,
 		CreatedAt:  now,
 	}
 
-	// Execute in a transaction: debit balance + create accounting logs + create request.
-	txErr := database.ExecTx(ctx, c.db, func(tx *sqlx.Tx) error {
-		txStorer := c.newStorer(tx)
-		txUserCore := user.NewCore(c.newUserStorer(tx))
+	// Execute in a transaction: lock check + daily limit check + debit balance + accounting logs + create request.
+	txErr := c.execTx(ctx, func(s txStores) error {
+		// Check withdraw_locked_until inside the transaction to avoid TOCTOU race.
+		acct, err := s.userCore.QueryByID(ctx, accountID)
+		if err != nil {
+			return fmt.Errorf("query account: %w", err)
+		}
+		if acct.WithdrawLockedUntil != nil && time.Now().Before(*acct.WithdrawLockedUntil) {
+			return v1.NewRequestError(
+				fmt.Errorf("withdrawals locked until %s", acct.WithdrawLockedUntil.Format(time.RFC3339)),
+				403,
+			)
+		}
+
+		// Daily withdraw limit check.
+		dailyTotal, err := s.storer.QueryDailyWithdrawTotal(ctx, accountID)
+		if err != nil {
+			return fmt.Errorf("query daily total: %w", err)
+		}
+		if dailyTotal.Add(amount).GreaterThan(DailyWithdrawLimit) {
+			return v1.NewRequestError(
+				fmt.Errorf("daily withdrawal limit exceeded (limit: %s USDC, used: %s USDC)", DailyWithdrawLimit, dailyTotal),
+				400,
+			)
+		}
 
 		// Debit balance_cash atomically.
-		_, debitErr := txUserCore.DecrementCashBalance(ctx, accountID, amount)
+		_, debitErr := s.userCore.DecrementCashBalance(ctx, accountID, amount)
 		if debitErr != nil {
 			return debitErr
 		}
 
+		// WITHDRAW accounting log (net amount in CASH).
+		refID := requestID.String()
+		withdrawLog := accounting.AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  accounting.ActionWithdraw,
+			Amount:      amount,
+			Currency:    accounting.CurrencyCash,
+			ReferenceID: refID,
+			CreatedAt:   now,
+		}
+		if err := s.acctStore.Create(ctx, withdrawLog); err != nil {
+			return fmt.Errorf("creating withdraw log: %w", err)
+		}
+
+		// WITHDRAW_FEE accounting log.
+		feeLog := accounting.AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  accounting.ActionWithdrawFee,
+			Amount:      fee,
+			Currency:    accounting.CurrencyCash,
+			ReferenceID: refID,
+			CreatedAt:   now,
+		}
+		if err := s.acctStore.Create(ctx, feeLog); err != nil {
+			return fmt.Errorf("creating withdraw fee log: %w", err)
+		}
+
 		// Create withdraw request record.
-		if err := txStorer.CreateWithdrawRequest(ctx, wr); err != nil {
+		if err := s.storer.CreateWithdrawRequest(ctx, wr); err != nil {
 			return fmt.Errorf("create withdraw request: %w", err)
 		}
 
@@ -264,4 +377,105 @@ func (c *Core) QueryAllAddresses(ctx context.Context, chain string) ([]DepositAd
 		return nil, fmt.Errorf("query all addresses: %w", err)
 	}
 	return addrs, nil
+}
+
+// QueryApprovedWithdrawals returns approved withdrawal requests (oldest first).
+func (c *Core) QueryApprovedWithdrawals(ctx context.Context, limit int) ([]WithdrawRequest, error) {
+	return c.storer.QueryWithdrawRequestsByStatus(ctx, []string{"approved"}, limit)
+}
+
+// ClaimApprovedWithdrawals atomically transitions approved withdrawals to
+// 'submitted' and returns them. Uses FOR UPDATE SKIP LOCKED so concurrent
+// executor instances never claim the same rows.
+func (c *Core) ClaimApprovedWithdrawals(ctx context.Context, limit int) ([]WithdrawRequest, error) {
+	return c.storer.ClaimApprovedWithdrawals(ctx, limit)
+}
+
+// QuerySubmittedWithdrawals returns submitted withdrawal requests (for recovery).
+func (c *Core) QuerySubmittedWithdrawals(ctx context.Context, limit int) ([]WithdrawRequest, error) {
+	return c.storer.QueryWithdrawRequestsByStatus(ctx, []string{"submitted"}, limit)
+}
+
+// HasActiveSweep checks if there is already a sweep in progress for a deposit address.
+func (c *Core) HasActiveSweep(ctx context.Context, depositAddressID uuid.UUID) (bool, error) {
+	return c.storer.HasActiveSweep(ctx, depositAddressID)
+}
+
+// UpdateWithdrawStatus updates the status of a withdrawal request.
+func (c *Core) UpdateWithdrawStatus(ctx context.Context, requestID uuid.UUID, status string, txHash, errorMsg *string) error {
+	return c.storer.UpdateWithdrawRequestStatus(ctx, requestID, status, txHash, errorMsg)
+}
+
+// RefundFailedWithdrawal marks a withdraw request as failed and refunds balance_cash.
+// All operations happen in a single transaction.
+func (c *Core) RefundFailedWithdrawal(ctx context.Context, requestID uuid.UUID, errMsg string) error {
+	return c.execTx(ctx, func(s txStores) error {
+		// Lock the request.
+		wr, err := s.storer.QueryWithdrawRequestForUpdate(ctx, requestID)
+		if err != nil {
+			return fmt.Errorf("lock withdraw request: %w", err)
+		}
+
+		// Only refund if not already failed/refunded.
+		if wr.Status == "failed" || wr.Status == "refunded" {
+			return nil
+		}
+
+		// Update status to failed.
+		if err := s.storer.UpdateWithdrawRequestStatus(ctx, requestID, "failed", nil, &errMsg); err != nil {
+			return fmt.Errorf("update status to failed: %w", err)
+		}
+
+		// Refund balance_cash.
+		if err := s.userCore.IncrementCashBalance(ctx, wr.AccountID, wr.AmountCash); err != nil {
+			return fmt.Errorf("refund cash balance: %w", err)
+		}
+
+		// WITHDRAW_REFUND accounting log (full amount).
+		now := time.Now().UTC()
+		refID := requestID.String()
+		refundLog := accounting.AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   wr.AccountID,
+			ActionType:  accounting.ActionWithdrawRefund,
+			Amount:      wr.AmountCash,
+			Currency:    accounting.CurrencyCash,
+			ReferenceID: refID,
+			CreatedAt:   now,
+		}
+		if err := s.acctStore.Create(ctx, refundLog); err != nil {
+			return fmt.Errorf("creating refund log: %w", err)
+		}
+
+		// WITHDRAW_FEE_REFUND accounting log (fee reversal for clean audit trail).
+		feeRefundLog := accounting.AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   wr.AccountID,
+			ActionType:  accounting.ActionWithdrawFeeRefund,
+			Amount:      wr.FeeUSDC,
+			Currency:    accounting.CurrencyCash,
+			ReferenceID: refID,
+			CreatedAt:   now,
+		}
+		if err := s.acctStore.Create(ctx, feeRefundLog); err != nil {
+			return fmt.Errorf("creating fee refund log: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// QueryRecoverableSweeps returns sweeps in non-terminal active statuses (for recovery).
+func (c *Core) QueryRecoverableSweeps(ctx context.Context, limit int) ([]Sweep, error) {
+	return c.storer.QuerySweepsByStatus(ctx, []string{"pending", "gas_funded", "submitted"}, limit)
+}
+
+// CreateSweep records a new sweep operation.
+func (c *Core) CreateSweep(ctx context.Context, s Sweep) error {
+	return c.storer.CreateSweep(ctx, s)
+}
+
+// UpdateSweepStatus updates a sweep record's status.
+func (c *Core) UpdateSweepStatus(ctx context.Context, sweepID uuid.UUID, status string, sweepTxHash *string, gasFundTxHash *string, errorMsg *string) error {
+	return c.storer.UpdateSweepStatus(ctx, sweepID, status, sweepTxHash, gasFundTxHash, errorMsg)
 }

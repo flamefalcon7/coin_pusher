@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // Storer interface declares the core database operations for deposits/withdrawals.
@@ -25,4 +26,14 @@ type Storer interface {
 	CreateWithdrawRequest(ctx context.Context, wr WithdrawRequest) error
 	QueryWithdrawRequestsByAccount(ctx context.Context, accountID uuid.UUID) ([]WithdrawRequest, error)
 	UpdateWithdrawRequestStatus(ctx context.Context, requestID uuid.UUID, status string, txHash, errorMsg *string) error
+	QueryDailyWithdrawTotal(ctx context.Context, accountID uuid.UUID) (decimal.Decimal, error)
+	QueryWithdrawRequestsByStatus(ctx context.Context, statuses []string, limit int) ([]WithdrawRequest, error)
+	QueryWithdrawRequestForUpdate(ctx context.Context, requestID uuid.UUID) (WithdrawRequest, error)
+	ClaimApprovedWithdrawals(ctx context.Context, limit int) ([]WithdrawRequest, error)
+	HasActiveSweep(ctx context.Context, depositAddressID uuid.UUID) (bool, error)
+
+	// Sweep operations.
+	CreateSweep(ctx context.Context, s Sweep) error
+	UpdateSweepStatus(ctx context.Context, sweepID uuid.UUID, status string, sweepTxHash *string, gasFundTxHash *string, errorMsg *string) error
+	QuerySweepsByStatus(ctx context.Context, statuses []string, limit int) ([]Sweep, error)
 }

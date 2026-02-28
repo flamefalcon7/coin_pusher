@@ -81,22 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_deposits_account
     ON deposits(account_id);
 
 -- ==========================================================================
--- 4. withdraw_addresses (whitelist with 24h lock)
--- ==========================================================================
-CREATE TABLE IF NOT EXISTS withdraw_addresses (
-    address_id          UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
-    account_id          UUID          NOT NULL REFERENCES accounts(account_id),
-    chain               TEXT          NOT NULL,
-    address             TEXT          NOT NULL,
-    label               TEXT          NOT NULL DEFAULT '',
-    locked_until        TIMESTAMPTZ   NOT NULL,
-    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-
-    UNIQUE(account_id, chain, address)
-);
-
--- ==========================================================================
--- 5. withdraw_requests (state machine)
+-- 4. withdraw_requests (state machine)
 -- ==========================================================================
 CREATE TABLE IF NOT EXISTS withdraw_requests (
     request_id          UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -125,7 +110,34 @@ CREATE INDEX IF NOT EXISTS idx_withdraw_requests_pending
     ON withdraw_requests(status) WHERE status IN ('pending','review','approved','submitted');
 
 -- ==========================================================================
--- 6. accounting_logs
+-- 4b. sweeps (deposit address → hot wallet USDC consolidation)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS sweeps (
+    sweep_id            UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+    deposit_address_id  UUID          NOT NULL REFERENCES deposit_addresses(address_id),
+    account_id          UUID          NOT NULL REFERENCES accounts(account_id),
+    chain               TEXT          NOT NULL DEFAULT 'base',
+    from_address        TEXT          NOT NULL,
+    to_address          TEXT          NOT NULL,
+    amount_usdc         NUMERIC(20,6) NOT NULL,
+    gas_fund_tx_hash    TEXT,
+    sweep_tx_hash       TEXT          UNIQUE,
+    status              TEXT          NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','gas_funded','submitted','confirmed','failed')),
+    error_msg           TEXT,
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    confirmed_at        TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_sweeps_account
+    ON sweeps(account_id);
+CREATE INDEX IF NOT EXISTS idx_sweeps_status
+    ON sweeps(status) WHERE status IN ('pending','gas_funded','submitted');
+CREATE INDEX IF NOT EXISTS idx_sweeps_deposit_address
+    ON sweeps(deposit_address_id, status);
+
+-- ==========================================================================
+-- 5. accounting_logs
 -- ==========================================================================
 CREATE TABLE IF NOT EXISTS accounting_logs (
     log_id              UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -138,7 +150,8 @@ CREATE TABLE IF NOT EXISTS accounting_logs (
         'GAME_REWARD',
         'WITHDRAW',
         'WITHDRAW_REFUND',
-        'WITHDRAW_FEE'
+        'WITHDRAW_FEE',
+        'WITHDRAW_FEE_REFUND'
     )),
     amount              NUMERIC(20,6) NOT NULL,
     currency            TEXT          NOT NULL CHECK (currency IN ('USDC','PLAY','CASH')),
