@@ -59,6 +59,27 @@ CREATE TABLE IF NOT EXISTS deposit_addresses (
 CREATE INDEX IF NOT EXISTS idx_deposit_addresses_account
     ON deposit_addresses(account_id);
 
+CREATE INDEX IF NOT EXISTS idx_deposit_addresses_chain_address
+    ON deposit_addresses(chain, address);
+
+-- ==========================================================================
+-- 3b. deposits (on-chain deposit records)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS deposits (
+    deposit_id          UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+    account_id          UUID          NOT NULL REFERENCES accounts(account_id),
+    chain               TEXT          NOT NULL DEFAULT 'base',
+    amount              NUMERIC(20,6) NOT NULL,
+    tx_hash             TEXT          NOT NULL UNIQUE,
+    block_number        BIGINT        NOT NULL,
+    from_address        TEXT          NOT NULL DEFAULT '',
+    status              TEXT          NOT NULL DEFAULT 'confirmed',
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_deposits_account
+    ON deposits(account_id);
+
 -- ==========================================================================
 -- 4. withdraw_addresses (whitelist with 24h lock)
 -- ==========================================================================

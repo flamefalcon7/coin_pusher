@@ -95,6 +95,12 @@ func (c *Core) IncrementPlayBalance(ctx context.Context, accountID uuid.UUID, am
 	return err
 }
 
+// DecrementCashBalance decreases an account's cash balance atomically.
+// Returns the new balance_cash value and an error if the balance is insufficient.
+func (c *Core) DecrementCashBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) (decimal.Decimal, error) {
+	return c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount.Neg())
+}
+
 // IncrementCashBalance increases an account's cash balance atomically.
 func (c *Core) IncrementCashBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
 	_, err := c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount)

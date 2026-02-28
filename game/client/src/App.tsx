@@ -15,6 +15,8 @@ import { getSavedAuth, clearAuth, type AuthResult, type Account } from "./net/au
 import { InventoryClient } from "./net/InventoryClient";
 import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
+import { DepositPage } from "./pages/DepositPage";
+import { WithdrawPage } from "./pages/WithdrawPage";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -104,6 +106,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   const keyCoinIdsRef = useRef<Set<number>>(new Set());
   const lastRequestedAmount = useRef(0);
   const [balance, setBalance] = useState<string>(account?.balance_play ?? "0");
+  const [balanceCash, setBalanceCash] = useState<string>(account?.balance_cash ?? "0");
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -664,11 +667,17 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   }, []);
 
   const showChestPage = location.pathname === '/chest';
+  const showDepositPage = location.pathname === '/deposit';
+  const showWithdrawPage = location.pathname === '/withdraw';
+
+  const handleCashBalanceChange = useCallback((newBalance: string) => {
+    setBalanceCash(newBalance);
+  }, []);
 
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
-      <PlayerInfo balance={balance} onLogout={onAuthFailure} />
+      <PlayerInfo balancePlay={balance} balanceCash={balanceCash} onLogout={onAuthFailure} />
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
 
       <Toolbar
@@ -818,6 +827,22 @@ function Game({ token, account, onAuthFailure }: GameProps) {
           keyCoins={keyCoins}
           scrollCounts={scrollCounts}
           onInventoryChange={handleInventoryChange}
+        />
+      )}
+
+      {showDepositPage && (
+        <DepositPage
+          token={token}
+          apiUrl={API_URL}
+        />
+      )}
+
+      {showWithdrawPage && (
+        <WithdrawPage
+          token={token}
+          apiUrl={API_URL}
+          balanceCash={balanceCash}
+          onBalanceChange={handleCashBalanceChange}
         />
       )}
     </div>
