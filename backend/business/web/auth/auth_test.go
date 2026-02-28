@@ -16,7 +16,7 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	a := NewDevAuth("test-issuer")
 	accountID := uuid.New()
 
-	token, err := a.GenerateToken(accountID)
+	token, err := a.GenerateToken(accountID, "user")
 	if err != nil {
 		t.Fatalf("GenerateToken() error = %v", err)
 	}
@@ -34,12 +34,37 @@ func TestGenerateAndValidateToken(t *testing.T) {
 		t.Errorf("AccountID = %q, want %q", claims.AccountID, accountID.String())
 	}
 
+	if claims.Role != "user" {
+		t.Errorf("Role = %q, want %q", claims.Role, "user")
+	}
+
 	if claims.Issuer != "test-issuer" {
 		t.Errorf("Issuer = %q, want %q", claims.Issuer, "test-issuer")
 	}
 
 	if claims.Subject != accountID.String() {
 		t.Errorf("Subject = %q, want %q", claims.Subject, accountID.String())
+	}
+}
+
+func TestGenerateToken_AdminRole(t *testing.T) {
+	t.Parallel()
+
+	a := NewDevAuth("test-issuer")
+	accountID := uuid.New()
+
+	token, err := a.GenerateToken(accountID, "admin")
+	if err != nil {
+		t.Fatalf("GenerateToken() error = %v", err)
+	}
+
+	claims, err := a.ValidateToken(token)
+	if err != nil {
+		t.Fatalf("ValidateToken() error = %v", err)
+	}
+
+	if claims.Role != "admin" {
+		t.Errorf("Role = %q, want %q", claims.Role, "admin")
 	}
 }
 
@@ -77,7 +102,7 @@ func TestValidateToken_WrongKey(t *testing.T) {
 	a := NewDevAuth("test-issuer")
 	accountID := uuid.New()
 
-	token, err := a.GenerateToken(accountID)
+	token, err := a.GenerateToken(accountID, "user")
 	if err != nil {
 		t.Fatalf("GenerateToken() error = %v", err)
 	}

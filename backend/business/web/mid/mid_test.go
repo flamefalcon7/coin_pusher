@@ -185,7 +185,7 @@ func TestAuthenticate(t *testing.T) {
 	devAuth := auth.NewDevAuth("test-issuer")
 	accountID := uuid.New()
 
-	validToken, err := devAuth.GenerateToken(accountID)
+	validToken, err := devAuth.GenerateToken(accountID, "user")
 	if err != nil {
 		t.Fatalf("generating test token: %v", err)
 	}
@@ -252,8 +252,49 @@ func TestAuthenticate(t *testing.T) {
 				if gotClaims.AccountID != accountID.String() {
 					t.Errorf("claims.AccountID = %q, want %q", gotClaims.AccountID, accountID.String())
 				}
+				if gotClaims.Role != "user" {
+					t.Errorf("claims.Role = %q, want %q", gotClaims.Role, "user")
+				}
 			}
 		})
+	}
+}
+
+func TestAuthenticate_AdminRole(t *testing.T) {
+	t.Parallel()
+
+	devAuth := auth.NewDevAuth("test-issuer")
+	accountID := uuid.New()
+
+	adminToken, err := devAuth.GenerateToken(accountID, "admin")
+	if err != nil {
+		t.Fatalf("generating admin token: %v", err)
+	}
+
+	var gotClaims Claims
+	var gotOK bool
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotClaims, gotOK = GetClaims(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := Authenticate(devAuth)(inner)
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer "+adminToken)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if !gotOK {
+		t.Fatal("claims should be set in context")
+	}
+	if gotClaims.Role != "admin" {
+		t.Errorf("claims.Role = %q, want %q", gotClaims.Role, "admin")
 	}
 }
 

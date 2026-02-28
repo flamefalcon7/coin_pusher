@@ -60,7 +60,7 @@ func (g *Group) Login(ctx context.Context, w http.ResponseWriter, r *http.Reques
 	}
 
 	// Generate JWT.
-	token, err := g.auth.GenerateToken(acct.ID)
+	token, err := g.auth.GenerateToken(acct.ID, acct.Role)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (g *Group) WalletLogin(ctx context.Context, w http.ResponseWriter, r *http.
 		return err
 	}
 
-	token, err := g.auth.GenerateToken(acct.ID)
+	token, err := g.auth.GenerateToken(acct.ID, acct.Role)
 	if err != nil {
 		return err
 	}

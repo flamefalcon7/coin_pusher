@@ -21,7 +21,7 @@ type Connection struct {
 	send           chan []byte
 	hub            *Hub
 	userID         string
-	lastCoinInsert  time.Time
+	role           string
 	lastBatchInsert time.Time
 	lastShock       time.Time
 	lastTornado    time.Time
@@ -33,13 +33,19 @@ type Connection struct {
 }
 
 // NewConnection creates a Connection and registers it with the hub.
-func NewConnection(conn *websocket.Conn, hub *Hub, userID string) *Connection {
+func NewConnection(conn *websocket.Conn, hub *Hub, userID, role string) *Connection {
 	return &Connection{
 		conn:   conn,
 		send:   make(chan []byte, sendBufLen),
 		hub:    hub,
 		userID: userID,
+		role:   role,
 	}
+}
+
+// IsAdmin returns true if the connection belongs to an admin user.
+func (c *Connection) IsAdmin() bool {
+	return c.role == "admin"
 }
 
 // writePump drains the send channel to the WebSocket.
@@ -109,18 +115,6 @@ func (c *Connection) CanBatchInsert() bool {
 	return true
 }
 
-// CanInsertCoin checks rate limit (100ms cooldown).
-func (c *Connection) CanInsertCoin() bool {
-	now := time.Now()
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if now.Sub(c.lastCoinInsert) < 50*time.Millisecond {
-		return false
-	}
-	c.lastCoinInsert = now
-	return true
-}
 
 // CanShock checks rate limit (2s cooldown).
 func (c *Connection) CanShock() bool {

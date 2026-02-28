@@ -91,6 +91,27 @@ func (s *Store) QueryByProvider(ctx context.Context, providerType, providerUID s
 	return acct, nil
 }
 
+// SetRole updates the role of an account.
+func (s *Store) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	const q = `UPDATE accounts SET role = $2, updated_at = NOW() WHERE account_id = $1`
+
+	result, err := s.db.ExecContext(ctx, q, accountID, role)
+	if err != nil {
+		return fmt.Errorf("updating role: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrNotFound, 404)
+	}
+
+	return nil
+}
+
 // UpdateBalance atomically updates an account's balance using a single
 // UPDATE ... RETURNING statement. Returns the updated balance_play value.
 // On insufficient funds (negative result), returns ErrInsufficientFund.

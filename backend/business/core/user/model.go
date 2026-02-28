@@ -15,6 +15,7 @@ type Account struct {
 	BalanceUSDC         decimal.Decimal `db:"balance_usdc" json:"balance_usdc"`
 	BalancePlay         decimal.Decimal `db:"balance_play" json:"balance_play"`
 	BalanceCash         decimal.Decimal `db:"balance_cash" json:"balance_cash"`
+	Role                string          `db:"role" json:"role"`
 	TOTPSecret          string          `db:"totp_secret" json:"-"`
 	WithdrawLockedUntil *time.Time      `db:"withdraw_locked_until" json:"-"`
 	CreatedAt           time.Time       `db:"created_at" json:"created_at"`

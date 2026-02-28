@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS accounts (
     balance_play        NUMERIC(20,4) NOT NULL DEFAULT 0,   -- play credits (non-withdrawable)
     balance_cash        NUMERIC(20,4) NOT NULL DEFAULT 0,   -- cash credits (withdrawable)
 
+    -- Role
+    role                TEXT          NOT NULL DEFAULT 'user',
+
     -- Security
     totp_secret         TEXT          NOT NULL DEFAULT '',   -- encrypted TOTP seed, '' = unbound
     withdraw_locked_until TIMESTAMPTZ,                      -- lock withdrawals after sensitive changes

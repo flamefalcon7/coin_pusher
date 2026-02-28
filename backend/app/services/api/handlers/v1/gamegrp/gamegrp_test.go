@@ -80,6 +80,10 @@ func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) 
 	return 0, nil
 }
 
+func (m *mockUserStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	return nil
+}
+
 type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log accounting.AccountingLog) error
 	queryByAccountIDFn func(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error)

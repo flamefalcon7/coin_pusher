@@ -2,12 +2,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/ardanlabs/conf/v3"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
+	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 )
 
@@ -31,7 +35,7 @@ func main() {
 func run() error {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: admin <command>")
-		fmt.Println("Commands: migrate, seed")
+		fmt.Println("Commands: migrate, seed, set-role")
 		return nil
 	}
 
@@ -59,6 +63,8 @@ func run() error {
 		return migrate(db)
 	case "seed":
 		return seed(db)
+	case "set-role":
+		return setRole(db)
 	default:
 		return fmt.Errorf("unknown command: %s", os.Args[1])
 	}
@@ -75,6 +81,33 @@ func migrate(db *sqlx.DB) error {
 	}
 
 	fmt.Println("migrations complete")
+	return nil
+}
+
+func setRole(db *sqlx.DB) error {
+	// Usage: admin set-role <account-id> <role>
+	if len(os.Args) < 4 {
+		return fmt.Errorf("usage: admin set-role <account-id> <role>")
+	}
+
+	accountID, err := uuid.Parse(os.Args[2])
+	if err != nil {
+		return fmt.Errorf("invalid account-id: %w", err)
+	}
+
+	role := os.Args[3]
+	if role != "user" && role != "admin" {
+		return fmt.Errorf("invalid role %q: must be 'user' or 'admin'", role)
+	}
+
+	store := userdb.NewStore(db)
+	core := user.NewCore(store)
+
+	if err := core.SetRole(context.Background(), accountID, role); err != nil {
+		return fmt.Errorf("setting role: %w", err)
+	}
+
+	fmt.Printf("account %s role set to %q\n", accountID, role)
 	return nil
 }
 

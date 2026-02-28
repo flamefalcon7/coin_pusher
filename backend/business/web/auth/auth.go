@@ -18,6 +18,7 @@ import (
 type Claims struct {
 	jwt.RegisteredClaims
 	AccountID string `json:"account_id"`
+	Role      string `json:"role"`
 }
 
 // Auth manages authentication and authorization.
@@ -51,7 +52,7 @@ func NewDevAuth(issuer string) *Auth {
 }
 
 // GenerateToken creates a signed JWT for the given account.
-func (a *Auth) GenerateToken(accountID uuid.UUID) (string, error) {
+func (a *Auth) GenerateToken(accountID uuid.UUID, role string) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    a.issuer,
@@ -60,6 +61,7 @@ func (a *Auth) GenerateToken(accountID uuid.UUID) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 		AccountID: accountID.String(),
+		Role:      role,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
