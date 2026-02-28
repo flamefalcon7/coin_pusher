@@ -14,6 +14,7 @@ type Storer interface {
 	QueryAllAddresses(ctx context.Context, chain string) ([]DepositAddress, error)
 	CreateAddress(ctx context.Context, addr DepositAddress) error
 	NextDerivationIndex(ctx context.Context, chain string) (int, error)
+	AcquireAdvisoryLock(ctx context.Context, key int64) error
 
 	// Deposit operations.
 	CreateDeposit(ctx context.Context, dep Deposit) error

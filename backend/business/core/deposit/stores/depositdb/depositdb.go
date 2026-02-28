@@ -98,6 +98,18 @@ func (s *Store) NextDerivationIndex(ctx context.Context, chain string) (int, err
 	return idx, nil
 }
 
+// AcquireAdvisoryLock acquires a transaction-scoped advisory lock.
+// The lock is automatically released when the transaction commits or rolls back.
+func (s *Store) AcquireAdvisoryLock(ctx context.Context, key int64) error {
+	const q = `SELECT pg_advisory_xact_lock($1)`
+
+	if _, err := s.db.ExecContext(ctx, q, key); err != nil {
+		return fmt.Errorf("acquiring advisory lock: %w", err)
+	}
+
+	return nil
+}
+
 // =========================================================================
 // Deposits
 // =========================================================================
