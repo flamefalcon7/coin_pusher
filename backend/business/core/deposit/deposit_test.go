@@ -23,6 +23,7 @@ type mockStorer struct {
 	queryAllAddressesFn      func(ctx context.Context, chain string) ([]DepositAddress, error)
 	createAddressFn          func(ctx context.Context, addr DepositAddress) error
 	nextDerivationIndexFn    func(ctx context.Context, chain string) (int, error)
+	acquireAdvisoryLockFn    func(ctx context.Context, key int64) error
 	createDepositFn          func(ctx context.Context, dep Deposit) error
 	queryDepositByTxHashFn   func(ctx context.Context, txHash string) (Deposit, error)
 	queryDepositsByAccountFn func(ctx context.Context, accountID uuid.UUID) ([]Deposit, error)
@@ -64,6 +65,13 @@ func (m *mockStorer) NextDerivationIndex(ctx context.Context, chain string) (int
 		return m.nextDerivationIndexFn(ctx, chain)
 	}
 	return 0, nil
+}
+
+func (m *mockStorer) AcquireAdvisoryLock(ctx context.Context, key int64) error {
+	if m.acquireAdvisoryLockFn != nil {
+		return m.acquireAdvisoryLockFn(ctx, key)
+	}
+	return nil
 }
 
 func (m *mockStorer) CreateDeposit(ctx context.Context, dep Deposit) error {
@@ -120,6 +128,14 @@ func newTestWallet() *wallet.Wallet {
 	return w
 }
 
+// mockTxRunner returns a TxRunner that skips real DB transactions and calls
+// fn directly with the provided mock storer.
+func mockTxRunner(s Storer) TxRunner {
+	return func(ctx context.Context, fn TxFunc) error {
+		return fn(ctx, s)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // GetOrCreateAddress
 // ---------------------------------------------------------------------------
@@ -156,10 +172,18 @@ func TestGetOrCreateAddress_CreatesNew(t *testing.T) {
 
 	accountID := uuid.New()
 	var createdAddr DepositAddress
+	var lockAcquired bool
 
 	storer := &mockStorer{
 		queryAddressByAccountFn: func(ctx context.Context, id uuid.UUID, chain string) (DepositAddress, error) {
 			return DepositAddress{}, v1.NewNotFoundError()
+		},
+		acquireAdvisoryLockFn: func(ctx context.Context, key int64) error {
+			lockAcquired = true
+			if key != advisoryKeyDerivationIndex {
+				t.Errorf("advisory lock key = %d, want %d", key, advisoryKeyDerivationIndex)
+			}
+			return nil
 		},
 		nextDerivationIndexFn: func(ctx context.Context, chain string) (int, error) {
 			return 7, nil
@@ -170,12 +194,15 @@ func TestGetOrCreateAddress_CreatesNew(t *testing.T) {
 		},
 	}
 
-	core := &Core{storer: storer, wallet: newTestWallet()}
+	core := &Core{storer: storer, wallet: newTestWallet(), runTx: mockTxRunner(storer)}
 	addr, err := core.GetOrCreateAddress(context.Background(), accountID, "base")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if !lockAcquired {
+		t.Error("advisory lock was not acquired")
+	}
 	if addr.DerivationIndex != 7 {
 		t.Errorf("derivation_index = %d, want 7", addr.DerivationIndex)
 	}
@@ -188,9 +215,42 @@ func TestGetOrCreateAddress_CreatesNew(t *testing.T) {
 	if createdAddr.AddressID == uuid.Nil {
 		t.Error("create should have been called with non-nil address_id")
 	}
-	// Address should be a valid EIP-55 format.
 	if len(addr.Address) != 42 || addr.Address[:2] != "0x" {
 		t.Errorf("address format invalid: %q", addr.Address)
+	}
+}
+
+func TestGetOrCreateAddress_DoubleCheckInsideLock(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	callCount := 0
+	existing := DepositAddress{
+		AddressID: uuid.New(),
+		AccountID: accountID,
+		Chain:     "base",
+		Address:   "0xCreatedByOther",
+	}
+
+	storer := &mockStorer{
+		queryAddressByAccountFn: func(ctx context.Context, id uuid.UUID, chain string) (DepositAddress, error) {
+			callCount++
+			if callCount == 1 {
+				// First call (fast path): not found.
+				return DepositAddress{}, v1.NewNotFoundError()
+			}
+			// Second call (inside lock): another request created it.
+			return existing, nil
+		},
+	}
+
+	core := &Core{storer: storer, wallet: newTestWallet(), runTx: mockTxRunner(storer)}
+	addr, err := core.GetOrCreateAddress(context.Background(), accountID, "base")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if addr.Address != "0xCreatedByOther" {
+		t.Errorf("address = %q, want 0xCreatedByOther (from double-check)", addr.Address)
 	}
 }
 
@@ -210,7 +270,26 @@ func TestGetOrCreateAddress_QueryError(t *testing.T) {
 	}
 }
 
-func TestGetOrCreateAddress_DerivationError(t *testing.T) {
+func TestGetOrCreateAddress_LockError(t *testing.T) {
+	t.Parallel()
+
+	storer := &mockStorer{
+		queryAddressByAccountFn: func(ctx context.Context, id uuid.UUID, chain string) (DepositAddress, error) {
+			return DepositAddress{}, v1.NewNotFoundError()
+		},
+		acquireAdvisoryLockFn: func(ctx context.Context, key int64) error {
+			return errors.New("lock failed")
+		},
+	}
+
+	core := &Core{storer: storer, wallet: newTestWallet(), runTx: mockTxRunner(storer)}
+	_, err := core.GetOrCreateAddress(context.Background(), uuid.New(), "base")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetOrCreateAddress_DerivationIndexError(t *testing.T) {
 	t.Parallel()
 
 	storer := &mockStorer{
@@ -222,7 +301,29 @@ func TestGetOrCreateAddress_DerivationError(t *testing.T) {
 		},
 	}
 
-	core := &Core{storer: storer, wallet: newTestWallet()}
+	core := &Core{storer: storer, wallet: newTestWallet(), runTx: mockTxRunner(storer)}
+	_, err := core.GetOrCreateAddress(context.Background(), uuid.New(), "base")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetOrCreateAddress_CreateError(t *testing.T) {
+	t.Parallel()
+
+	storer := &mockStorer{
+		queryAddressByAccountFn: func(ctx context.Context, id uuid.UUID, chain string) (DepositAddress, error) {
+			return DepositAddress{}, v1.NewNotFoundError()
+		},
+		nextDerivationIndexFn: func(ctx context.Context, chain string) (int, error) {
+			return 0, nil
+		},
+		createAddressFn: func(ctx context.Context, addr DepositAddress) error {
+			return errors.New("insert failed")
+		},
+	}
+
+	core := &Core{storer: storer, wallet: newTestWallet(), runTx: mockTxRunner(storer)}
 	_, err := core.GetOrCreateAddress(context.Background(), uuid.New(), "base")
 	if err == nil {
 		t.Fatal("expected error, got nil")

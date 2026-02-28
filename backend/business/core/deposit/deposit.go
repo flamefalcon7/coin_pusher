@@ -24,6 +24,13 @@ type StorerFactory func(database.DBTX) Storer
 // UserStorerFactory builds a user.Storer bound to the given DBTX.
 type UserStorerFactory func(database.DBTX) user.Storer
 
+// TxFunc is a function that runs inside a database transaction.
+// The Storer passed to it is bound to the transaction.
+type TxFunc func(ctx context.Context, txStorer Storer) error
+
+// TxRunner executes fn inside a database transaction.
+type TxRunner func(ctx context.Context, fn TxFunc) error
+
 // Core manages the set of APIs for deposit/withdrawal access.
 type Core struct {
 	db            *sqlx.DB
@@ -33,6 +40,7 @@ type Core struct {
 	userCore      *user.Core
 	newStorer     StorerFactory
 	newUserStorer UserStorerFactory
+	runTx         TxRunner
 }
 
 // NewCore constructs a deposit Core.
@@ -45,7 +53,7 @@ func NewCore(
 	newStorer StorerFactory,
 	newUserStorer UserStorerFactory,
 ) *Core {
-	return &Core{
+	c := &Core{
 		db:            db,
 		storer:        storer,
 		wallet:        w,
@@ -54,46 +62,78 @@ func NewCore(
 		newStorer:     newStorer,
 		newUserStorer: newUserStorer,
 	}
+	c.runTx = func(ctx context.Context, fn TxFunc) error {
+		return database.ExecTx(ctx, db, func(tx *sqlx.Tx) error {
+			return fn(ctx, newStorer(tx))
+		})
+	}
+	return c
 }
+
+// advisoryKeyDerivationIndex is the pg_advisory_xact_lock key used to
+// serialize deposit address creation (NextDerivationIndex + CreateAddress).
+const advisoryKeyDerivationIndex int64 = 0x636F696E_64657269 // "coinDeri"
 
 // GetOrCreateAddress returns the existing deposit address for an account
 // on the given chain, or generates a new one via HD derivation.
+// Address creation is serialized with a PostgreSQL advisory lock to prevent
+// concurrent requests from reading the same MAX(derivation_index).
 func (c *Core) GetOrCreateAddress(ctx context.Context, accountID uuid.UUID, chain string) (DepositAddress, error) {
+	// Fast path: address already exists.
 	addr, err := c.storer.QueryAddressByAccount(ctx, accountID, chain)
 	if err == nil {
 		return addr, nil
 	}
-
 	if !errors.Is(err, v1.ErrNotFound) {
 		return DepositAddress{}, fmt.Errorf("query address by account: %w", err)
 	}
 
-	// Generate a new address.
-	idx, err := c.storer.NextDerivationIndex(ctx, chain)
-	if err != nil {
-		return DepositAddress{}, fmt.Errorf("next derivation index: %w", err)
+	// Slow path: generate inside a transaction with advisory lock.
+	var created DepositAddress
+	txErr := c.runTx(ctx, func(ctx context.Context, txStorer Storer) error {
+		// Serialize all address creation for this chain.
+		if err := txStorer.AcquireAdvisoryLock(ctx, advisoryKeyDerivationIndex); err != nil {
+			return fmt.Errorf("advisory lock: %w", err)
+		}
+
+		// Re-check inside the lock (another request may have created it).
+		if existing, err := txStorer.QueryAddressByAccount(ctx, accountID, chain); err == nil {
+			created = existing
+			return nil
+		}
+
+		idx, err := txStorer.NextDerivationIndex(ctx, chain)
+		if err != nil {
+			return fmt.Errorf("next derivation index: %w", err)
+		}
+
+		derivedAddr, err := c.wallet.DeriveAddress(idx)
+		if err != nil {
+			return fmt.Errorf("deriving address: %w", err)
+		}
+
+		now := time.Now().UTC()
+		created = DepositAddress{
+			AddressID:       uuid.New(),
+			AccountID:       accountID,
+			Chain:           chain,
+			Address:         derivedAddr,
+			DerivationIndex: idx,
+			CreatedAt:       now,
+		}
+
+		if err := txStorer.CreateAddress(ctx, created); err != nil {
+			return fmt.Errorf("create address: %w", err)
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		return DepositAddress{}, txErr
 	}
 
-	derivedAddr, err := c.wallet.DeriveAddress(idx)
-	if err != nil {
-		return DepositAddress{}, fmt.Errorf("deriving address: %w", err)
-	}
-
-	now := time.Now().UTC()
-	addr = DepositAddress{
-		AddressID:       uuid.New(),
-		AccountID:       accountID,
-		Chain:           chain,
-		Address:         derivedAddr,
-		DerivationIndex: idx,
-		CreatedAt:       now,
-	}
-
-	if err := c.storer.CreateAddress(ctx, addr); err != nil {
-		return DepositAddress{}, fmt.Errorf("create address: %w", err)
-	}
-
-	return addr, nil
+	return created, nil
 }
 
 // ProcessDeposit records an on-chain deposit and credits the user's play balance.
