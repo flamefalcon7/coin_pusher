@@ -90,6 +90,10 @@ func (m *mockStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
 	return 0, nil
 }
 
+func (m *mockStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ type mockStorer struct {
 	queryByIDFn           func(ctx context.Context, accountID uuid.UUID) (Account, error)
 	queryByProviderFn     func(ctx context.Context, providerType, providerUID string) (Account, error)
 	updateBalanceFn       func(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error)
+	setRoleFn             func(ctx context.Context, accountID uuid.UUID, role string) error
 	createNonceFn         func(ctx context.Context, nonce, address string, expiresAt time.Time) error
 	consumeNonceFn        func(ctx context.Context, nonce string) (NonceRecord, error)
 	purgeExpiredNoncesFn  func(ctx context.Context) (int64, error)
@@ -60,6 +61,13 @@ func (m *mockStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, cur
 		return m.updateBalanceFn(ctx, accountID, currency, delta)
 	}
 	return decimal.Zero, nil
+}
+
+func (m *mockStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	if m.setRoleFn != nil {
+		return m.setRoleFn(ctx, accountID, role)
+	}
+	return nil
 }
 
 func (m *mockStorer) CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error {

@@ -29,24 +29,34 @@ func TestCanBatchInsert(t *testing.T) {
 	}
 }
 
-func TestCanInsertCoin(t *testing.T) {
+
+func TestIsAdmin(t *testing.T) {
 	t.Parallel()
 
-	c := &Connection{
-		send: make(chan []byte, sendBufLen),
+	tests := []struct {
+		name string
+		role string
+		want bool
+	}{
+		{"admin role", "admin", true},
+		{"user role", "user", false},
+		{"empty role", "", false},
+		{"unknown role", "moderator", false},
 	}
 
-	if !c.CanInsertCoin() {
-		t.Fatal("first call should return true")
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	if c.CanInsertCoin() {
-		t.Fatal("second immediate call should return false (within 50ms)")
-	}
+			c := &Connection{
+				send: make(chan []byte, sendBufLen),
+				role: tc.role,
+			}
 
-	time.Sleep(60 * time.Millisecond)
-	if !c.CanInsertCoin() {
-		t.Fatal("call after cooldown should return true")
+			if got := c.IsAdmin(); got != tc.want {
+				t.Errorf("IsAdmin() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

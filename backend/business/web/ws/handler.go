@@ -90,8 +90,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := claims.AccountID
+	role := claims.Role
 
-	c := NewConnection(conn, h.hub, userID)
+	c := NewConnection(conn, h.hub, userID, role)
 	h.hub.Add(c)
 
 	h.log.Infow("ws client connected", "user_id", userID, "clients", h.hub.Count())
@@ -153,8 +154,6 @@ func (h *Handler) readPump(c *Connection) {
 		}
 
 		switch msg.Op {
-		case "coin_insert":
-			h.handleCoinInsert(c, msg)
 		case "spawn_stack":
 			h.handleSpawnStack(c, msg)
 		case "shock":
@@ -181,37 +180,12 @@ func (h *Handler) readPump(c *Connection) {
 	}
 }
 
-func (h *Handler) handleCoinInsert(c *Connection, msg ClientMessage) {
-	if !c.CanInsertCoin() {
-		return
-	}
-
-	// Clamp x to valid range.
-	x := msg.X
-	if x < -maxXPosition {
-		x = -maxXPosition
-	}
-	if x > maxXPosition {
-		x = maxXPosition
-	}
-
-	cmd := NATSCoinInsertCmd{
-		UserID: c.userID,
-		X:      x,
-		Y:      spawnHeight,
-		Z:      backWallZ,
-	}
-
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		h.log.Errorw("json marshal coin_insert", "error", err)
-		return
-	}
-
-	h.nc.Publish(TopicCoinInsert(h.room), data)
-}
 
 func (h *Handler) handleSpawnStack(c *Connection, msg ClientMessage) {
+	if !c.IsAdmin() {
+		return
+	}
+
 	// Validate stack type.
 	validTypes := map[string]bool{
 		"wall": true, "tower": true, "pyramid": true,
@@ -402,6 +376,10 @@ func (h *Handler) handleSuperPush(c *Connection) {
 }
 
 func (h *Handler) handleClearAll(c *Connection) {
+	if !c.IsAdmin() {
+		return
+	}
+
 	cmd := NATSClearAllCmd{UserID: c.userID}
 	data, err := json.Marshal(cmd)
 	if err != nil {
@@ -412,6 +390,10 @@ func (h *Handler) handleClearAll(c *Connection) {
 }
 
 func (h *Handler) handleFillPlatform(c *Connection) {
+	if !c.IsAdmin() {
+		return
+	}
+
 	cmd := NATSFillPlatformCmd{UserID: c.userID}
 	data, err := json.Marshal(cmd)
 	if err != nil {
@@ -422,6 +404,10 @@ func (h *Handler) handleFillPlatform(c *Connection) {
 }
 
 func (h *Handler) handleUpdateSceneObjects(c *Connection, msg ClientMessage) {
+	if !c.IsAdmin() {
+		return
+	}
+
 	cmd := NATSUpdateSceneObjectsCmd{
 		UserID:  c.userID,
 		Objects: msg.Objects,

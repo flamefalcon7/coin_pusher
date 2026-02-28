@@ -83,6 +83,11 @@ func (c *Core) QueryByID(ctx context.Context, accountID uuid.UUID) (Account, err
 	return acct, nil
 }
 
+// SetRole updates the role of an account.
+func (c *Core) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	return c.storer.SetRole(ctx, accountID, role)
+}
+
 // DecrementPlayBalance decreases an account's play balance atomically.
 // Returns the new balance_play value and an error if the balance is insufficient.
 func (c *Core) DecrementPlayBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) (decimal.Decimal, error) {

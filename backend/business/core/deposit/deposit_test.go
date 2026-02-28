@@ -236,6 +236,9 @@ func (m *mockUserStorer) ConsumeNonce(ctx context.Context, nonce string) (user.N
 	return user.NonceRecord{}, nil
 }
 func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) { return 0, nil }
+func (m *mockUserStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	return nil
+}
 
 func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
 	if m.queryByIDFn != nil {

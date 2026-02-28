@@ -99,6 +99,10 @@ func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) 
 	return 0, nil
 }
 
+func (m *mockUserStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // ProcessDeposit
 // ---------------------------------------------------------------------------
