@@ -35,9 +35,9 @@
   top: 52px;
   right: 16px;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
   border-radius: 6px;
   background: rgba(26, 14, 46, 0.85);
   border: 1px solid rgba(245, 230, 184, 0.15);
@@ -45,11 +45,67 @@
   user-select: none;
 }
 
+.player-info-balances {
+  display: flex;
+  gap: 12px;
+}
+
 .player-info-balance {
   font-family: 'Baloo 2', cursive, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent-teal);
+}
+
+.player-info-cash {
+  color: var(--accent-orange);
+}
+
+.player-info-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.45);
+  text-transform: uppercase;
+  margin-right: 3px;
+}
+
+.player-info-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.player-info-action-btn {
+  padding: 2px 8px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 4px;
+  background: transparent;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 11px;
+  text-decoration: none;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.player-info-deposit {
+  color: var(--accent-teal);
+  border-color: rgba(78, 205, 196, 0.3);
+}
+
+.player-info-deposit:hover {
+  opacity: 1;
+  border-color: var(--accent-teal);
+}
+
+.player-info-withdraw {
+  color: var(--accent-orange);
+  border-color: rgba(232, 150, 32, 0.3);
+}
+
+.player-info-withdraw:hover {
+  opacity: 1;
+  border-color: var(--accent-orange);
 }
 
 .player-info-logout {

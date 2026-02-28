@@ -1,22 +1,37 @@
+import { Link } from 'react-router-dom';
+
 interface PlayerInfoProps {
-  balance: string;
+  balancePlay: string;
+  balanceCash: string;
   onLogout: () => void;
 }
 
-export function PlayerInfo({ balance, onLogout }: PlayerInfoProps) {
-  // Format balance: strip trailing zeros, show 2 decimal places minimum
-  const num = parseFloat(balance);
-  const display = Number.isFinite(num) ? num.toLocaleString(undefined, {
+function fmt(raw: string): string {
+  const num = parseFloat(raw);
+  return Number.isFinite(num) ? num.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }) : balance;
+  }) : raw;
+}
 
+export function PlayerInfo({ balancePlay, balanceCash, onLogout }: PlayerInfoProps) {
   return (
     <div className="player-info">
-      <span className="player-info-balance">{display} play coin</span>
-      <button className="player-info-logout" onClick={onLogout}>
-        Logout
-      </button>
+      <div className="player-info-balances">
+        <span className="player-info-balance">
+          <span className="player-info-label">Play</span> {fmt(balancePlay)}
+        </span>
+        <span className="player-info-balance player-info-cash">
+          <span className="player-info-label">Cash</span> {fmt(balanceCash)}
+        </span>
+      </div>
+      <div className="player-info-actions">
+        <Link to="/deposit" className="player-info-action-btn player-info-deposit">Deposit</Link>
+        <Link to="/withdraw" className="player-info-action-btn player-info-withdraw">Withdraw</Link>
+        <button className="player-info-logout" onClick={onLogout}>
+          Logout
+        </button>
+      </div>
     </div>
   );
 }

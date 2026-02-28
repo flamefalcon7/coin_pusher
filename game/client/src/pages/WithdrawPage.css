@@ -1,0 +1,301 @@
+.withdraw-page {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-deep);
+  overflow-y: auto;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  color: var(--text-color);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.withdraw-header {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.withdraw-back-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.withdraw-back-link:hover {
+  opacity: 1;
+}
+
+.withdraw-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-orange);
+}
+
+/* ── Balance Banner ──────────────────────────────────────────────────── */
+
+.withdraw-balance-banner {
+  width: 100%;
+  max-width: 440px;
+  margin: 0 20px;
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.7);
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 10px;
+}
+
+.withdraw-balance-amount {
+  color: var(--accent-teal);
+  font-weight: 700;
+}
+
+/* ── Form Card ───────────────────────────────────────────────────────── */
+
+.withdraw-card {
+  width: 100%;
+  max-width: 440px;
+  margin: 16px 20px 0;
+  padding: 24px 20px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: withdrawCardIn 0.35s ease-out;
+}
+
+@keyframes withdrawCardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.withdraw-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: -6px;
+}
+
+.withdraw-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(245, 230, 184, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.withdraw-input:focus {
+  border-color: var(--accent-teal);
+}
+
+.withdraw-input::placeholder {
+  color: rgba(245, 230, 184, 0.25);
+}
+
+.withdraw-input:disabled {
+  opacity: 0.5;
+}
+
+/* Remove number input spinner */
+.withdraw-amount-input::-webkit-outer-spin-button,
+.withdraw-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.withdraw-amount-input {
+  -moz-appearance: textfield;
+}
+
+.withdraw-amount-row {
+  display: flex;
+  gap: 8px;
+}
+
+.withdraw-amount-input {
+  flex: 1;
+}
+
+.withdraw-max-btn {
+  padding: 0 16px;
+  border: 1px solid var(--accent-orange);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-orange);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.withdraw-max-btn:hover:not(:disabled) {
+  background: rgba(232, 150, 32, 0.15);
+}
+
+.withdraw-max-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Fee rows ────────────────────────────────────────────────────────── */
+
+.withdraw-fee-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: rgba(245, 230, 184, 0.5);
+  padding: 0 2px;
+}
+
+.withdraw-fee-row.withdraw-receive {
+  font-weight: 700;
+  color: var(--accent-teal);
+  font-size: 14px;
+}
+
+/* ── Messages ────────────────────────────────────────────────────────── */
+
+.withdraw-msg {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.withdraw-msg-error {
+  color: var(--accent-pink);
+  background: rgba(232, 57, 107, 0.1);
+  border: 1px solid rgba(232, 57, 107, 0.25);
+}
+
+.withdraw-msg-success {
+  color: var(--accent-green);
+  background: rgba(107, 191, 89, 0.1);
+  border: 1px solid rgba(107, 191, 89, 0.25);
+}
+
+/* ── Submit Button ───────────────────────────────────────────────────── */
+
+.withdraw-submit-btn {
+  padding: 14px 48px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-orange));
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+.withdraw-submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.03);
+}
+
+.withdraw-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── History ─────────────────────────────────────────────────────────── */
+
+.withdraw-history {
+  width: 100%;
+  max-width: 480px;
+  padding: 0 20px 32px;
+  margin-top: 28px;
+}
+
+.withdraw-history-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-color);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.withdraw-history-empty {
+  text-align: center;
+  font-size: 13px;
+  color: rgba(245, 230, 184, 0.35);
+  padding: 16px 0;
+}
+
+.withdraw-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.withdraw-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.08);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.withdraw-history-amount {
+  font-weight: 700;
+  color: var(--accent-orange);
+  min-width: 90px;
+}
+
+.withdraw-history-status {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.withdraw-history-status.status-completed {
+  color: var(--accent-green);
+}
+
+.withdraw-history-status.status-pending,
+.withdraw-history-status.status-processing {
+  color: var(--accent-orange);
+}
+
+.withdraw-history-status.status-failed {
+  color: var(--accent-pink);
+}
+
+.withdraw-history-date {
+  color: rgba(245, 230, 184, 0.4);
+  font-size: 12px;
+  min-width: 40px;
+  text-align: right;
+}

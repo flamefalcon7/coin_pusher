@@ -27,11 +27,14 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/debug"
+	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/depositgrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/gamegrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/inventorygrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/usergrp"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/deposit"
+	depositdb "github.com/flamefalcon/coin-pusher/backend/business/core/deposit/stores/depositdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
@@ -45,6 +48,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/foundation/keystore"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/logger"
 	foundnats "github.com/flamefalcon/coin-pusher/backend/foundation/nats"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/wallet"
 )
 
 func main() {
@@ -81,6 +85,9 @@ type config struct {
 	}
 	Game struct {
 		APIKey string `conf:"default:dev-secret,mask"`
+	}
+	Wallet struct {
+		Seed string `conf:"mask"`
 	}
 	NATS struct {
 		URL           string        `conf:"default:nats://localhost:4222"`
@@ -170,6 +177,27 @@ func run() error {
 		})
 	}
 
+	// Deposit/withdrawal domain (requires wallet seed).
+	var depositCore *deposit.Core
+	if cfg.Wallet.Seed != "" {
+		w, err := wallet.New(cfg.Wallet.Seed)
+		if err != nil {
+			return fmt.Errorf("constructing wallet: %w", err)
+		}
+		depositCore = deposit.NewCore(
+			db,
+			depositdb.NewStore(db),
+			w,
+			acctCore,
+			userCore,
+			func(dbtx database.DBTX) deposit.Storer { return depositdb.NewStore(dbtx) },
+			func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
+		)
+		log.Infow("deposit/withdrawal system initialized")
+	} else {
+		log.Warnw("BACKEND_WALLET_SEED not set — deposit/withdrawal routes disabled")
+	}
+
 	// -------------------------------------------------------------------------
 	// NATS
 	nc, err := foundnats.Connect(foundnats.Config{
@@ -199,7 +227,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, userCore, acctCore, gameCore, heatEngine, inventoryCore, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -519,6 +547,7 @@ func buildAPIMux(
 	gameCore *game.Core,
 	heatEngine *heat.HeatEngine,
 	inventoryCore *inventory.Core,
+	depositCore *deposit.Core,
 	nc *nats.Conn,
 	wsHandler *ws.Handler,
 ) *chi.Mux {
@@ -566,6 +595,15 @@ func buildAPIMux(
 		r.Post("/v1/game/batch-insert", mid.Errors(log, gameGrp.BatchInsert))
 		r.Get("/v1/inventory", mid.Errors(log, invGrp.GetInventory))
 		r.Post("/v1/chest/open", mid.Errors(log, invGrp.OpenChest))
+
+		// Deposit/withdrawal routes (only if wallet is configured).
+		if depositCore != nil {
+			depGrp := depositgrp.New(depositCore)
+			r.Get("/v1/deposit/address", mid.Errors(log, depGrp.GetAddress))
+			r.Get("/v1/deposits", mid.Errors(log, depGrp.ListDeposits))
+			r.Post("/v1/withdraw", mid.Errors(log, depGrp.RequestWithdrawal))
+			r.Get("/v1/withdrawals", mid.Errors(log, depGrp.ListWithdrawals))
+		}
 	})
 
 	// Game-secret-protected
