@@ -228,7 +228,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -543,6 +543,7 @@ func buildAPIMux(
 	a *auth.Auth,
 	gameAPIKey string,
 	corsOrigins string,
+	devMode bool,
 	userCore *user.Core,
 	acctCore *accounting.Core,
 	gameCore *game.Core,
@@ -587,7 +588,9 @@ func buildAPIMux(
 	// Public
 	mux.Get("/v1/auth/nonce", mid.Errors(log, userGrp.Nonce))
 	mux.Post("/v1/auth/wallet/login", mid.Errors(log, userGrp.WalletLogin))
-	mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login)) // dev mode only
+	if devMode {
+		mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login))
+	}
 
 	// JWT-protected
 	mux.Group(func(r chi.Router) {

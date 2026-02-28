@@ -10,7 +10,7 @@
 
 | Severity | Count | Key Themes |
 |----------|-------|------------|
-| P0 | 8 (1 fixed) | Free coin injection, auth bypass, pprof exposure, ~~admin commands unguarded~~, reward system broken, CSRF via WS, weak HD wallet KDF, deposit double-credit |
+| P0 | 8 (2 fixed) | Free coin injection, ~~auth bypass~~, pprof exposure, ~~admin commands unguarded~~, reward system broken, CSRF via WS, weak HD wallet KDF, deposit double-credit |
 | P1 | 19 | Predictable RNG, NATS fragility, token leakage, timing attacks, missing rate limits, float64 financials, reorg handling, fire-and-forget NATS |
 
 ---
@@ -49,24 +49,9 @@ func (h *Handler) handleCoinInsert(c *Connection, msg ClientMessage) {
 
 ---
 
-### P0-2: Dev-Mode Login Endpoint Exposed in Production Without Guard
+### P0-2: Dev-Mode Login Endpoint Exposed in Production Without Guard — **FIXED**
 
-**Location**: `backend/app/services/api/main.go:590`
-
-```go
-mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login)) // dev mode only ← comment only
-```
-
-The comment says "dev mode only", but the route is registered **unconditionally** — there is no check of `cfg.Auth.DevMode`. The `Login` handler accepts arbitrary `provider_type` and `provider_uid`, calls `FindOrCreate`, and issues a JWT, completely bypassing wallet signature verification.
-
-**Impact**: Complete authentication bypass. An attacker can authenticate as any wallet address by sending `{"provider_type":"wallet","provider_uid":"0xVICTIM"}`, then call `/v1/withdraw` to steal funds.
-
-**Recommendation**:
-```go
-if cfg.Auth.DevMode {
-    mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login))
-}
-```
+**Status**: Fixed — `buildAPIMux` now receives a `devMode bool` parameter; the `/v1/auth/login` route is only registered when `devMode` is true. In production (`BACKEND_AUTH_DEVMODE=false`, the default), the endpoint does not exist.
 
 ---
 
@@ -500,7 +485,7 @@ Since debug routes are on the public mux (P0-3), the readiness endpoint returns 
 
 | Priority | Finding | Fix |
 |----------|---------|-----|
-| 1st | P0-2 | Add `DevMode` guard to `/v1/auth/login` |
+| ~~1st~~ | ~~P0-2~~ | ~~Add `DevMode` guard to `/v1/auth/login`~~ — **FIXED** |
 | 2nd | P0-3 | Remove `debug.Routes(mux, db)` from public mux |
 | ~~3rd~~ | ~~P0-4~~ | ~~Remove or gate admin commands behind role check~~ — **FIXED** |
 | 4th | P0-1 | Add balance debit to `coin_insert` and `spawn_stack` |
