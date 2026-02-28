@@ -146,8 +146,15 @@ void main() {
     float fresnel = pow(1.0 - NdotV, 3.0) * 0.08;
     litColor += fresnel;
 
-    // ── Emissive (for shock effect glow) ─────────────────────────────
-    litColor += emissiveColor;
+    // ── Emissive with spatial wave (key coins glow in traveling waves) ─
+    float emLen = dot(emissiveColor, emissiveColor);
+    if (emLen > 0.001) {
+        float wave = sin(vWorldPos.x * 8.0 + vWorldPos.z * 6.0 + time * 3.0);
+        float pulse = 0.55 + 0.45 * wave;
+        litColor += emissiveColor * pulse;
+    } else {
+        litColor += emissiveColor;
+    }
 
     gl_FragColor = vec4(litColor, 1.0);
 }

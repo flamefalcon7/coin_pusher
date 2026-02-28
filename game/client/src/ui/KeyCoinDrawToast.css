@@ -1,0 +1,52 @@
+.key-coin-draw-toast {
+  position: absolute;
+  top: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 20, 50, 0.92);
+  color: #F5E6B8;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: clamp(14px, 3vw, 18px);
+  font-weight: 700;
+  padding: 10px 24px;
+  border-radius: 12px;
+  border: 2px solid rgba(200, 160, 60, 0.5);
+  pointer-events: none;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: key-coin-draw-float 5s ease-out forwards;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.key-coin-draw-toast.is-me {
+  border-color: rgba(255, 215, 0, 0.9);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.4), 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.key-coin-draw-icon {
+  font-size: 1.4em;
+}
+
+.key-coin-draw-text strong {
+  color: #FFD700;
+}
+
+@keyframes key-coin-draw-float {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  10% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+}

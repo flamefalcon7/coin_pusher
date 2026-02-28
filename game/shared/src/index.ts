@@ -27,4 +27,6 @@ export {
   BodyStateSchema,
   type QueueUpdate,
   QueueUpdateSchema,
+  type KeyCoinDraw,
+  KeyCoinDrawSchema,
 } from "./gen/game_pb.js";

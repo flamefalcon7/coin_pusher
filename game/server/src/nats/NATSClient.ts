@@ -369,11 +369,17 @@ export class NATSClient {
           coins: msg.coins.map((c) => ({
             id: c.id,
             ownerId: c.owner_id,
+            isKeyCoin: c.is_key_coin ?? false,
           })),
         },
       },
     });
     this.nc!.publish(`game.${this.room}.coin_spawn`, toBinary(GameMessageSchema, gm));
+  }
+
+  // Publish key coin front despawn event (JSON encoded, for backend processing)
+  publishKeyCoinFrontDespawn(data: { count: number; tick: number }): void {
+    this.nc!.publish(`game.${this.room}.evt.key_coin_front_despawn`, sc.encode(JSON.stringify(data)));
   }
 
   // Publish queue update notification (protobuf encoded, for client broadcast)

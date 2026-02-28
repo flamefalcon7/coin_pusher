@@ -1,4 +1,4 @@
-import { SLOT_MACHINE_CONFIG } from "@coin-pusher/shared";
+import { SLOT_MACHINE_CONFIG, JACKPOT_WHEEL_CONFIG } from "@coin-pusher/shared";
 
 export interface HoleTooltipData {
   holeId: "left" | "right";
@@ -9,11 +9,15 @@ export interface HoleTooltipData {
 interface HoleTooltipProps {
   data: HoleTooltipData;
   slotCounter: number;
+  wheelCounter: number;
 }
 
-export function HoleTooltip({ data, slotCounter }: HoleTooltipProps) {
-  const triggerCount = SLOT_MACHINE_CONFIG.TRIGGER_COUNT;
-  const progress = Math.min(slotCounter / triggerCount, 1);
+export function HoleTooltip({ data, slotCounter, wheelCounter }: HoleTooltipProps) {
+  const isLeft = data.holeId === "left";
+  const triggerCount = isLeft ? SLOT_MACHINE_CONFIG.TRIGGER_COUNT : JACKPOT_WHEEL_CONFIG.TRIGGER_COUNT;
+  const counter = isLeft ? slotCounter : wheelCounter;
+  const progress = Math.min(counter / triggerCount, 1);
+  const label = isLeft ? "Collect coins to spin!" : "Collect coins to spin the wheel!";
 
   return (
     <div
@@ -23,21 +27,15 @@ export function HoleTooltip({ data, slotCounter }: HoleTooltipProps) {
         top: data.y,
       }}
     >
-      {data.holeId === "left" ? (
-        <>
-          <div className="hole-tooltip-text">
-            Collect coins to spin! {slotCounter}/{triggerCount}
-          </div>
-          <div className="hole-tooltip-bar-bg">
-            <div
-              className="hole-tooltip-bar-fill"
-              style={{ width: `${progress * 100}%` }}
-            />
-          </div>
-        </>
-      ) : (
-        <div className="hole-tooltip-text">Coming soon...</div>
-      )}
+      <div className="hole-tooltip-text">
+        {label} {counter}/{triggerCount}
+      </div>
+      <div className="hole-tooltip-bar-bg">
+        <div
+          className="hole-tooltip-bar-fill"
+          style={{ width: `${progress * 100}%` }}
+        />
+      </div>
     </div>
   );
 }

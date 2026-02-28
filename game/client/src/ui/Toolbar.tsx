@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import './Toolbar.css';
 
+export interface ScrollCounts {
+  shock: number;
+  tornado: number;
+  explosion: number;
+  lightning: number;
+  superPush: number;
+}
+
 interface ToolbarProps {
   muted: boolean;
   onToggleMute: () => void;
@@ -25,6 +33,7 @@ interface ToolbarProps {
   onSuperPush: () => void;
   superPushDisabled: boolean;
   superPushCooldown: boolean;
+  scrollCounts?: ScrollCounts;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -51,6 +60,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onSuperPush,
   superPushDisabled,
   superPushCooldown,
+  scrollCounts,
 }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -111,7 +121,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <button
         className="toolbar-action-btn shock"
         onClick={onShock}
-        disabled={shockDisabled || shockCooldown}
+        disabled={shockDisabled || shockCooldown || (scrollCounts !== undefined && scrollCounts.shock <= 0)}
         title="Shock Pins"
       >
         <img
@@ -123,6 +133,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <span className="toolbar-action-text">
           {shockCooldown ? '...' : 'SHOCK'}
         </span>
+        {scrollCounts !== undefined && scrollCounts.shock > 0 && (
+          <span className="toolbar-scroll-badge">{scrollCounts.shock}</span>
+        )}
       </button>
 
       {/* Ability buttons — vertical stack on the right */}
@@ -130,37 +143,49 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           className={`toolbar-action-btn toolbar-action-img superPush ${superPushCooldown ? 'cooldown' : ''}`}
           onClick={onSuperPush}
-          disabled={superPushDisabled || superPushCooldown}
+          disabled={superPushDisabled || superPushCooldown || (scrollCounts !== undefined && scrollCounts.superPush <= 0)}
           title="Super Push"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/superPush.png" alt="Super Push" draggable={false} />
+          {scrollCounts !== undefined && scrollCounts.superPush > 0 && (
+            <span className="toolbar-scroll-badge">{scrollCounts.superPush}</span>
+          )}
         </button>
 
         <button
           className={`toolbar-action-btn toolbar-action-img tornado ${tornadoTargeting ? 'targeting' : ''} ${tornadoCooldown ? 'cooldown' : ''}`}
           onClick={onTornado}
-          disabled={tornadoDisabled || tornadoCooldown}
+          disabled={tornadoDisabled || tornadoCooldown || (scrollCounts !== undefined && scrollCounts.tornado <= 0)}
           title="Tornado — click platform to place"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/tornado.png" alt="Tornado" draggable={false} />
+          {scrollCounts !== undefined && scrollCounts.tornado > 0 && (
+            <span className="toolbar-scroll-badge">{scrollCounts.tornado}</span>
+          )}
         </button>
 
         <button
           className={`toolbar-action-btn toolbar-action-img explosion ${explosionTargeting ? 'targeting' : ''} ${explosionCooldown ? 'cooldown' : ''}`}
           onClick={onExplosion}
-          disabled={explosionDisabled || explosionCooldown}
+          disabled={explosionDisabled || explosionCooldown || (scrollCounts !== undefined && scrollCounts.explosion <= 0)}
           title="Explosion — click platform to place"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/blast.png" alt="Explosion" draggable={false} />
+          {scrollCounts !== undefined && scrollCounts.explosion > 0 && (
+            <span className="toolbar-scroll-badge">{scrollCounts.explosion}</span>
+          )}
         </button>
 
         <button
           className={`toolbar-action-btn toolbar-action-img lightning ${lightningCooldown ? 'cooldown' : ''}`}
           onClick={onLightning}
-          disabled={lightningDisabled || lightningCooldown}
+          disabled={lightningDisabled || lightningCooldown || (scrollCounts !== undefined && scrollCounts.lightning <= 0)}
           title="Lightning — random bolts rain down"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/thunder.png" alt="Lightning" draggable={false} />
+          {scrollCounts !== undefined && scrollCounts.lightning > 0 && (
+            <span className="toolbar-scroll-badge">{scrollCounts.lightning}</span>
+          )}
         </button>
       </div>
     </div>

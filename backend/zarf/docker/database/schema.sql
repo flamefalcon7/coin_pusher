@@ -152,3 +152,28 @@ CREATE TABLE IF NOT EXISTS indexer_state (
     last_cursor         TEXT          NOT NULL DEFAULT '',
     updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
+
+-- ==========================================================================
+-- 9. inventory (per-account key coins + scroll counts)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS inventory (
+    account_id          UUID          PRIMARY KEY REFERENCES accounts(account_id),
+    key_coins           INT           NOT NULL DEFAULT 0 CHECK (key_coins >= 0),
+    scroll_shock        INT           NOT NULL DEFAULT 0 CHECK (scroll_shock >= 0),
+    scroll_tornado      INT           NOT NULL DEFAULT 0 CHECK (scroll_tornado >= 0),
+    scroll_explosion    INT           NOT NULL DEFAULT 0 CHECK (scroll_explosion >= 0),
+    scroll_lightning    INT           NOT NULL DEFAULT 0 CHECK (scroll_lightning >= 0),
+    scroll_super_push   INT           NOT NULL DEFAULT 0 CHECK (scroll_super_push >= 0),
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ==========================================================================
+-- 10. chest_opens (log of chest open results)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS chest_opens (
+    open_id             UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+    account_id          UUID          NOT NULL REFERENCES accounts(account_id),
+    scroll_type         TEXT          NOT NULL,
+    scroll_count        INT           NOT NULL DEFAULT 1,
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);

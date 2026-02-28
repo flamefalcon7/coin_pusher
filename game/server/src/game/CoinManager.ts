@@ -1,4 +1,5 @@
 import { COIN_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import type { BodyType } from "@coin-pusher/shared";
 import type { GameState } from "./GameState.js";
 
 export class CoinManager {
@@ -12,7 +13,8 @@ export class CoinManager {
     x: number,
     y?: number,
     z?: number,
-    rotation?: [number, number, number, number]
+    rotation?: [number, number, number, number],
+    bodyType?: BodyType
   ): number | null {
     // Validate x position
     if (
@@ -28,7 +30,7 @@ export class CoinManager {
     const spawnY = y ?? COIN_CONFIG.SPAWN_HEIGHT;
     const spawnZ = z ?? 0;
 
-    this.gameState.addCoin(id, spawnX, spawnY, spawnZ, rotation);
+    this.gameState.addCoin(id, spawnX, spawnY, spawnZ, rotation, bodyType);
 
     return id;
   }
@@ -38,15 +40,26 @@ export class CoinManager {
     x: number,
     y: number,
     z: number,
-    rotation?: [number, number, number, number]
+    rotation?: [number, number, number, number],
+    bodyType?: BodyType
   ): number {
     const id = this.gameState.getNextBodyId();
     const f = 1000;
     const spawnX = Math.round(x * f) / f;
 
-    this.gameState.addCoin(id, spawnX, y, z, rotation);
+    this.gameState.addCoin(id, spawnX, y, z, rotation, bodyType);
 
     return id;
+  }
+
+  /** Spawn a key coin without x-range validation. */
+  spawnKeyCoinUnchecked(
+    x: number,
+    y: number,
+    z: number,
+    rotation?: [number, number, number, number]
+  ): number {
+    return this.spawnCoinUnchecked(x, y, z, rotation, "key_coin");
   }
 
   removeCoin(id: number): void {

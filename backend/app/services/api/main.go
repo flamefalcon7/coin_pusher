@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,11 +28,14 @@ import (
 
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/debug"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/gamegrp"
+	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/inventorygrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/usergrp"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
+	inventorydb "github.com/flamefalcon/coin-pusher/backend/business/core/inventory/stores/inventorydb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
@@ -149,6 +154,21 @@ func run() error {
 	)
 	gameCore := game.NewCore(userCore, acctCore)
 	heatEngine := heat.New()
+	inventoryCore := inventory.NewCore(
+		db,
+		inventorydb.NewStore(db),
+		func(dbtx database.DBTX) inventory.Storer { return inventorydb.NewStore(dbtx) },
+	)
+	if cfg.Auth.DevMode {
+		inventoryCore.SetDevDefaults(inventory.DevDefaults{
+			KeyCoins:        100,
+			ScrollShock:     100,
+			ScrollTornado:   100,
+			ScrollExplosion: 100,
+			ScrollLightning: 100,
+			ScrollSuperPush: 100,
+		})
+	}
 
 	// -------------------------------------------------------------------------
 	// NATS
@@ -170,7 +190,7 @@ func run() error {
 		return fmt.Errorf("starting nats relay: %w", err)
 	}
 
-	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine)
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore)
 
 	// Subscribe to slot_status from game server for cap enforcement.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
@@ -179,7 +199,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, userCore, acctCore, gameCore, heatEngine, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, userCore, acctCore, gameCore, heatEngine, inventoryCore, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -346,6 +366,91 @@ func run() error {
 	}()
 
 	// -------------------------------------------------------------------------
+	// Key coin lucky draw: subscribe to key_coin_front_despawn from game server.
+	keyCoinSub, err := nc.Subscribe(ws.TopicKeyCoinFrontDespawn("main"), func(msg *nats.Msg) {
+		var evt struct {
+			Count int `json:"count"`
+			Tick  int `json:"tick"`
+		}
+		if err := json.Unmarshal(msg.Data, &evt); err != nil {
+			log.Errorw("key_coin_front_despawn unmarshal error", "error", err)
+			return
+		}
+		if evt.Count <= 0 {
+			return
+		}
+
+		// Get heat shares to determine winner.
+		shares := heatEngine.GetShares()
+		if len(shares) == 0 {
+			return
+		}
+
+		// Weighted random pick a winner based on heat shares.
+		var totalShare float64
+		for _, s := range shares {
+			totalShare += s.Share
+		}
+
+		rVal := mustCryptoRandFloat64() * totalShare
+		var cumulative float64
+		var winnerID uuid.UUID
+		for _, s := range shares {
+			cumulative += s.Share
+			if rVal < cumulative {
+				winnerID = s.UserID
+				break
+			}
+		}
+		if winnerID == uuid.Nil {
+			winnerID = shares[len(shares)-1].UserID
+		}
+
+		// Credit key coins to winner.
+		if err := inventoryCore.CreditKeyCoins(context.Background(), winnerID, evt.Count); err != nil {
+			log.Errorw("key coin credit error", "user_id", winnerID, "count", evt.Count, "error", err)
+			return
+		}
+
+		// Look up winner display name.
+		winnerName := ""
+		acct, err := userCore.QueryByID(context.Background(), winnerID)
+		if err == nil {
+			winnerName = acct.DisplayName
+		}
+
+		// Publish key_coin_draw to NATS for broadcast to all clients.
+		drawMsg, _ := json.Marshal(map[string]interface{}{
+			"op":          "key_coin_draw",
+			"winner_id":   winnerID.String(),
+			"winner_name": winnerName,
+			"count":       evt.Count,
+		})
+		nc.Publish(ws.TopicKeyCoinDraw("main"), drawMsg)
+
+		// Send inventory_update to winner via WS.
+		inv, err := inventoryCore.GetInventory(context.Background(), winnerID)
+		if err == nil {
+			invMsg, _ := msgpack.Marshal(map[string]interface{}{
+				"op":                "inventory_update",
+				"key_coins":         inv.KeyCoins,
+				"scroll_shock":      inv.ScrollShock,
+				"scroll_tornado":    inv.ScrollTornado,
+				"scroll_explosion":  inv.ScrollExplosion,
+				"scroll_lightning":  inv.ScrollLightning,
+				"scroll_super_push": inv.ScrollSuperPush,
+			})
+			hub.SendToUser(winnerID.String(), invMsg)
+		}
+
+		log.Infow("key coin draw", "winner_id", winnerID, "count", evt.Count)
+	})
+	if err != nil {
+		return fmt.Errorf("subscribing to key_coin_front_despawn: %w", err)
+	}
+	defer keyCoinSub.Unsubscribe()
+
+	// -------------------------------------------------------------------------
 	// Shutdown
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
@@ -394,6 +499,15 @@ func buildAuth(cfg config, log *zap.SugaredLogger) (*auth.Auth, error) {
 	return auth.New(ks, cfg.Auth.ActiveKID, cfg.Auth.Issuer), nil
 }
 
+func mustCryptoRandFloat64() float64 {
+	max := new(big.Int).SetUint64(1 << 53)
+	n, err := crand.Int(crand.Reader, max)
+	if err != nil {
+		return 0
+	}
+	return float64(n.Uint64()) / float64(1<<53)
+}
+
 func buildAPIMux(
 	log *zap.SugaredLogger,
 	db *sqlx.DB,
@@ -404,6 +518,7 @@ func buildAPIMux(
 	acctCore *accounting.Core,
 	gameCore *game.Core,
 	heatEngine *heat.HeatEngine,
+	inventoryCore *inventory.Core,
 	nc *nats.Conn,
 	wsHandler *ws.Handler,
 ) *chi.Mux {
@@ -437,6 +552,7 @@ func buildAPIMux(
 	// V1 routes.
 	userGrp := usergrp.New(userCore, a)
 	gameGrp := gamegrp.New(gameCore, heatEngine, nc)
+	invGrp := inventorygrp.New(inventoryCore)
 
 	// Public
 	mux.Get("/v1/auth/nonce", mid.Errors(log, userGrp.Nonce))
@@ -448,6 +564,8 @@ func buildAPIMux(
 		r.Use(mid.Authenticate(a))
 		r.Get("/v1/user/profile", mid.Errors(log, userGrp.Profile))
 		r.Post("/v1/game/batch-insert", mid.Errors(log, gameGrp.BatchInsert))
+		r.Get("/v1/inventory", mid.Errors(log, invGrp.GetInventory))
+		r.Post("/v1/chest/open", mid.Errors(log, invGrp.OpenChest))
 	})
 
 	// Game-secret-protected

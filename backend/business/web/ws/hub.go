@@ -61,3 +61,17 @@ func (h *Hub) GetSnapshot() []byte {
 	defer h.snapshotMu.RUnlock()
 	return h.snapshot
 }
+
+// SendToUser sends raw bytes to the connection belonging to userID.
+// If the user is not connected, the message is silently dropped.
+func (h *Hub) SendToUser(userID string, data []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for c := range h.connections {
+		if c.userID == userID {
+			c.SendRaw(data)
+			return
+		}
+	}
+}

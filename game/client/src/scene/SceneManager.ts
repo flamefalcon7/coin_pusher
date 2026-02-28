@@ -18,7 +18,7 @@ const TOON_MAT_NAMES = [
   "slotCabinetMat", "slotTrimMat", "slotWindowMat",
   "slotReelMat0", "slotReelMat1", "slotReelMat2",
   "slotLightMat", "slotPanelMat", "slotOutlineMat",
-  "bumperRailMat", "panelDividerMat", "coinMat",
+  "bumperRailMat", "panelDividerMat", "coinMat", "keyCoinMat",
   "honeycombWallMat",
   "wheelBezelMat", "wheelPointerMat", "wheelPanelMat", "wheelCenterMat",
   "wheelSeg0", "wheelSeg1", "wheelSeg2", "wheelSeg3",
@@ -227,9 +227,10 @@ export class SceneManager {
   addCoin(
     id: number,
     pos: [number, number, number],
-    rot: [number, number, number, number]
+    rot: [number, number, number, number],
+    isKeyCoin?: boolean
   ): void {
-    this.coinManager.addCoin(id, pos, rot);
+    this.coinManager.addCoin(id, pos, rot, isKeyCoin);
   }
 
   updateCoin(
