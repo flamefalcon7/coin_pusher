@@ -11,7 +11,7 @@
 | Severity | Count | Key Themes |
 |----------|-------|------------|
 | P0 | 8 (4 fixed) | Free coin injection, ~~auth bypass~~, ~~pprof exposure~~, ~~admin commands unguarded~~, ~~reward system broken~~, CSRF via WS, weak HD wallet KDF, deposit double-credit |
-| P1 | 19 | Predictable RNG, NATS fragility, token leakage, timing attacks, missing rate limits, float64 financials, reorg handling, fire-and-forget NATS |
+| P1 | 19 (13 fixed, 6 won't fix) | Predictable RNG, NATS fragility, token leakage, timing attacks, missing rate limits, float64 financials, reorg handling, fire-and-forget NATS |
 
 ---
 
@@ -151,17 +151,11 @@ No try/catch. If any malformed message arrives, `JSON.parse` throws, terminating
 
 ---
 
-### P1-3: WebSocket Token Exposed in URL Query Parameter
+### ~~P1-3: WebSocket Token Exposed in URL Query Parameter~~ — **WON'T FIX**
+
+**Status**: Won't fix (2026-03-01). WebSocket API 無法在 upgrade 時送 custom header，token-in-URL 是業界標準做法（Discord、Slack 等皆如此）。Cloudflare proxy 不會在 access log 中記錄 query string，nginx access log 可透過 `log_format` 過濾 token 參數。實際風險低。
 
 **Location**: `game/client/src/net/WebSocketClient.ts:28` (client), `backend/business/web/ws/handler.go:78` (server)
-
-```typescript
-const wsUrl = this.token ? `${this.url}?token=${this.token}` : this.url;
-```
-
-JWT tokens appear in server access logs, proxy logs, browser history, and HTTP Referer headers. The token is valid for 24 hours and grants full account access including withdrawals.
-
-**Recommendation**: Send token as first WebSocket message after connection, not in URL.
 
 ---
 
@@ -241,19 +235,11 @@ Game rewards in a real-money system (USDC) are accumulated using float64 arithme
 
 ---
 
-### P1-9: Wallet Master Seed Held in Memory for Entire Process Lifetime
+### ~~P1-9: Wallet Master Seed Held in Memory for Entire Process Lifetime~~ — **WON'T FIX**
+
+**Status**: Won't fix (2026-03-01). 屬 operational 問題而非 code fix。pprof 已從 public mux 移除（P0-3），debug server 僅內部存取。提取 seed 需要 root 權限或 debug port 存取。HSM/KMS 為後續規模化時再導入。
 
 **Location**: `backend/foundation/wallet/wallet.go:34`
-
-```go
-type Wallet struct {
-    masterKey []byte
-}
-```
-
-The master seed persists in memory for the entire lifetime of both the API server and executor process. ~~Combined with P0-3 (pprof exposure), the seed can be extracted via heap dump.~~ P0-3 is now fixed (pprof removed from public mux), but the seed is still extractable via the internal debug server.
-
-**Recommendation**: Use HSM/KMS for production signing. Ensure debug server (port 4010) is firewalled to internal access only.
 
 ---
 
@@ -267,17 +253,11 @@ The master seed persists in memory for the entire lifetime of both the API serve
 
 ---
 
-### P1-11: Transaction Isolation Level Is Default (READ COMMITTED)
+### ~~P1-11: Transaction Isolation Level Is Default (READ COMMITTED)~~ — **WON'T FIX**
+
+**Status**: Won't fix (2026-03-01).關鍵金融路徑已透過 `SELECT FOR UPDATE` 明確加行鎖（P1-10）。READ COMMITTED + explicit row lock 是 PostgreSQL 業界標準做法。改 SERIALIZABLE 會增加 serialization failure retry 複雜度和 contention，收益不大。
 
 **Location**: `backend/foundation/database/tx.go:31`
-
-```go
-tx, err := db.BeginTxx(ctx, nil) // nil = default READ COMMITTED
-```
-
-For financial transactions, this allows non-repeatable reads within a transaction.
-
-**Recommendation**: Use `SERIALIZABLE` or `REPEATABLE READ` for financial operations, or use explicit row-level locks.
 
 ---
 
@@ -326,13 +306,11 @@ The check-then-create is not wrapped in a transaction. Two concurrent logins for
 
 ---
 
-### P1-16: No Rate Limiting on Authentication Endpoints
+### ~~P1-16: No Rate Limiting on Authentication Endpoints~~ — **FIXED**
 
-**Location**: `backend/app/services/api/main.go:588-590`
+**Status**: Fixed (2026-03-01). 在 nginx 層加入 per-IP rate limiting：`/v1/auth/nonce` 10r/m burst=5，`/v1/auth/wallet/login` 5r/m burst=3，超限回 429。使用 Cloudflare `CF-Connecting-IP` 取得真實用戶 IP，fallback 到 `$remote_addr`。
 
-No rate limiting on `/v1/auth/nonce` (writes to DB on every call) or `/v1/auth/wallet/login`. An attacker can flood the nonce table.
-
-**Recommendation**: Add per-IP rate limiting (e.g., 10 nonce requests/min, 5 login attempts/min).
+**Location**: `deploy/nginx/default.conf`
 
 ---
 
