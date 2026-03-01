@@ -219,7 +219,17 @@ func run() error {
 		return fmt.Errorf("starting nats relay: %w", err)
 	}
 
-	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore)
+	// Parse allowed origins for WebSocket CheckOrigin.
+	var wsOrigins []string
+	if cfg.Web.CORSOrigins == "*" {
+		wsOrigins = []string{"*"}
+	} else {
+		for _, o := range strings.Split(cfg.Web.CORSOrigins, ",") {
+			wsOrigins = append(wsOrigins, strings.TrimSpace(o))
+		}
+	}
+
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, wsOrigins)
 
 	// Subscribe to slot_status from game server for cap enforcement.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
