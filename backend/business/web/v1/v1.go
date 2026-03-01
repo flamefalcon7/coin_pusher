@@ -32,7 +32,9 @@ func Respond(w http.ResponseWriter, statusCode int, data any) error {
 }
 
 // Decode reads the body of an HTTP request looking for a JSON document.
+// The request body is limited to 1 MB to prevent OOM from oversized payloads.
 func Decode(r *http.Request, val any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 64<<10) // 64 KB
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(val); err != nil {

@@ -126,6 +126,10 @@ func run() error {
 		return fmt.Errorf("BACKEND_WEB_CORS_ORIGINS must be set in production (not wildcard)")
 	}
 
+	if cfg.Game.APIKey == "dev-secret" && !cfg.Auth.DevMode {
+		return fmt.Errorf("BACKEND_GAME_APIKEY must be set in production (not default)")
+	}
+
 	// -------------------------------------------------------------------------
 	// Database
 	db, err := database.Open(database.Config{

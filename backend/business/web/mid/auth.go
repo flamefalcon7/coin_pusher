@@ -1,6 +1,7 @@
 package mid
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -44,7 +45,7 @@ func GameSecret(apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			secret := r.Header.Get("X-Game-Secret")
-			if secret == "" || secret != apiKey {
+			if secret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(apiKey)) != 1 {
 				http.Error(w, `{"error":"invalid game secret"}`, http.StatusUnauthorized)
 				return
 			}
