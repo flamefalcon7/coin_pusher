@@ -1,0 +1,38 @@
+name: Deploy Game Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'game/server/**'
+      - 'game/shared/**'
+      - 'Dockerfile'
+      - 'docker-compose.game.yml'
+      - '.github/workflows/deploy-game.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Game Machine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_GAME_HOST }}
+          username: ${{ secrets.DEPLOY_GAME_USER }}
+          key: ${{ secrets.DEPLOY_GAME_KEY }}
+          script: |
+            set -e
+            cd /opt/coin_pusher
+            git pull origin main
+
+            # Build new image
+            docker compose -f docker-compose.game.yml build
+
+            # Restart with graceful drain (stop_grace_period: 90s)
+            docker compose -f docker-compose.game.yml up -d
+
+            docker compose -f docker-compose.game.yml ps
+            docker image prune -f

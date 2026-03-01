@@ -176,16 +176,33 @@ async function initialize() {
   console.log("Server ready! (NATS worker mode)");
 }
 
-// Graceful shutdown
+// Graceful shutdown with drain
+let shuttingDown = false;
 const shutdown = async () => {
-  console.log("\nShutting down server...");
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log("\n⏳ Graceful shutdown initiated...");
+
+  // 1. Stop accepting new commands (coin inserts, abilities, etc.)
+  natsClient.unsubscribeCommands();
+
+  // 2. Stop periodic snapshots
   if (snapshotInterval) {
     clearInterval(snapshotInterval);
   }
+
+  // 3. Drain: let DropScheduler empty + wait for coins to settle (max 60s)
+  //    Game loop keeps ticking during drain so physics continues
   if (gameLoop) {
+    await gameLoop.drain(60_000);
     gameLoop.stop();
   }
+
+  // 4. Close NATS (flush remaining publishes)
   await natsClient.close();
+
+  console.log("✅ Shutdown complete");
   process.exit(0);
 };
 

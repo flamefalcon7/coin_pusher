@@ -613,15 +613,13 @@ A progression track that rewards cumulative engagement:
 
 ## 6. Infrastructure TODO
 
-### 6.1 Deployment Optimization
+### 6.1 Deployment Optimization ✅
 
-**Current state**: Single DigitalOcean droplet, manual SSH deploy (`git pull` + `docker compose up`).
+**Done.** Two-machine architecture with separate CI/CD and graceful drain. See `docs/DEPLOYMENT.md` for full details.
 
-**Planned improvements**:
-
-1. **GitHub Actions CI/CD** — auto-deploy on push to `main`, separate triggers for game server vs backend changes
-2. **Split to two machines** — Game server (Rapier physics, CPU-heavy) on dedicated droplet; Services (Backend API, PostgreSQL, NATS, Nginx) on another. Communication via NATS over DigitalOcean private network (VPC). Requires NATS auth token.
-3. **Game server graceful drain** — Before shutdown: stop accepting new coin inserts → wait for board coins to settle/fall (~30-60s) → then shutdown. Prevents players losing coins that were already paid for but not yet resolved through physics.
+1. ~~**GitHub Actions CI/CD**~~ — `deploy-services.yml` and `deploy-game.yml`, path-filtered, with migration and health check.
+2. ~~**Split to two machines**~~ — Game server on dedicated droplet; Services (Backend, PostgreSQL, NATS, Nginx, Executor, Indexer) on another. NATS over VPC (no auth for now).
+3. ~~**Game server graceful drain**~~ — SIGTERM → unsubscribe commands → cancel abilities → drain DropScheduler queue → wait for coins to settle (60s timeout) → exit. Docker `stop_grace_period: 90s`.
 
 ### 6.2 Monitoring
 
