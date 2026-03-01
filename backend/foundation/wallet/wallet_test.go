@@ -100,30 +100,45 @@ func TestDeriveAddress_Format(t *testing.T) {
 	}
 }
 
-func TestDeriveAddress_Snapshot(t *testing.T) {
+func TestDeriveAddress_BIP44GoldenVector(t *testing.T) {
 	t.Parallel()
 
-	// Golden-value test: if this ever fails, the derivation logic changed and
-	// all previously generated deposit addresses are now unreachable.
-	// DO NOT update the expected value — fix the derivation code instead.
-	w, err := New(testSeed)
+	// BIP-39 mnemonic: "abandon abandon abandon abandon abandon abandon
+	//   abandon abandon abandon abandon abandon about"
+	// Passphrase: "" (empty)
+	// Seed produced by PBKDF2(mnemonic, "mnemonic"+passphrase).
+	// This is the canonical test vector used by MetaMask, iancoleman BIP39
+	// tool, and every major Ethereum wallet.
+	// Expected addresses for m/44'/60'/0'/0/<index>.
+	const bip39Seed = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
+
+	w, err := New(bip39Seed)
 	if err != nil {
 		t.Fatalf("constructing wallet: %v", err)
 	}
 
-	addr, err := w.DeriveAddress(0)
-	if err != nil {
-		t.Fatalf("derivation: %v", err)
+	// DO NOT change these expected values. They are the industry-standard
+	// BIP-44 Ethereum addresses for the "abandon...about" mnemonic.
+	// If this test fails, the derivation is broken.
+	golden := []struct {
+		index int
+		addr  string
+	}{
+		{0, "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"},
+		{1, "0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0"},
+		{2, "0xb6716976A3ebe8D39aCEB04372f22Ff8e6802D7A"},
+		{3, "0xF3f50213C1d2e255e4B2bAD430F8A38EEF8D718E"},
+		{4, "0x51cA8ff9f1C0a99f88E86B8112eA3237F55374cA"},
 	}
 
-	// Record the first-ever derivation as the golden value.
-	// This was captured from the initial implementation.
-	golden := addr // On first run, this records the value.
-
-	// Re-derive to confirm stability.
-	addr2, _ := w.DeriveAddress(0)
-	if addr2 != golden {
-		t.Fatalf("CRITICAL: derivation changed!\n  expected: %s\n  got:      %s\n  This means existing deposit addresses are unreachable.", golden, addr2)
+	for _, tc := range golden {
+		addr, err := w.DeriveAddress(tc.index)
+		if err != nil {
+			t.Fatalf("index %d: %v", tc.index, err)
+		}
+		if addr != tc.addr {
+			t.Errorf("index %d:\n  got:  %s\n  want: %s", tc.index, addr, tc.addr)
+		}
 	}
 }
 
