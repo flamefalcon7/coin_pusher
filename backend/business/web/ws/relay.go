@@ -65,6 +65,29 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// reward_notify: JSON from backend → re-encode as msgpack for target user.
+	sub, err = rl.nc.Subscribe(TopicRewardNotify(rl.room), func(msg *nats.Msg) {
+		var notify struct {
+			Op     string  `json:"op"      msgpack:"op"`
+			UserID string  `json:"user_id" msgpack:"user_id"`
+			Amount float64 `json:"amount"  msgpack:"amount"`
+		}
+		if err := json.Unmarshal(msg.Data, &notify); err != nil {
+			rl.log.Errorw("reward_notify json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(notify)
+		if err != nil {
+			rl.log.Errorw("reward_notify msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.SendToUser(notify.UserID, packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	// slot_spin: broadcast raw protobuf bytes to all WS clients.
 	sub, err = rl.nc.Subscribe(TopicSlotSpin(rl.room), func(msg *nats.Msg) {
 		rl.hub.Broadcast(msg.Data)

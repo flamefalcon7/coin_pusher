@@ -30,3 +30,4 @@ func TopicWheelCounter(room string) string         { return "game." + room + ".w
 func TopicKeyCoinFrontDespawn(room string) string  { return "game." + room + ".evt.key_coin_front_despawn" }
 func TopicKeyCoinDraw(room string) string          { return "game." + room + ".key_coin_draw" }
 func TopicInventoryUpdate(room string) string      { return "game." + room + ".inventory_update" }
+func TopicRewardNotify(room string) string         { return "game." + room + ".reward_notify" }

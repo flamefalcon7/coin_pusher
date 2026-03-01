@@ -39,6 +39,17 @@ export function clearAuth(): void {
   sessionStorage.removeItem(ACCOUNT_KEY);
 }
 
+export function updateSavedBalance(balancePlay?: string, balanceCash?: string): void {
+  const raw = sessionStorage.getItem(ACCOUNT_KEY);
+  if (!raw) return;
+  try {
+    const account = JSON.parse(raw) as Account;
+    if (balancePlay !== undefined) account.balance_play = balancePlay;
+    if (balanceCash !== undefined) account.balance_cash = balanceCash;
+    sessionStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+  } catch { /* ignore */ }
+}
+
 async function fetchNonce(apiBase: string): Promise<{ nonce: string; message: string }> {
   const res = await fetch(`${apiBase}/v1/auth/nonce`);
   if (!res.ok) {
