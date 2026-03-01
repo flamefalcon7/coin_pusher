@@ -10,7 +10,7 @@
 
 | Severity | Count | Key Themes |
 |----------|-------|------------|
-| P0 | 8 (3 fixed) | Free coin injection, ~~auth bypass~~, ~~pprof exposure~~, ~~admin commands unguarded~~, reward system broken, CSRF via WS, weak HD wallet KDF, deposit double-credit |
+| P0 | 8 (4 fixed) | Free coin injection, ~~auth bypass~~, ~~pprof exposure~~, ~~admin commands unguarded~~, ~~reward system broken~~, CSRF via WS, weak HD wallet KDF, deposit double-credit |
 | P1 | 19 | Predictable RNG, NATS fragility, token leakage, timing attacks, missing rate limits, float64 financials, reorg handling, fire-and-forget NATS |
 
 ---
@@ -79,48 +79,19 @@ func (h *Handler) handleCoinInsert(c *Connection, msg ClientMessage) {
 
 ---
 
-### P0-5: Reward System Completely Non-Functional — Despawn Event Format Mismatch
+### ~~P0-5: Reward System Completely Non-Functional — Despawn Event Format Mismatch~~ — FIXED
 
-**Location**:
-- Game server: `game/server/src/nats/NATSClient.ts:358-361`
-- Backend: `backend/app/services/api/main.go:336-360`
-- Backend relay: `backend/business/web/ws/relay.go:59-66`
+**Status**: Fixed (2026-03-01)
 
-The game server publishes coin despawn events in this format:
-```json
-{"coins":[{"id":42,"zone":"front","owner_id":"..."}],"tick":100}
-```
+**Fix implemented**:
+- Aligned despawn subscriber struct to match game server's `{coins: [{id, zone, owner_id}], tick}` format
+- Backend now correctly iterates `evt.Coins`, counts front-edge despawns, and distributes rewards via heat engine
+- Added 10s reward accumulator with DB flush (`ProcessGameReward`) and graceful shutdown flush on SIGTERM
+- Added 1s notification accumulator → NATS `reward_notify` → WS relay → per-user msgpack push
+- Client receives `op: "reward"` messages, updates `balance_cash` with optimistic UI update + `RewardToast`
+- sessionStorage synced on every balance change to persist across page refresh
 
-The backend expects a completely different format:
-```go
-var evt struct {
-    Zone      string `json:"zone"`      // ← always "" (field doesn't exist at top level)
-    CoinCount int    `json:"coin_count"` // ← always 0 (field doesn't exist)
-}
-```
-
-The JSON unmarshal succeeds (no error) but `evt.Zone == ""` ≠ `"front"`, so every despawn event is silently discarded. `ProcessGameReward` is never called. Additionally, the relay only logs reward events:
-
-```go
-sub, err = rl.nc.Subscribe(TopicReward(rl.room), func(msg *nats.Msg) {
-    rl.log.Infow("reward event received", "data_len", len(msg.Data))
-})
-```
-
-**Impact**: `balance_cash` has no legitimate inflow path via gameplay. The entire revenue loop (coins fall off front edge → user earns CASH → user withdraws USDC) is broken. This also masks P0-1 (free coins don't generate rewards either, so the exploit is currently dormant but becomes critical the moment this is fixed).
-
-**Recommendation**: Align the backend subscriber to match the game server's event format:
-```go
-var evt struct {
-    Coins []struct {
-        ID      int    `json:"id"`
-        Zone    string `json:"zone"`
-        OwnerID string `json:"owner_id"`
-    } `json:"coins"`
-    Tick int `json:"tick"`
-}
-```
-Then iterate over `evt.Coins`, count front-edge despawns, and call `ProcessGameReward`.
+**Root cause**: `json.Unmarshal` silently ignores missing fields (zero values). Old struct had `zone` and `coin_count` at top level, but game server nests coins in an array. `evt.Zone == ""` never matched `"front"`, so all despawn events were silently discarded.
 
 ---
 
@@ -480,7 +451,7 @@ Since debug routes ~~are on the public mux (P0-3)~~ were on the public mux (now 
 
 | Priority | Finding | Fix |
 |----------|---------|-----|
-| 5th | P0-5 | Align despawn JSON format, implement `ProcessGameReward` call |
+| ~~5th~~ | ~~P0-5~~ | ~~Align despawn JSON format, implement `ProcessGameReward` call~~ — **FIXED** |
 | 6th | P0-6 | WebSocket origin validation |
 | 7th | P0-8 | Move deposit idempotency check inside transaction |
 | 8th | P1-3/4/5 | Token out of URL, constant-time compare, production API key guard |

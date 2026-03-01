@@ -331,23 +331,35 @@ func run() error {
 	// Reward accumulator + flush goroutine (10s interval)
 	var rewardMu sync.Mutex
 	rewardAccum := make(map[uuid.UUID]float64)
+	notifyAccum := make(map[uuid.UUID]float64)
 
 	// Subscribe to coin_despawn events from game server.
 	despawnSub, err := nc.Subscribe(ws.TopicCoinDespawn("main"), func(msg *nats.Msg) {
 		var evt struct {
-			Zone      string `json:"zone"`
-			CoinCount int    `json:"coin_count"`
+			Coins []struct {
+				ID      int    `json:"id"`
+				Zone    string `json:"zone"`
+				OwnerID string `json:"owner_id"`
+			} `json:"coins"`
+			Tick int `json:"tick"`
 		}
 		if err := json.Unmarshal(msg.Data, &evt); err != nil {
 			log.Errorw("coin_despawn unmarshal error", "error", err)
 			return
 		}
 
-		if evt.Zone != "front" {
-			return // side/back drops are house profit
+		// Count front-edge coins — only those pay out to players.
+		frontCount := 0
+		for _, c := range evt.Coins {
+			if c.Zone == "front" {
+				frontCount++
+			}
+		}
+		if frontCount == 0 {
+			return
 		}
 
-		dist := heatEngine.DistributeFrontEdgeDrop(evt.CoinCount)
+		dist := heatEngine.DistributeFrontEdgeDrop(frontCount)
 		if dist == nil {
 			return
 		}
@@ -355,6 +367,7 @@ func run() error {
 		rewardMu.Lock()
 		for uid, amount := range dist {
 			rewardAccum[uid] += amount
+			notifyAccum[uid] += amount
 		}
 		rewardMu.Unlock()
 	})
@@ -363,6 +376,27 @@ func run() error {
 	}
 	defer despawnSub.Unsubscribe()
 
+	flushRewards := func() {
+		rewardMu.Lock()
+		batch := rewardAccum
+		rewardAccum = make(map[uuid.UUID]float64)
+		rewardMu.Unlock()
+
+		const coinPrecision = 1e6 // 6 decimal places, aligned with stablecoin precision
+		for uid, amount := range batch {
+			// Floor to coin precision. Dust stays with house.
+			truncated := math.Floor(amount*coinPrecision) / coinPrecision
+			if truncated < 1/coinPrecision {
+				continue
+			}
+			refKey := uuid.NewString()
+			amt := decimal.NewFromFloat(truncated)
+			if err := acctCore.ProcessGameReward(context.Background(), uid, amt, refKey); err != nil {
+				log.Errorw("heat reward flush error", "user_id", uid, "amount", truncated, "error", err)
+			}
+		}
+	}
+
 	stopFlush := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
@@ -370,25 +404,49 @@ func run() error {
 		for {
 			select {
 			case <-ticker.C:
+				flushRewards()
+			case <-stopFlush:
+				return
+			}
+		}
+	}()
+
+	// Reward notification flush — 1s interval, publishes to NATS for WS relay.
+	stopNotify := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		const coinPrecision = 1e6
+		for {
+			select {
+			case <-ticker.C:
 				rewardMu.Lock()
-				batch := rewardAccum
-				rewardAccum = make(map[uuid.UUID]float64)
+				batch := notifyAccum
+				notifyAccum = make(map[uuid.UUID]float64)
 				rewardMu.Unlock()
 
-				const coinPrecision = 1e6 // 6 decimal places, aligned with stablecoin precision
 				for uid, amount := range batch {
-					// Floor to coin precision. Dust stays with house.
 					truncated := math.Floor(amount*coinPrecision) / coinPrecision
 					if truncated < 1/coinPrecision {
 						continue
 					}
-					refKey := uuid.NewString()
-					amt := decimal.NewFromFloat(truncated)
-					if err := acctCore.ProcessGameReward(context.Background(), uid, amt, refKey); err != nil {
-						log.Errorw("heat reward flush error", "user_id", uid, "amount", truncated, "error", err)
+					msg := struct {
+						Op     string `json:"op"`
+						UserID string `json:"user_id"`
+						Amount float64 `json:"amount"`
+					}{
+						Op:     "reward",
+						UserID: uid.String(),
+						Amount: truncated,
 					}
+					data, err := json.Marshal(msg)
+					if err != nil {
+						log.Errorw("reward_notify marshal error", "error", err)
+						continue
+					}
+					nc.Publish(ws.TopicRewardNotify("main"), data)
 				}
-			case <-stopFlush:
+			case <-stopNotify:
 				return
 			}
 		}
@@ -493,7 +551,12 @@ func run() error {
 		// Stop background goroutines.
 		close(stopHeat)
 		close(stopFlush)
+		close(stopNotify)
 		close(stopNoncePurge)
+
+		// Flush remaining accumulated rewards to DB before exit.
+		log.Infow("flushing remaining rewards")
+		flushRewards()
 
 		// Stop NATS relay first.
 		relay.Stop()

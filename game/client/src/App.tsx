@@ -11,7 +11,7 @@ import { RewardToast } from "./ui/RewardToast";
 import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
 import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
-import { getSavedAuth, clearAuth, type AuthResult, type Account } from "./net/auth";
+import { getSavedAuth, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
 import { InventoryClient } from "./net/InventoryClient";
 import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
@@ -105,8 +105,24 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   // Track which coin IDs are key coins for rendering
   const keyCoinIdsRef = useRef<Set<number>>(new Set());
   const lastRequestedAmount = useRef(0);
-  const [balance, setBalance] = useState<string>(account?.balance_play ?? "0");
-  const [balanceCash, setBalanceCash] = useState<string>(account?.balance_cash ?? "0");
+  const [balance, _setBalance] = useState<string>(account?.balance_play ?? "0");
+  const [balanceCash, _setBalanceCash] = useState<string>(account?.balance_cash ?? "0");
+
+  const setBalance = useCallback((val: string | ((prev: string) => string)) => {
+    _setBalance((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      updateSavedBalance(next, undefined);
+      return next;
+    });
+  }, []);
+
+  const setBalanceCash = useCallback((val: string | ((prev: string) => string)) => {
+    _setBalanceCash((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      updateSavedBalance(undefined, next);
+      return next;
+    });
+  }, []);
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
@@ -245,7 +261,11 @@ function Game({ token, account, onAuthFailure }: GameProps) {
     gameClient.onReward((userId, amount, bal) => {
       const myUserId = gameClient.getUserId();
       if (userId === myUserId) {
-        if (bal) setBalance(bal);
+        if (bal) {
+          setBalanceCash(bal);
+        } else {
+          setBalanceCash((prev) => (parseFloat(prev) + amount).toFixed(6));
+        }
         rewardIdRef.current++;
         setRewardToast({ amount, id: rewardIdRef.current });
       }
