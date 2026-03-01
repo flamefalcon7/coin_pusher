@@ -70,8 +70,9 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 		return err
 	}
 
-	if req.Count <= 0 {
-		return v1.NewRequestError(fmt.Errorf("count must be positive"), http.StatusBadRequest)
+	const maxBatchCount = 100
+	if req.Count <= 0 || req.Count > maxBatchCount {
+		return v1.NewRequestError(fmt.Errorf("count must be between 1 and %d", maxBatchCount), http.StatusBadRequest)
 	}
 
 	// Extract user ID from auth context.

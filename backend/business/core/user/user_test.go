@@ -56,6 +56,13 @@ func (m *mockStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (Accoun
 	return Account{}, nil
 }
 
+func (m *mockStorer) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (Account, error) {
+	if m.queryByIDFn != nil {
+		return m.queryByIDFn(ctx, accountID)
+	}
+	return Account{}, nil
+}
+
 func (m *mockStorer) QueryByProvider(ctx context.Context, providerType, providerUID string) (Account, error) {
 	if m.queryByProviderFn != nil {
 		return m.queryByProviderFn(ctx, providerType, providerUID)
@@ -212,6 +219,45 @@ func TestFindOrCreate(t *testing.T) {
 				tc.check(t, acct)
 			}
 		})
+	}
+}
+
+func TestFindOrCreate_ConcurrentRace(t *testing.T) {
+	t.Parallel()
+
+	existingAcct := Account{
+		ID:          uuid.New(),
+		BalancePlay: decimal.NewFromInt(100),
+	}
+
+	// Simulate: QueryByProvider returns not-found, Create succeeds (orphaned row),
+	// but CreateAuthProvider hits unique violation. Should fall back to QueryByProvider.
+	calls := 0
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			calls++
+			if calls == 1 {
+				return Account{}, v1.NewNotFoundError()
+			}
+			// Second call (fallback after unique violation) returns the existing account.
+			return existingAcct, nil
+		},
+		createAuthProviderFn: func(ctx context.Context, ap AuthProvider) error {
+			return newPQUniqueViolation()
+		},
+	}
+
+	core := NewCore(storer)
+	acct, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: "wallet",
+		ProviderUID:  "0xrace",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if acct.ID != existingAcct.ID {
+		t.Errorf("should return existing account, got ID %v want %v", acct.ID, existingAcct.ID)
 	}
 }
 

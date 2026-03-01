@@ -54,6 +54,13 @@ func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (us
 	return user.Account{}, nil
 }
 
+func (m *mockUserStorer) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
+	if m.queryByIDFn != nil {
+		return m.queryByIDFn(ctx, accountID)
+	}
+	return user.Account{}, nil
+}
+
 func (m *mockUserStorer) QueryByProvider(ctx context.Context, providerType, providerUID string) (user.Account, error) {
 	if m.queryByProviderFn != nil {
 		return m.queryByProviderFn(ctx, providerType, providerUID)
@@ -215,6 +222,63 @@ func TestEvent(t *testing.T) {
 				if !result.Success {
 					t.Errorf("result.Success = false, Error = %q", result.Error)
 				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BatchInsert
+// ---------------------------------------------------------------------------
+
+func TestBatchInsert_CountExceedsMax(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+	gameCore := newGameCore(accountID, decimal.NewFromInt(100000))
+	grp := New(gameCore, heat.New(), nil)
+
+	tests := []struct {
+		name       string
+		count      int
+		wantStatus int
+	}{
+		{
+			name:       "count exceeds max (101)",
+			count:      101,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "count zero",
+			count:      0,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "count negative",
+			count:      -1,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			body, _ := json.Marshal(BatchInsertRequest{SlotID: 0, Count: tc.count})
+			r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(string(body)))
+			r.Header.Set("Content-Type", "application/json")
+
+			// Inject auth claims into context.
+			ctx := mid.SetClaims(r.Context(), mid.Claims{AccountID: accountID.String(), Role: "user"})
+			r = r.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+			handler := errHandler(log, grp.BatchInsert)
+			handler.ServeHTTP(w, r)
+
+			if w.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d; body = %s", w.Code, tc.wantStatus, w.Body.String())
 			}
 		})
 	}

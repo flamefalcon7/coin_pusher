@@ -13,6 +13,7 @@ type Storer interface {
 	Create(ctx context.Context, acct Account) error
 	CreateAuthProvider(ctx context.Context, ap AuthProvider) error
 	QueryByID(ctx context.Context, accountID uuid.UUID) (Account, error)
+	QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (Account, error)
 	QueryByProvider(ctx context.Context, providerType, providerUID string) (Account, error)
 	UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error)
 	SetRole(ctx context.Context, accountID uuid.UUID, role string) error

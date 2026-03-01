@@ -263,6 +263,16 @@ func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (us
 	}, nil
 }
 
+func (m *mockUserStorer) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
+	if m.queryByIDFn != nil {
+		return m.queryByIDFn(ctx, accountID)
+	}
+	return user.Account{
+		ID:          accountID,
+		BalanceCash: decimal.NewFromInt(10000),
+	}, nil
+}
+
 func (m *mockUserStorer) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 	if m.updateBalanceFn != nil {
 		return m.updateBalanceFn(ctx, accountID, currency, delta)

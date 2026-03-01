@@ -433,9 +433,11 @@ func (h *Handler) handleUpdateSceneObjects(c *Connection, msg ClientMessage) {
 	h.nc.Publish(TopicUpdateSceneObjects(h.room), data)
 }
 
+const maxBatchCount = 100
+
 func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	count := msg.Count
-	if count <= 0 {
+	if count <= 0 || count > maxBatchCount {
 		return
 	}
 

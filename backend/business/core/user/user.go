@@ -98,6 +98,10 @@ func (c *Core) FindOrCreate(ctx context.Context, na NewAccount) (Account, error)
 	}
 
 	if err := c.storer.CreateAuthProvider(ctx, ap); err != nil {
+		// Concurrent request already created the provider — return the existing account.
+		if database.IsUniqueViolation(err) {
+			return c.storer.QueryByProvider(ctx, na.ProviderType, na.ProviderUID)
+		}
 		return Account{}, fmt.Errorf("create auth provider: %w", err)
 	}
 
@@ -109,6 +113,16 @@ func (c *Core) QueryByID(ctx context.Context, accountID uuid.UUID) (Account, err
 	acct, err := c.storer.QueryByID(ctx, accountID)
 	if err != nil {
 		return Account{}, fmt.Errorf("query by id[%s]: %w", accountID, err)
+	}
+	return acct, nil
+}
+
+// QueryByIDForUpdate finds an account by ID with a FOR UPDATE row lock.
+// Must be called within a transaction.
+func (c *Core) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (Account, error) {
+	acct, err := c.storer.QueryByIDForUpdate(ctx, accountID)
+	if err != nil {
+		return Account{}, fmt.Errorf("query for update by id[%s]: %w", accountID, err)
 	}
 	return acct, nil
 }
@@ -280,6 +294,10 @@ func (c *Core) FindOrCreateWithMeta(ctx context.Context, na NewAccountWithMeta) 
 	}
 
 	if err := c.storer.CreateAuthProvider(ctx, ap); err != nil {
+		// Concurrent request already created the provider — return the existing account.
+		if database.IsUniqueViolation(err) {
+			return c.storer.QueryByProvider(ctx, na.ProviderType, na.ProviderUID)
+		}
 		return Account{}, fmt.Errorf("create auth provider: %w", err)
 	}
 
