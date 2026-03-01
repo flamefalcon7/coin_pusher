@@ -136,6 +136,28 @@ func TestDecode(t *testing.T) {
 	}
 }
 
+func TestDecode_OversizedBody(t *testing.T) {
+	t.Parallel()
+
+	// Build a JSON body just over the 64 KB limit.
+	big := `{"name":"` + strings.Repeat("x", 65<<10) + `"}`
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(big))
+
+	var p struct{ Name string }
+	err := Decode(r, &p)
+	if err == nil {
+		t.Fatal("Decode() should reject body exceeding 64 KB")
+	}
+
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
+		t.Fatalf("error should be *RequestError, got %T", err)
+	}
+	if reqErr.Status != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", reqErr.Status, http.StatusBadRequest)
+	}
+}
+
 func TestRequestError(t *testing.T) {
 	t.Parallel()
 
