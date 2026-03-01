@@ -74,6 +74,21 @@ func (s *Store) QueryByID(ctx context.Context, accountID uuid.UUID) (user.Accoun
 	return acct, nil
 }
 
+// QueryByIDForUpdate retrieves an account by its ID with a FOR UPDATE row lock.
+func (s *Store) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
+	const q = `SELECT * FROM accounts WHERE account_id = $1 FOR UPDATE`
+
+	var acct user.Account
+	if err := s.db.GetContext(ctx, &acct, q, accountID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return user.Account{}, v1.NewRequestError(v1.ErrNotFound, 404)
+		}
+		return user.Account{}, fmt.Errorf("selecting account for update by id[%s]: %w", accountID, err)
+	}
+
+	return acct, nil
+}
+
 // QueryByProvider retrieves an account by its auth provider type and UID.
 func (s *Store) QueryByProvider(ctx context.Context, providerType, providerUID string) (user.Account, error) {
 	const q = `
@@ -122,7 +137,7 @@ func (s *Store) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency
 	case "USDC":
 		q = `UPDATE accounts SET balance_usdc = balance_usdc + $2, updated_at = NOW()
 			WHERE account_id = $1 AND balance_usdc + $2 >= 0
-			RETURNING balance_play`
+			RETURNING balance_usdc`
 	case "PLAY":
 		q = `UPDATE accounts SET balance_play = balance_play + $2, updated_at = NOW()
 			WHERE account_id = $1 AND balance_play + $2 >= 0
@@ -130,7 +145,7 @@ func (s *Store) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency
 	case "CASH":
 		q = `UPDATE accounts SET balance_cash = balance_cash + $2, updated_at = NOW()
 			WHERE account_id = $1 AND balance_cash + $2 >= 0
-			RETURNING balance_play`
+			RETURNING balance_cash`
 	default:
 		return decimal.Zero, fmt.Errorf("unknown currency: %s", currency)
 	}

@@ -55,6 +55,13 @@ func (m *mockStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (user.A
 	return user.Account{}, nil
 }
 
+func (m *mockStorer) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
+	if m.queryByIDFn != nil {
+		return m.queryByIDFn(ctx, accountID)
+	}
+	return user.Account{}, nil
+}
+
 func (m *mockStorer) QueryByProvider(ctx context.Context, providerType, providerUID string) (user.Account, error) {
 	if m.queryByProviderFn != nil {
 		return m.queryByProviderFn(ctx, providerType, providerUID)

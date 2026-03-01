@@ -343,8 +343,8 @@ func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAdd
 
 	// Execute in a transaction: lock check + daily limit check + debit balance + accounting logs + create request.
 	txErr := c.execTx(ctx, func(s txStores) error {
-		// Check withdraw_locked_until inside the transaction to avoid TOCTOU race.
-		acct, err := s.userCore.QueryByID(ctx, accountID)
+		// Lock the account row to prevent concurrent withdrawal race (P1-10).
+		acct, err := s.userCore.QueryByIDForUpdate(ctx, accountID)
 		if err != nil {
 			return fmt.Errorf("query account: %w", err)
 		}
