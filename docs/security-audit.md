@@ -84,26 +84,16 @@
 
 ---
 
-### P0-7: HD Wallet Derivation Uses Weak Non-Standard KDF
+### ~~P0-7: HD Wallet Derivation Uses Weak Non-Standard KDF~~ — FIXED
 
-**Location**: `backend/foundation/wallet/wallet.go:39-51`
+**Status**: Fixed (2026-03-01)
 
-```go
-func (w *Wallet) DerivePrivateKey(index int) (*ecdsa.PrivateKey, error) {
-    buf := make([]byte, len(w.masterKey)+8)
-    copy(buf, w.masterKey)
-    binary.BigEndian.PutUint64(buf[len(w.masterKey):], uint64(index))
-    childSeed := crypto.Keccak256(buf)
-    key, err := crypto.ToECDSA(childSeed)
-    // ...
-}
-```
-
-Custom key derivation: `childKey = Keccak256(masterKey || index)`. Not BIP-32/BIP-44. No HMAC, no key stretching, single hash iteration.
-
-**Impact**: All user deposit addresses are derived from a single master seed. The simplicity of this scheme (compared to BIP-32) makes it easier to reverse-engineer the master key if any child private key is compromised, potentially compromising ALL deposit addresses and the hot wallet.
-
-**Recommendation**: Use standard BIP-32/BIP-44 HD key derivation (e.g., `github.com/btcsuite/btcutil/hdkeychain`).
+**Fix implemented**:
+- Replaced custom `Keccak256(masterKey || index)` derivation with standard BIP-32/BIP-44
+- Uses `github.com/btcsuite/btcd/btcutil/hdkeychain` for HMAC-SHA512 based key derivation
+- Derivation path: `m/44'/60'/0'/0/<index>` (standard Ethereum BIP-44 path)
+- Master key generated per BIP-32 spec: `HMAC-SHA512("Bitcoin seed", seed)`
+- Child key compromise no longer enables sibling or master key recovery
 
 ---
 
@@ -412,5 +402,5 @@ Since debug routes ~~are on the public mux (P0-3)~~ were on the public mux (now 
 
 | Priority | Finding | Fix |
 |----------|---------|-----|
-| 9th | P0-7 | Migrate to BIP-32 HD wallet |
+| ~~9th~~ | ~~P0-7~~ | ~~Migrate to BIP-32 HD wallet~~ — **FIXED** |
 | 10th+ | All P1 | All remaining P1 items |
