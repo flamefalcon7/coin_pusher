@@ -34,7 +34,10 @@ export type InventoryUpdateCallback = (inventory: {
   scroll_explosion: number;
   scroll_lightning: number;
   scroll_super_push: number;
+  megaspeaker: number;
 }) => void;
+export type MegaspeakerCallback = (speakerName: string, message: string, timestamp: number) => void;
+export type MegaspeakerErrorCallback = (error: string) => void;
 
 export class GameClient {
   private wsClient: WebSocketClient;
@@ -57,6 +60,8 @@ export class GameClient {
   private rewardCallback?: RewardCallback;
   private keyCoinDrawCallback?: KeyCoinDrawCallback;
   private inventoryUpdateCallback?: InventoryUpdateCallback;
+  private megaspeakerCallback?: MegaspeakerCallback;
+  private megaspeakerErrorCallback?: MegaspeakerErrorCallback;
   private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
@@ -247,7 +252,20 @@ export class GameClient {
             scroll_explosion: message.scroll_explosion,
             scroll_lightning: message.scroll_lightning,
             scroll_super_push: message.scroll_super_push,
+            megaspeaker: message.megaspeaker,
           });
+        }
+        break;
+
+      case "megaspeaker":
+        if (this.megaspeakerCallback) {
+          this.megaspeakerCallback(message.speaker_name, message.message, message.timestamp);
+        }
+        break;
+
+      case "megaspeaker_error":
+        if (this.megaspeakerErrorCallback) {
+          this.megaspeakerErrorCallback(message.error);
         }
         break;
 
@@ -414,6 +432,18 @@ export class GameClient {
 
   onInventoryUpdate(callback: InventoryUpdateCallback): void {
     this.inventoryUpdateCallback = callback;
+  }
+
+  onMegaspeaker(callback: MegaspeakerCallback): void {
+    this.megaspeakerCallback = callback;
+  }
+
+  onMegaspeakerError(callback: MegaspeakerErrorCallback): void {
+    this.megaspeakerErrorCallback = callback;
+  }
+
+  sendMegaspeaker(message: string): void {
+    this.wsClient.send({ op: "megaspeaker", message } as ClientMessage);
   }
 
   batchInsert(slotId: number, count: number): void {

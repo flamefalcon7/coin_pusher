@@ -28,11 +28,12 @@ func NewStore(db database.DBTX) *Store {
 // If devDefaults is non-nil, the row is seeded with those values.
 func (s *Store) EnsureInventory(ctx context.Context, accountID uuid.UUID, devDefaults *inventory.DevDefaults) error {
 	if devDefaults != nil {
-		const q = `INSERT INTO inventory (account_id, key_coins, scroll_shock, scroll_tornado, scroll_explosion, scroll_lightning, scroll_super_push)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`
+		const q = `INSERT INTO inventory (account_id, key_coins, scroll_shock, scroll_tornado, scroll_explosion, scroll_lightning, scroll_super_push, megaspeaker)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`
 		if _, err := s.db.ExecContext(ctx, q, accountID,
 			devDefaults.KeyCoins, devDefaults.ScrollShock, devDefaults.ScrollTornado,
 			devDefaults.ScrollExplosion, devDefaults.ScrollLightning, devDefaults.ScrollSuperPush,
+			devDefaults.Megaspeaker,
 		); err != nil {
 			return fmt.Errorf("ensuring inventory row (dev): %w", err)
 		}
@@ -140,6 +141,31 @@ func (s *Store) DecrementScroll(ctx context.Context, accountID uuid.UUID, scroll
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return v1.NewRequestError(fmt.Errorf("no %s scroll available", scrollType), 400)
+	}
+	return nil
+}
+
+// IncrementMegaspeaker increments megaspeaker count by 1.
+func (s *Store) IncrementMegaspeaker(ctx context.Context, accountID uuid.UUID) error {
+	const q = `UPDATE inventory SET megaspeaker = megaspeaker + 1, updated_at = NOW() WHERE account_id = $1`
+
+	if _, err := s.db.ExecContext(ctx, q, accountID); err != nil {
+		return fmt.Errorf("incrementing megaspeaker: %w", err)
+	}
+	return nil
+}
+
+// DecrementMegaspeaker decrements megaspeaker count by 1. Fails if count is 0.
+func (s *Store) DecrementMegaspeaker(ctx context.Context, accountID uuid.UUID) error {
+	const q = `UPDATE inventory SET megaspeaker = megaspeaker - 1, updated_at = NOW() WHERE account_id = $1 AND megaspeaker > 0`
+
+	res, err := s.db.ExecContext(ctx, q, accountID)
+	if err != nil {
+		return fmt.Errorf("decrementing megaspeaker: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return v1.NewRequestError(fmt.Errorf("no megaspeaker charges available"), 400)
 	}
 	return nil
 }

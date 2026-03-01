@@ -7,6 +7,7 @@ export interface InventoryResponse {
   scroll_explosion: number;
   scroll_lightning: number;
   scroll_super_push: number;
+  megaspeaker: number;
 }
 
 export interface ChestOpenResponse {

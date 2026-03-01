@@ -181,6 +181,7 @@ func run() error {
 			ScrollExplosion: 100,
 			ScrollLightning: 100,
 			ScrollSuperPush: 100,
+			Megaspeaker:     100,
 		})
 	}
 
@@ -252,7 +253,7 @@ func run() error {
 		}
 	}
 
-	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, wsOrigins)
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, wsOrigins)
 
 	// Subscribe to slot_status from game server for cap enforcement.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
@@ -559,6 +560,7 @@ func run() error {
 				"scroll_explosion":  inv.ScrollExplosion,
 				"scroll_lightning":  inv.ScrollLightning,
 				"scroll_super_push": inv.ScrollSuperPush,
+				"megaspeaker":       inv.Megaspeaker,
 			})
 			hub.SendToUser(winnerID.String(), invMsg)
 		}

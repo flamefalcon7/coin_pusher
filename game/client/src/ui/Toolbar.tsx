@@ -7,6 +7,7 @@ export interface ScrollCounts {
   explosion: number;
   lightning: number;
   superPush: number;
+  megaspeaker: number;
 }
 
 interface ToolbarProps {

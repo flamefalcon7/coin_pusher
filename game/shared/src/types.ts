@@ -122,6 +122,12 @@ export type FillPlatformMessage = {
   op: "fill_platform";
 };
 
+// Client → Server: Send megaspeaker chat message
+export type MegaspeakerSendMessage = {
+  op: "megaspeaker";
+  message: string;
+};
+
 // Client → Server: Batch insert request
 export type BatchInsertMessage = {
   op: "batch_insert";
@@ -179,7 +185,8 @@ export type ClientMessage =
   | ClearAllMessage
   | FillPlatformMessage
   | UpdateSceneObjectsMessage
-  | BatchInsertMessage;
+  | BatchInsertMessage
+  | MegaspeakerSendMessage;
 
 // Server → Client: Slot machine spin result
 export type SlotSymbol = "bitcoin" | "ethereum" | "solana";
@@ -219,12 +226,27 @@ export type InventoryUpdateMessage = {
   scroll_explosion: number;
   scroll_lightning: number;
   scroll_super_push: number;
+  megaspeaker: number;
+};
+
+// Server → Client: Megaspeaker broadcast message
+export type MegaspeakerMessage = {
+  op: "megaspeaker";
+  speaker_name: string;
+  message: string;
+  timestamp: number;
+};
+
+// Server → Client: Megaspeaker error
+export type MegaspeakerErrorMessage = {
+  op: "megaspeaker_error";
+  error: string;
 };
 
 // Server → Client: Chest open result
 export type ChestOpenResultMessage = {
   op: "chest_open_result";
-  scroll_type: SkillScrollType;
+  scroll_type: SkillScrollType | "megaspeaker";
   scroll_count: number;
 };
 
@@ -319,7 +341,9 @@ export type ServerMessage =
   | BatchInsertAckMessage
   | KeyCoinDrawMessage
   | InventoryUpdateMessage
-  | ChestOpenResultMessage;
+  | ChestOpenResultMessage
+  | MegaspeakerMessage
+  | MegaspeakerErrorMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {

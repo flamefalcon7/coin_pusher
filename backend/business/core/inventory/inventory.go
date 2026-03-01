@@ -95,8 +95,14 @@ func (c *Core) OpenChest(ctx context.Context, accountID uuid.UUID) (OpenChestRes
 			return err
 		}
 
-		if err := txStorer.IncrementScroll(ctx, accountID, scrollType); err != nil {
-			return fmt.Errorf("increment scroll: %w", err)
+		if scrollType == ItemMegaspeaker {
+			if err := txStorer.IncrementMegaspeaker(ctx, accountID); err != nil {
+				return fmt.Errorf("increment megaspeaker: %w", err)
+			}
+		} else {
+			if err := txStorer.IncrementScroll(ctx, accountID, scrollType); err != nil {
+				return fmt.Errorf("increment scroll: %w", err)
+			}
 		}
 
 		co := ChestOpen{
@@ -143,6 +149,14 @@ func (c *Core) ConsumeScroll(ctx context.Context, accountID uuid.UUID, scrollTyp
 		return v1.NewRequestError(fmt.Errorf("invalid scroll type: %s", scrollType), 400)
 	}
 	if err := c.storer.DecrementScroll(ctx, accountID, scrollType); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ConsumeMegaspeaker decrements 1 megaspeaker charge. Returns error if none available.
+func (c *Core) ConsumeMegaspeaker(ctx context.Context, accountID uuid.UUID) error {
+	if err := c.storer.DecrementMegaspeaker(ctx, accountID); err != nil {
 		return err
 	}
 	return nil

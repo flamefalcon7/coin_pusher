@@ -13,6 +13,7 @@ import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
 import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
 import { InventoryClient } from "./net/InventoryClient";
+import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
 import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
@@ -101,8 +102,13 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   // Inventory state
   const [keyCoins, setKeyCoins] = useState(0);
   const [scrollCounts, setScrollCounts] = useState<ScrollCounts>({
-    shock: 0, tornado: 0, explosion: 0, lightning: 0, superPush: 0,
+    shock: 0, tornado: 0, explosion: 0, lightning: 0, superPush: 0, megaspeaker: 0,
   });
+  const [megaspeakerCount, setMegaspeakerCount] = useState(0);
+  const [megaspeakerMessages, setMegaspeakerMessages] = useState<MegaspeakerMsg[]>([]);
+  const [megaspeakerOpen, setMegaspeakerOpen] = useState(false);
+  const [megaspeakerUnread, setMegaspeakerUnread] = useState(0);
+  const megaspeakerOpenRef = useRef(false);
   const [keyCoinDraw, setKeyCoinDraw] = useState<{
     winnerName: string; count: number; isMe: boolean; id: number;
   } | null>(null);
@@ -289,13 +295,27 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
     gameClient.onInventoryUpdate((inv) => {
       setKeyCoins(inv.key_coins);
+      setMegaspeakerCount(inv.megaspeaker);
       setScrollCounts({
         shock: inv.scroll_shock,
         tornado: inv.scroll_tornado,
         explosion: inv.scroll_explosion,
         lightning: inv.scroll_lightning,
         superPush: inv.scroll_super_push,
+        megaspeaker: inv.megaspeaker,
       });
+    });
+
+    gameClient.onMegaspeaker((speakerName, message, timestamp) => {
+      setMegaspeakerMessages((prev) => [...prev.slice(-49), { speakerName, message, timestamp }]);
+      if (!megaspeakerOpenRef.current) {
+        setMegaspeakerUnread((prev) => prev + 1);
+      }
+      sceneManager.getSoundManager().playMegaspeaker();
+    });
+
+    gameClient.onMegaspeakerError((error) => {
+      console.warn("Megaspeaker error:", error);
     });
 
     // Connect to server
@@ -305,12 +325,14 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     const inventoryClient = new InventoryClient(API_URL);
     inventoryClient.getInventory(token).then((inv) => {
       setKeyCoins(inv.key_coins);
+      setMegaspeakerCount(inv.megaspeaker);
       setScrollCounts({
         shock: inv.scroll_shock,
         tornado: inv.scroll_tornado,
         explosion: inv.scroll_explosion,
         lightning: inv.scroll_lightning,
         superPush: inv.scroll_super_push,
+        megaspeaker: inv.megaspeaker,
       });
     }).catch((err) => {
       console.warn("Failed to fetch inventory:", err);
@@ -689,6 +711,20 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const handleInventoryChange = useCallback((newKeyCoins: number, newScrollCounts: ScrollCounts) => {
     setKeyCoins(newKeyCoins);
     setScrollCounts(newScrollCounts);
+    setMegaspeakerCount(newScrollCounts.megaspeaker);
+  }, []);
+
+  const handleMegaspeakerToggle = useCallback(() => {
+    setMegaspeakerOpen((prev) => {
+      const next = !prev;
+      megaspeakerOpenRef.current = next;
+      if (next) setMegaspeakerUnread(0);
+      return next;
+    });
+  }, []);
+
+  const handleMegaspeakerSend = useCallback((msg: string) => {
+    gameClientRef.current?.sendMegaspeaker(msg);
   }, []);
 
   const showChestPage = location.pathname === '/chest';
@@ -891,6 +927,15 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
           address={address}
         />
       )}
+
+      <MegaspeakerPanel
+        messages={megaspeakerMessages}
+        megaspeakerCount={megaspeakerCount}
+        onSend={handleMegaspeakerSend}
+        unreadCount={megaspeakerUnread}
+        onToggle={handleMegaspeakerToggle}
+        isOpen={megaspeakerOpen}
+      />
     </div>
   );
 }
