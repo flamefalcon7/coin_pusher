@@ -168,52 +168,55 @@ func (c *Core) GetOrCreateAddress(ctx context.Context, accountID uuid.UUID, chai
 }
 
 // ProcessDeposit records an on-chain deposit and credits the user's play balance.
-// Both operations (deposit record + accounting credit) happen in a single
-// transaction to prevent partial writes on crash.
+// All operations (idempotency check, deposit record, accounting log, balance credit)
+// happen in a single transaction to prevent TOCTOU double-credit.
 // Idempotent: if a deposit with the same tx_hash already exists, it verifies
 // the accounting log also exists and re-credits if missing.
 func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, txHash string, blockNumber int64, fromAddress string) error {
-	// Check idempotency via tx_hash (read-only, outside tx).
-	_, err := c.storer.QueryDepositByTxHash(ctx, txHash)
-	if err == nil {
-		// Deposit record exists. Verify accounting log also exists.
-		// If not, the previous attempt crashed between deposit insert and credit.
-		if err := c.acctCore.ProcessDeposit(ctx, accountID, amount, accounting.CurrencyPlay, txHash); err != nil {
-			return fmt.Errorf("re-credit accounting deposit: %w", err)
-		}
-		return nil
-	}
-	if !errors.Is(err, v1.ErrNotFound) {
-		return fmt.Errorf("query deposit by tx_hash: %w", err)
-	}
-
-	now := time.Now().UTC()
-	dep := Deposit{
-		DepositID:   uuid.New(),
-		AccountID:   accountID,
-		Chain:       DefaultChain,
-		Amount:      amount,
-		TxHash:      txHash,
-		BlockNumber: blockNumber,
-		FromAddress: fromAddress,
-		Status:      "confirmed",
-		CreatedAt:   now,
-	}
-
 	return c.execTx(ctx, func(s txStores) error {
-		if err := s.storer.CreateDeposit(ctx, dep); err != nil {
-			return fmt.Errorf("create deposit: %w", err)
+		// Idempotency check inside tx to prevent TOCTOU race.
+		_, err := s.storer.QueryDepositByTxHash(ctx, txHash)
+		if err == nil {
+			// Deposit record exists. Verify accounting log also exists.
+			// If not, the previous attempt crashed between deposit insert and credit.
+			_, acctErr := s.acctStore.QueryByReference(ctx, accounting.ActionDeposit, txHash)
+			if acctErr == nil {
+				return nil // Both exist — fully processed.
+			}
+			if !errors.Is(acctErr, v1.ErrNotFound) {
+				return fmt.Errorf("checking accounting log: %w", acctErr)
+			}
+			// Accounting log missing — re-create it and credit balance below.
+		} else if !errors.Is(err, v1.ErrNotFound) {
+			return fmt.Errorf("query deposit by tx_hash: %w", err)
+		} else {
+			// No deposit record — create it.
+			now := time.Now().UTC()
+			dep := Deposit{
+				DepositID:   uuid.New(),
+				AccountID:   accountID,
+				Chain:       DefaultChain,
+				Amount:      amount,
+				TxHash:      txHash,
+				BlockNumber: blockNumber,
+				FromAddress: fromAddress,
+				Status:      "confirmed",
+				CreatedAt:   now,
+			}
+			if err := s.storer.CreateDeposit(ctx, dep); err != nil {
+				return fmt.Errorf("create deposit: %w", err)
+			}
 		}
 
 		// Create accounting log + credit balance in same tx.
-		refID := txHash
+		now := time.Now().UTC()
 		depositLog := accounting.AccountingLog{
 			LogID:       uuid.New(),
 			AccountID:   accountID,
 			ActionType:  accounting.ActionDeposit,
 			Amount:      amount,
 			Currency:    accounting.CurrencyPlay,
-			ReferenceID: refID,
+			ReferenceID: txHash,
 			CreatedAt:   now,
 		}
 		if err := s.acctStore.Create(ctx, depositLog); err != nil {
