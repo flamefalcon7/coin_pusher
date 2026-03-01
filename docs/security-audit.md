@@ -17,35 +17,12 @@
 
 ## P0 Findings (Critical — Must Fix Before Launch)
 
-### P0-1: Free Coins — `coin_insert` and `spawn_stack` Do Not Debit Balance
+### ~~P0-1: Free Coins — `coin_insert` and `spawn_stack` Do Not Debit Balance~~ — N/A
 
-**Location**: `backend/business/web/ws/handler.go:184-248`
+**Status**: No longer applicable (2026-03-01)
 
-`handleCoinInsert` and `handleSpawnStack` publish directly to NATS with **zero balance debit**. Only `handleBatchInsert` calls `ProcessBatchInsert` to debit `balance_play`.
-
-```go
-func (h *Handler) handleCoinInsert(c *Connection, msg ClientMessage) {
-    if !c.CanInsertCoin() {
-        return
-    }
-    // No balance check, no accounting
-    cmd := NATSCoinInsertCmd{
-        UserID: c.userID,
-        X:      x,
-        Y:      spawnHeight,
-        Z:      backWallZ,
-    }
-    h.nc.Publish(TopicCoinInsert(h.room), data)
-}
-```
-
-- `coin_insert`: 50ms cooldown = 20 free coins/sec
-- `spawn_stack` with cylinder: 240 free coins per message (30 levels x 8 per level)
-- These coins participate in shared physics — when they fall off the front edge, they generate rewards
-
-**Impact**: Unlimited free coin injection. A malicious player can flood the board with free coins, pushing other coins off the front edge to generate cash rewards credited to their balance. This is a direct money-printing vulnerability in a real-money game.
-
-**Recommendation**: `handleCoinInsert` and `handleSpawnStack` must debit `balance_play` before publishing to NATS, identical to how `handleBatchInsert` works. If the debit fails (insufficient funds), reject the command.
+- `coin_insert` / `handleCoinInsert` has been removed; all player coin insertion now goes through `batch_insert` which debits `balance_play` via `ProcessBatchInsert`
+- `spawn_stack` is guarded by `IsAdmin()` (fixed in P0-4) — only admin accounts can use it, so no balance debit is needed
 
 ---
 
@@ -431,7 +408,7 @@ Since debug routes ~~are on the public mux (P0-3)~~ were on the public mux (now 
 | ~~1st~~ | ~~P0-2~~ | ~~Add `DevMode` guard to `/v1/auth/login`~~ — **FIXED** |
 | ~~2nd~~ | ~~P0-3~~ | ~~Remove `debug.Routes(mux, db)` from public mux~~ — **FIXED** |
 | ~~3rd~~ | ~~P0-4~~ | ~~Remove or gate admin commands behind role check~~ — **FIXED** |
-| 4th | P0-1 | Add balance debit to `coin_insert` and `spawn_stack` |
+| ~~4th~~ | ~~P0-1~~ | ~~Add balance debit to `coin_insert` and `spawn_stack`~~ — **N/A** |
 
 ### This Week
 
