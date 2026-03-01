@@ -3,14 +3,21 @@ package user
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
 
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
 )
+
+// newPQUniqueViolation creates a pq.Error that mimics a PostgreSQL unique violation (23505).
+func newPQUniqueViolation() error {
+	return &pq.Error{Code: "23505", Message: "duplicate key value"}
+}
 
 // ---------------------------------------------------------------------------
 // Mock
@@ -91,6 +98,18 @@ func (m *mockStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
 	return 0, nil
 }
 
+func (m *mockStorer) QueryByReferralCode(_ context.Context, _ string) (Account, error) {
+	return Account{}, v1.NewRequestError(v1.ErrNotFound, 404)
+}
+func (m *mockStorer) SetDisplayName(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (m *mockStorer) SetReferralCode(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (m *mockStorer) SetReferredBy(_ context.Context, _, _ uuid.UUID) error          { return nil }
+func (m *mockStorer) IncrementLifetimeDeposit(_ context.Context, _ uuid.UUID, _ decimal.Decimal) error {
+	return nil
+}
+func (m *mockStorer) MarkReferralRewardPaid(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockStorer) CountReferrals(_ context.Context, _ uuid.UUID) (int, error)  { return 0, nil }
+
 // ---------------------------------------------------------------------------
 // FindOrCreate
 // ---------------------------------------------------------------------------
@@ -136,15 +155,18 @@ func TestFindOrCreate(t *testing.T) {
 					return nil
 				},
 			},
-			input:   NewAccount{ProviderType: "wallet", ProviderUID: "0xnew", DisplayName: "alice"},
+			input:   NewAccount{ProviderType: "wallet", ProviderUID: "0xnew"},
 			wantErr: false,
 			check: func(t *testing.T, acct Account) {
 				t.Helper()
-				if acct.DisplayName != "alice" {
-					t.Errorf("DisplayName = %q, want %q", acct.DisplayName, "alice")
+				if acct.DisplayName != nil {
+					t.Errorf("DisplayName = %v, want nil", acct.DisplayName)
 				}
 				if acct.ID == uuid.Nil {
 					t.Error("new account should have non-nil UUID")
+				}
+				if acct.ReferralCode == "" {
+					t.Error("new account should have auto-generated referral code")
 				}
 			},
 		},
@@ -200,7 +222,8 @@ func TestFindOrCreate(t *testing.T) {
 func TestQueryByID(t *testing.T) {
 	t.Parallel()
 
-	wantAcct := Account{ID: uuid.New(), DisplayName: "query-test"}
+	dn := "query-test"
+	wantAcct := Account{ID: uuid.New(), DisplayName: &dn}
 
 	tests := []struct {
 		name    string
@@ -505,7 +528,7 @@ func TestVerifyWalletLogin(t *testing.T) {
 			t.Parallel()
 
 			core := NewCore(tc.storer)
-			_, err := core.VerifyWalletLogin(context.Background(), tc.nonce, tc.sig, tc.address)
+			_, err := core.VerifyWalletLogin(context.Background(), tc.nonce, tc.sig, tc.address, "")
 
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
@@ -524,4 +547,533 @@ func repeatHex(hexByte string, n int) string {
 		s += hexByte
 	}
 	return s
+}
+
+// ---------------------------------------------------------------------------
+// ValidateName
+// ---------------------------------------------------------------------------
+
+func TestValidateName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		min     int
+		max     int
+		wantErr bool
+		errMsg  string
+	}{
+		{"valid simple", "alice", 3, 20, false, ""},
+		{"valid with numbers", "player123", 3, 20, false, ""},
+		{"valid with underscore", "cool_name", 3, 20, false, ""},
+		{"valid with hyphen", "cool-name", 3, 20, false, ""},
+		{"valid min length", "abc", 3, 20, false, ""},
+		{"valid max length", "abcdefghijklmnopqrst", 3, 20, false, ""},
+
+		{"too short", "ab", 3, 20, true, "must be 3-20 characters"},
+		{"too long", "abcdefghijklmnopqrstu", 3, 20, true, "must be 3-20 characters"},
+		{"empty", "", 3, 20, true, "must be 3-20 characters"},
+
+		{"has space", "no spaces", 3, 20, true, "only letters, numbers"},
+		{"has dot", "no.dots", 3, 20, true, "only letters, numbers"},
+		{"has unicode", "名前test", 3, 20, true, "only letters, numbers"},
+		{"has emoji", "test🔥", 3, 20, true, "only letters, numbers"},
+
+		{"reserved admin", "admin", 3, 20, true, "reserved"},
+		{"reserved ADMIN case", "ADMIN", 3, 20, true, "reserved"},
+		{"reserved system", "system", 3, 20, true, "reserved"},
+		{"reserved coinpusher", "CoinPusher", 3, 20, true, "reserved"},
+		{"reserved null", "null", 3, 20, true, "reserved"},
+		{"reserved undefined", "undefined", 3, 20, true, "reserved"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateName(tc.input, tc.min, tc.max)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.errMsg != "" && !strings.Contains(err.Error(), tc.errMsg) {
+					t.Errorf("error = %q, want to contain %q", err.Error(), tc.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// generateReferralCode
+// ---------------------------------------------------------------------------
+
+func TestGenerateReferralCode(t *testing.T) {
+	t.Parallel()
+
+	code, err := generateReferralCode()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Format: xxxx-xxxx (9 chars with hyphen).
+	if len(code) != 9 {
+		t.Errorf("code length = %d, want 9", len(code))
+	}
+	if code[4] != '-' {
+		t.Errorf("code[4] = %q, want '-'", code[4])
+	}
+
+	// All chars must be from the lowercase charset (no 0/o/1/i/l).
+	const validChars = "abcdefghjklmnpqrstuvwxyz23456789"
+	for i, c := range code {
+		if i == 4 {
+			continue // skip hyphen
+		}
+		if !strings.ContainsRune(validChars, c) {
+			t.Errorf("code[%d] = %q, not in valid charset", i, c)
+		}
+	}
+
+	// Codes should be unique (generate 100 and check).
+	seen := map[string]bool{code: true}
+	for i := 0; i < 100; i++ {
+		c, err := generateReferralCode()
+		if err != nil {
+			t.Fatalf("unexpected error on iteration %d: %v", i, err)
+		}
+		if seen[c] {
+			t.Errorf("duplicate code generated: %s", c)
+		}
+		seen[c] = true
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetDisplayName
+// ---------------------------------------------------------------------------
+
+func TestSetDisplayName(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+
+	tests := []struct {
+		name       string
+		displayName string
+		acct       Account
+		wantErr    bool
+		wantStatus int
+	}{
+		{
+			name:        "success",
+			displayName: "coolplayer",
+			acct: Account{
+				ID:                  accountID,
+				DisplayName:         nil,
+				LifetimeDepositUSDC: decimal.NewFromInt(150),
+			},
+			wantErr: false,
+		},
+		{
+			name:        "exactly at threshold",
+			displayName: "player100",
+			acct: Account{
+				ID:                  accountID,
+				DisplayName:         nil,
+				LifetimeDepositUSDC: decimal.NewFromInt(100),
+			},
+			wantErr: false,
+		},
+		{
+			name:        "validation fails - too short",
+			displayName: "ab",
+			acct:        Account{},
+			wantErr:     true,
+			wantStatus:  400,
+		},
+		{
+			name:        "validation fails - reserved",
+			displayName: "admin",
+			acct:        Account{},
+			wantErr:     true,
+			wantStatus:  400,
+		},
+		{
+			name:        "already set",
+			displayName: "newname",
+			acct: func() Account {
+				dn := "oldname"
+				return Account{
+					ID:                  accountID,
+					DisplayName:         &dn,
+					LifetimeDepositUSDC: decimal.NewFromInt(200),
+				}
+			}(),
+			wantErr:    true,
+			wantStatus: 409,
+		},
+		{
+			name:        "below threshold",
+			displayName: "wannabe",
+			acct: Account{
+				ID:                  accountID,
+				DisplayName:         nil,
+				LifetimeDepositUSDC: decimal.NewFromInt(50),
+			},
+			wantErr:    true,
+			wantStatus: 403,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			storer := &mockStorer{
+				queryByIDFn: func(ctx context.Context, id uuid.UUID) (Account, error) {
+					return tc.acct, nil
+				},
+			}
+
+			core := NewCore(storer)
+			err := core.SetDisplayName(context.Background(), accountID, tc.displayName)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				var reqErr *v1.RequestError
+				if errors.As(err, &reqErr) && tc.wantStatus != 0 {
+					if reqErr.Status != tc.wantStatus {
+						t.Errorf("status = %d, want %d", reqErr.Status, tc.wantStatus)
+					}
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetCustomReferralCode
+// ---------------------------------------------------------------------------
+
+func TestSetCustomReferralCode(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+
+	tests := []struct {
+		name       string
+		code       string
+		acct       Account
+		wantErr    bool
+		wantStatus int
+		checkCode  string // expected lowercase code passed to storer
+	}{
+		{
+			name: "success - lowercases input",
+			code: "MyCode",
+			acct: Account{
+				ID:                    accountID,
+				ReferralCodeCustomized: false,
+				LifetimeDepositUSDC:   decimal.NewFromInt(20),
+			},
+			wantErr:   false,
+			checkCode: "mycode",
+		},
+		{
+			name: "success - already lowercase",
+			code: "coolref",
+			acct: Account{
+				ID:                    accountID,
+				ReferralCodeCustomized: false,
+				LifetimeDepositUSDC:   decimal.NewFromInt(10),
+			},
+			wantErr:   false,
+			checkCode: "coolref",
+		},
+		{
+			name:       "validation fails - too short",
+			code:       "ab",
+			acct:       Account{},
+			wantErr:    true,
+			wantStatus: 400,
+		},
+		{
+			name: "already customized",
+			code: "newcode",
+			acct: Account{
+				ID:                    accountID,
+				ReferralCodeCustomized: true,
+				LifetimeDepositUSDC:   decimal.NewFromInt(100),
+			},
+			wantErr:    true,
+			wantStatus: 409,
+		},
+		{
+			name: "below threshold",
+			code: "wannabe",
+			acct: Account{
+				ID:                    accountID,
+				ReferralCodeCustomized: false,
+				LifetimeDepositUSDC:   decimal.NewFromInt(5),
+			},
+			wantErr:    true,
+			wantStatus: 403,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotCode string
+			storerWithCapture := &mockStorerWithReferralCapture{
+				mockStorer: &mockStorer{
+					queryByIDFn: func(ctx context.Context, id uuid.UUID) (Account, error) {
+						return tc.acct, nil
+					},
+				},
+				setReferralCodeFn: func(ctx context.Context, id uuid.UUID, code string) error {
+					gotCode = code
+					return nil
+				},
+			}
+
+			core := NewCore(storerWithCapture)
+			err := core.SetCustomReferralCode(context.Background(), accountID, tc.code)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				var reqErr *v1.RequestError
+				if errors.As(err, &reqErr) && tc.wantStatus != 0 {
+					if reqErr.Status != tc.wantStatus {
+						t.Errorf("status = %d, want %d", reqErr.Status, tc.wantStatus)
+					}
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if gotCode != tc.checkCode {
+					t.Errorf("code passed to storer = %q, want %q", gotCode, tc.checkCode)
+				}
+			}
+		})
+	}
+}
+
+// mockStorerWithReferralCapture wraps mockStorer but overrides SetReferralCode.
+type mockStorerWithReferralCapture struct {
+	*mockStorer
+	setReferralCodeFn func(ctx context.Context, accountID uuid.UUID, code string) error
+}
+
+func (m *mockStorerWithReferralCapture) SetReferralCode(ctx context.Context, accountID uuid.UUID, code string) error {
+	if m.setReferralCodeFn != nil {
+		return m.setReferralCodeFn(ctx, accountID, code)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// FindOrCreate — referral code resolution
+// ---------------------------------------------------------------------------
+
+func TestFindOrCreate_WithReferralCode(t *testing.T) {
+	t.Parallel()
+
+	referrerID := uuid.New()
+
+	tests := []struct {
+		name          string
+		referralCode  string
+		referrerFound bool
+		wantReferred  bool
+	}{
+		{
+			name:          "valid referral code sets referred_by",
+			referralCode:  "ABCD-1234",
+			referrerFound: true,
+			wantReferred:  true,
+		},
+		{
+			name:          "invalid referral code ignored",
+			referralCode:  "BAD-CODE",
+			referrerFound: false,
+			wantReferred:  false,
+		},
+		{
+			name:         "empty referral code",
+			referralCode: "",
+			wantReferred: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			storer := &mockStorer{
+				queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+					return Account{}, v1.NewNotFoundError()
+				},
+			}
+
+			// Override QueryByReferralCode for this test.
+			storerWithRef := &mockStorerWithReferral{
+				mockStorer: storer,
+				queryByReferralCodeFn: func(ctx context.Context, code string) (Account, error) {
+					if tc.referrerFound {
+						return Account{ID: referrerID}, nil
+					}
+					return Account{}, v1.NewNotFoundError()
+				},
+			}
+
+			core := NewCore(storerWithRef)
+			acct, err := core.FindOrCreate(context.Background(), NewAccount{
+				ProviderType: "wallet",
+				ProviderUID:  "0xtest",
+				ReferralCode: tc.referralCode,
+			})
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tc.wantReferred {
+				if acct.ReferredBy == nil {
+					t.Fatal("expected referred_by to be set")
+				}
+				if *acct.ReferredBy != referrerID {
+					t.Errorf("referred_by = %v, want %v", *acct.ReferredBy, referrerID)
+				}
+			} else {
+				if acct.ReferredBy != nil {
+					t.Errorf("expected referred_by to be nil, got %v", *acct.ReferredBy)
+				}
+			}
+		})
+	}
+}
+
+// mockStorerWithReferral wraps mockStorer but overrides QueryByReferralCode.
+type mockStorerWithReferral struct {
+	*mockStorer
+	queryByReferralCodeFn func(ctx context.Context, code string) (Account, error)
+}
+
+func (m *mockStorerWithReferral) QueryByReferralCode(ctx context.Context, code string) (Account, error) {
+	if m.queryByReferralCodeFn != nil {
+		return m.queryByReferralCodeFn(ctx, code)
+	}
+	return Account{}, v1.NewRequestError(v1.ErrNotFound, 404)
+}
+
+// ---------------------------------------------------------------------------
+// FindOrCreate — referral code collision retry
+// ---------------------------------------------------------------------------
+
+func TestFindOrCreate_ReferralCodeCollisionRetry(t *testing.T) {
+	t.Parallel()
+
+	createCalls := 0
+
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			return Account{}, v1.NewNotFoundError()
+		},
+		createFn: func(ctx context.Context, acct Account) error {
+			createCalls++
+			if createCalls <= 2 {
+				// Simulate unique violation using pq.Error.
+				return newPQUniqueViolation()
+			}
+			return nil // 3rd attempt succeeds
+		},
+	}
+
+	core := NewCore(storer)
+	acct, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: "wallet",
+		ProviderUID:  "0xretry",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if acct.ReferralCode == "" {
+		t.Error("account should have a referral code")
+	}
+	if createCalls != 3 {
+		t.Errorf("expected 3 create calls, got %d", createCalls)
+	}
+}
+
+func TestFindOrCreate_ReferralCodeCollisionExhausted(t *testing.T) {
+	t.Parallel()
+
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			return Account{}, v1.NewNotFoundError()
+		},
+		createFn: func(ctx context.Context, acct Account) error {
+			return newPQUniqueViolation() // always collide
+		},
+	}
+
+	core := NewCore(storer)
+	_, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: "wallet",
+		ProviderUID:  "0xexhausted",
+	})
+
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if !strings.Contains(err.Error(), "collision after 3 attempts") {
+		t.Errorf("error = %q, want collision message", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// FindOrCreate — initialBalance
+// ---------------------------------------------------------------------------
+
+func TestFindOrCreate_InitialBalance(t *testing.T) {
+	t.Parallel()
+
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			return Account{}, v1.NewNotFoundError()
+		},
+	}
+
+	core := NewCore(storer)
+	core.SetInitialBalance(decimal.NewFromInt(500))
+
+	acct, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: "wallet",
+		ProviderUID:  "0xbalance",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !acct.BalancePlay.Equal(decimal.NewFromInt(500)) {
+		t.Errorf("balance_play = %s, want 500", acct.BalancePlay)
+	}
 }

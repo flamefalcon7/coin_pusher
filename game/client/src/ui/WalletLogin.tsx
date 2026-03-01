@@ -11,6 +11,7 @@ interface WalletLoginProps {
 export function WalletLogin({ apiBase, onSuccess }: WalletLoginProps) {
   const [state, setState] = useState<LoginState>("idle");
   const [error, setError] = useState<string>("");
+  const [referralCode, setReferralCode] = useState("");
 
   const handleConnect = async () => {
     setState("connecting");
@@ -18,7 +19,7 @@ export function WalletLogin({ apiBase, onSuccess }: WalletLoginProps) {
 
     try {
       setState("signing");
-      const result = await connectAndSign(apiBase);
+      const result = await connectAndSign(apiBase, referralCode || undefined);
       onSuccess(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Login failed";
@@ -34,6 +35,15 @@ export function WalletLogin({ apiBase, onSuccess }: WalletLoginProps) {
       <div className="wallet-login-card">
         <h1 className="wallet-login-title">Coin Pusher</h1>
         <p className="wallet-login-subtitle">Connect your wallet to play</p>
+
+        <input
+          className="wallet-login-referral"
+          type="text"
+          placeholder="Referral Code (optional)"
+          value={referralCode}
+          onChange={(e) => setReferralCode(e.target.value)}
+          disabled={busy}
+        />
 
         <button
           className="wallet-login-btn"

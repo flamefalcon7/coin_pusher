@@ -1,0 +1,255 @@
+.profile-page {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-deep);
+  overflow-y: auto;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  color: var(--text-color);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.profile-header {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.profile-back-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.profile-back-link:hover {
+  opacity: 1;
+}
+
+.profile-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-purple);
+}
+
+/* ── Loading / Error ─────────────────────────────────────────────────── */
+
+.profile-loading {
+  margin-top: 80px;
+  font-size: 16px;
+  color: rgba(245, 230, 184, 0.5);
+  animation: profilePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes profilePulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.profile-error {
+  margin-top: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-error p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--accent-pink);
+}
+
+.profile-retry-btn {
+  padding: 8px 24px;
+  border: 1px solid var(--accent-pink);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-pink);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.profile-retry-btn:hover {
+  background: rgba(232, 57, 107, 0.15);
+}
+
+/* ── Sections ────────────────────────────────────────────────────────── */
+
+.profile-sections {
+  width: 100%;
+  max-width: 480px;
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+
+.profile-card {
+  padding: 16px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: profileCardIn 0.35s ease-out;
+}
+
+@keyframes profileCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.profile-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profile-card-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-color);
+  word-break: break-all;
+}
+
+/* ── Form row ────────────────────────────────────────────────────────── */
+
+.profile-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.profile-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(26, 14, 46, 0.6);
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.profile-input:focus {
+  border-color: var(--accent-purple);
+}
+
+.profile-input::placeholder {
+  color: rgba(245, 230, 184, 0.25);
+}
+
+.profile-submit-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.profile-submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.profile-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Lock message ────────────────────────────────────────────────────── */
+
+.profile-lock-msg {
+  font-size: 12px;
+  color: rgba(245, 230, 184, 0.45);
+  font-weight: 600;
+}
+
+.profile-lock-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(245, 230, 184, 0.08);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.profile-lock-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent-purple), var(--accent-pink));
+  transition: width 0.4s ease-out;
+}
+
+/* ── Copy row ────────────────────────────────────────────────────────── */
+
+.profile-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-copy-btn {
+  padding: 4px 10px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.profile-copy-btn:hover {
+  opacity: 1;
+  border-color: var(--accent-teal);
+}
+
+/* ── Inline error ────────────────────────────────────────────────────── */
+
+.profile-inline-error {
+  font-size: 12px;
+  color: var(--accent-pink);
+  font-weight: 600;
+}
+
+.profile-inline-success {
+  font-size: 12px;
+  color: var(--accent-green);
+  font-weight: 600;
+}
+
+/* ── Referral stats ──────────────────────────────────────────────────── */
+
+.profile-referral-stats {
+  font-size: 12px;
+  color: rgba(245, 230, 184, 0.5);
+  font-weight: 600;
+}

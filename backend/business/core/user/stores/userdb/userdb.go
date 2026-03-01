@@ -28,12 +28,13 @@ func NewStore(db database.DBTX) *Store {
 // Create inserts a new account into the database.
 func (s *Store) Create(ctx context.Context, acct user.Account) error {
 	const q = `
-		INSERT INTO accounts (account_id, display_name, balance_usdc, balance_play, balance_cash, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+		INSERT INTO accounts (account_id, display_name, balance_usdc, balance_play, balance_cash, referral_code, referred_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	if _, err := s.db.ExecContext(ctx, q,
 		acct.ID, acct.DisplayName,
 		acct.BalanceUSDC, acct.BalancePlay, acct.BalanceCash,
+		acct.ReferralCode, acct.ReferredBy,
 		acct.CreatedAt, acct.UpdatedAt,
 	); err != nil {
 		return fmt.Errorf("inserting account: %w", err)
@@ -156,4 +157,139 @@ func (s *Store) UpdateBalance(ctx context.Context, accountID uuid.UUID, currency
 	}
 
 	return decimal.Zero, v1.NewRequestError(v1.ErrInsufficientFund, 402)
+}
+
+// -------------------------------------------------------------------------
+// Referral + Username
+// -------------------------------------------------------------------------
+
+// QueryByReferralCode retrieves an account by its referral code (case-insensitive).
+func (s *Store) QueryByReferralCode(ctx context.Context, code string) (user.Account, error) {
+	const q = `SELECT * FROM accounts WHERE LOWER(referral_code) = LOWER($1)`
+
+	var acct user.Account
+	if err := s.db.GetContext(ctx, &acct, q, code); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return user.Account{}, v1.NewRequestError(v1.ErrNotFound, 404)
+		}
+		return user.Account{}, fmt.Errorf("selecting account by referral_code[%s]: %w", code, err)
+	}
+
+	return acct, nil
+}
+
+// SetDisplayName sets the display name for an account. Fails if the name is
+// already taken (unique constraint) or already set.
+func (s *Store) SetDisplayName(ctx context.Context, accountID uuid.UUID, name string) error {
+	const q = `
+		UPDATE accounts SET display_name = $2, updated_at = NOW()
+		WHERE account_id = $1 AND display_name IS NULL`
+
+	result, err := s.db.ExecContext(ctx, q, accountID, name)
+	if err != nil {
+		if database.IsUniqueViolation(err) {
+			return v1.NewRequestError(fmt.Errorf("username already taken"), 409)
+		}
+		return fmt.Errorf("setting display_name: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrConflict, 409)
+	}
+
+	return nil
+}
+
+// SetReferralCode sets a custom referral code for an account.
+// Only succeeds if referral_code_customized is still false.
+func (s *Store) SetReferralCode(ctx context.Context, accountID uuid.UUID, code string) error {
+	const q = `
+		UPDATE accounts SET referral_code = $2, referral_code_customized = TRUE, updated_at = NOW()
+		WHERE account_id = $1 AND referral_code_customized = FALSE`
+
+	result, err := s.db.ExecContext(ctx, q, accountID, code)
+	if err != nil {
+		if database.IsUniqueViolation(err) {
+			return v1.NewRequestError(fmt.Errorf("referral code already taken"), 409)
+		}
+		return fmt.Errorf("setting referral_code: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrConflict, 409)
+	}
+
+	return nil
+}
+
+// SetReferredBy sets the referrer for an account. Only succeeds if
+// referred_by is currently NULL.
+func (s *Store) SetReferredBy(ctx context.Context, accountID, referrerID uuid.UUID) error {
+	const q = `
+		UPDATE accounts SET referred_by = $2, updated_at = NOW()
+		WHERE account_id = $1 AND referred_by IS NULL`
+
+	result, err := s.db.ExecContext(ctx, q, accountID, referrerID)
+	if err != nil {
+		return fmt.Errorf("setting referred_by: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrConflict, 409)
+	}
+
+	return nil
+}
+
+// IncrementLifetimeDeposit atomically adds to the lifetime deposit tracker.
+func (s *Store) IncrementLifetimeDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
+	const q = `
+		UPDATE accounts SET lifetime_deposit_usdc = lifetime_deposit_usdc + $2, updated_at = NOW()
+		WHERE account_id = $1`
+
+	if _, err := s.db.ExecContext(ctx, q, accountID, amount); err != nil {
+		return fmt.Errorf("incrementing lifetime_deposit_usdc: %w", err)
+	}
+
+	return nil
+}
+
+// MarkReferralRewardPaid sets referral_reward_paid = TRUE.
+func (s *Store) MarkReferralRewardPaid(ctx context.Context, accountID uuid.UUID) error {
+	const q = `
+		UPDATE accounts SET referral_reward_paid = TRUE, updated_at = NOW()
+		WHERE account_id = $1`
+
+	if _, err := s.db.ExecContext(ctx, q, accountID); err != nil {
+		return fmt.Errorf("marking referral_reward_paid: %w", err)
+	}
+
+	return nil
+}
+
+// CountReferrals returns the number of accounts referred by the given account.
+func (s *Store) CountReferrals(ctx context.Context, accountID uuid.UUID) (int, error) {
+	const q = `SELECT COUNT(*) FROM accounts WHERE referred_by = $1`
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, q, accountID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting referrals: %w", err)
+	}
+
+	return count, nil
 }

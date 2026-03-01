@@ -212,6 +212,7 @@ func run() error {
 			func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
 		)
 		depositCore.SetMetricRecorder(progressCore.RecordMetric)
+
 		log.Infow("deposit/withdrawal system initialized")
 	} else {
 		log.Warnw("BACKEND_WALLET_SEED not set — deposit/withdrawal routes disabled")
@@ -530,8 +531,8 @@ func run() error {
 		// Look up winner display name.
 		winnerName := ""
 		acct, err := userCore.QueryByID(context.Background(), winnerID)
-		if err == nil {
-			winnerName = acct.DisplayName
+		if err == nil && acct.DisplayName != nil {
+			winnerName = *acct.DisplayName
 		}
 
 		// Publish key_coin_draw to NATS for broadcast to all clients.
@@ -708,6 +709,9 @@ func buildAPIMux(
 	mux.Group(func(r chi.Router) {
 		r.Use(mid.Authenticate(a))
 		r.Get("/v1/user/profile", mid.Errors(log, userGrp.Profile))
+		r.Put("/v1/user/display-name", mid.Errors(log, userGrp.SetDisplayName))
+		r.Put("/v1/user/referral-code", mid.Errors(log, userGrp.SetReferralCode))
+		r.Get("/v1/user/referral", mid.Errors(log, userGrp.ReferralInfo))
 		r.Post("/v1/game/batch-insert", mid.Errors(log, gameGrp.BatchInsert))
 		r.Get("/v1/inventory", mid.Errors(log, invGrp.GetInventory))
 		r.Post("/v1/chest/open", mid.Errors(log, invGrp.OpenChest))

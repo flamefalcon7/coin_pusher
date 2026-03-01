@@ -2,10 +2,14 @@
 
 export interface Account {
   account_id: string;
-  display_name: string;
+  display_name: string | null;
   balance_usdc: string;
   balance_play: string;
   balance_cash: string;
+  referral_code: string;
+  referral_code_customized: boolean;
+  lifetime_deposit_usdc: string;
+  role: string;
   created_at: string;
   updated_at: string;
 }
@@ -17,6 +21,7 @@ export interface AuthResult {
 
 const TOKEN_KEY = "coin_pusher_token";
 const ACCOUNT_KEY = "coin_pusher_account";
+const ADDRESS_KEY = "coin_pusher_address";
 
 export function getSavedAuth(): { token: string; account: Account } | null {
   const token = sessionStorage.getItem(TOKEN_KEY);
@@ -37,6 +42,11 @@ export function saveAuth(token: string, account: Account): void {
 export function clearAuth(): void {
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(ACCOUNT_KEY);
+  sessionStorage.removeItem(ADDRESS_KEY);
+}
+
+export function getSavedAddress(): string | null {
+  return sessionStorage.getItem(ADDRESS_KEY);
 }
 
 export function updateSavedBalance(balancePlay?: string, balanceCash?: string): void {
@@ -63,11 +73,14 @@ async function walletLogin(
   address: string,
   nonce: string,
   signature: string,
+  referralCode?: string,
 ): Promise<AuthResult> {
+  const body: Record<string, string> = { address, nonce, signature };
+  if (referralCode) body.referral_code = referralCode;
   const res = await fetch(`${apiBase}/v1/auth/wallet/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ address, nonce, signature }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error(`Login failed: ${res.status}`);
@@ -82,7 +95,7 @@ async function walletLogin(
  * 3. personal_sign → user signs the message
  * 4. walletLogin → exchange signature for JWT
  */
-export async function connectAndSign(apiBase: string): Promise<AuthResult> {
+export async function connectAndSign(apiBase: string, referralCode?: string): Promise<AuthResult> {
   const eth = window.ethereum;
   if (!eth) {
     throw new Error("No wallet found. Please install MetaMask.");
@@ -105,10 +118,11 @@ export async function connectAndSign(apiBase: string): Promise<AuthResult> {
   })) as string;
 
   // 4. Login
-  const result = await walletLogin(apiBase, address, nonce, signature);
+  const result = await walletLogin(apiBase, address, nonce, signature, referralCode);
 
-  // Persist token + account for session
+  // Persist token + account + address for session
   saveAuth(result.token, result.account);
+  sessionStorage.setItem(ADDRESS_KEY, address);
 
   return result;
 }

@@ -93,6 +93,17 @@ func (m *mockStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
 func (m *mockStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
 	return nil
 }
+func (m *mockStorer) QueryByReferralCode(_ context.Context, _ string) (user.Account, error) {
+	return user.Account{}, v1.NewRequestError(v1.ErrNotFound, 404)
+}
+func (m *mockStorer) SetDisplayName(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (m *mockStorer) SetReferralCode(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (m *mockStorer) SetReferredBy(_ context.Context, _, _ uuid.UUID) error          { return nil }
+func (m *mockStorer) IncrementLifetimeDeposit(_ context.Context, _ uuid.UUID, _ decimal.Decimal) error {
+	return nil
+}
+func (m *mockStorer) MarkReferralRewardPaid(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockStorer) CountReferrals(_ context.Context, _ uuid.UUID) (int, error)  { return 0, nil }
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -112,9 +123,10 @@ func TestLogin(t *testing.T) {
 	devAuth := auth.NewDevAuth("test-issuer")
 	log := zap.NewNop().Sugar()
 
+	loginDN := "login-test"
 	existingAcct := user.Account{
 		ID:          uuid.New(),
-		DisplayName: "login-test",
+		DisplayName: &loginDN,
 		BalancePlay: decimal.NewFromInt(100),
 	}
 
@@ -180,8 +192,8 @@ func TestLogin(t *testing.T) {
 				if resp.Token == "" {
 					t.Error("token should not be empty")
 				}
-				if resp.Account.DisplayName != "login-test" {
-					t.Errorf("account.DisplayName = %q, want %q", resp.Account.DisplayName, "login-test")
+				if resp.Account.DisplayName == nil || *resp.Account.DisplayName != "login-test" {
+					t.Errorf("account.DisplayName = %v, want %q", resp.Account.DisplayName, "login-test")
 				}
 			}
 		})
@@ -198,9 +210,10 @@ func TestProfile(t *testing.T) {
 	log := zap.NewNop().Sugar()
 
 	accountID := uuid.New()
+	profileDN := "profile-test"
 	testAcct := user.Account{
 		ID:          accountID,
-		DisplayName: "profile-test",
+		DisplayName: &profileDN,
 		BalancePlay: decimal.NewFromInt(42),
 	}
 
