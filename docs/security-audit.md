@@ -281,17 +281,11 @@ For financial transactions, this allows non-repeatable reads within a transactio
 
 ---
 
-### P1-12: Indexer Does Not Handle Chain Reorganizations
+### ~~P1-12: Indexer Does Not Handle Chain Reorganizations~~ — **FIXED**
 
-**Location**: `backend/app/tooling/indexer/main.go:214-229`
+**Status**: Fixed (2026-03-01). Added `ConfirmationBlocks` config (default: 50 blocks) to `pollOnce`. The indexer now subtracts the confirmation delay from the latest block number, only processing blocks with sufficient confirmations to survive reorgs on Base L2.
 
-```go
-header, err := client.HeaderByNumber(ctx, nil) // latest, not finalized
-```
-
-The indexer processes events from `latest` blocks without waiting for finality. On Base (OP-Stack L2), blocks become final after the L1 finality window. A reorganization could remove a deposit transaction after it has been credited.
-
-**Recommendation**: Use `eth_getBlockByNumber("finalized")` or implement a confirmation delay.
+**Location**: `backend/app/tooling/indexer/main.go`
 
 ---
 
@@ -314,13 +308,11 @@ USDC and CASH updates return `balance_play` instead of the correct column. Curre
 
 ---
 
-### P1-14: NATS Publish Is Fire-and-Forget — Paid Actions Can Be Lost
+### ~~P1-14: NATS Publish Is Fire-and-Forget — Paid Actions Can Be Lost~~ — **FIXED**
 
-**Location**: `backend/business/web/ws/handler.go:505`, `backend/app/services/api/handlers/v1/gamegrp/gamegrp.go:109`
+**Status**: Fixed (2026-03-01). Both WS and HTTP `batch_insert` handlers now check `nc.Publish` error. On failure, `RefundBatchInsert` credits the play balance back via `ProcessGameInsertRefund` (new accounting action `GAME_INSERT_REFUND`), creating a ledger entry for auditability.
 
-The flow is: (1) debit `balance_play` via DB, (2) publish to NATS (fire-and-forget). If step 2 fails, the user's balance is debited but coins are never spawned. The `nc.Publish` error return is not checked.
-
-**Recommendation**: Check `nc.Publish` error. If it fails, refund the debited balance. Consider NATS JetStream or an outbox pattern.
+**Location**: `backend/business/web/ws/handler.go`, `backend/app/services/api/handlers/v1/gamegrp/gamegrp.go`
 
 ---
 
@@ -344,23 +336,11 @@ No rate limiting on `/v1/auth/nonce` (writes to DB on every call) or `/v1/auth/w
 
 ---
 
-### P1-17: Indexer Block Cursor Advances on Partial Failure
+### ~~P1-17: Indexer Block Cursor Advances on Partial Failure~~ — **FIXED**
 
-**Location**: `backend/app/tooling/indexer/main.go:301-312`
+**Status**: Fixed (2026-03-01). Changed `continue` to `return fmt.Errorf(...)` on `ProcessDeposit` failure. The cursor now only advances when ALL deposits in the block range are processed successfully. Failed ranges are retried on the next poll cycle.
 
-```go
-for _, vLog := range evtLogs {
-    if err := depositCore.ProcessDeposit(...); err != nil {
-        log.Errorw("process deposit error", ...)
-        continue  // ← continues, does NOT stop
-    }
-}
-*lastBlock = toBlock  // ← cursor advances past failed deposits
-```
-
-If a deposit fails to process (transient DB error), it is permanently skipped because the cursor advances past the entire block range.
-
-**Recommendation**: Stop advancing cursor on failure, or maintain a "failed deposits" retry queue.
+**Location**: `backend/app/tooling/indexer/main.go`
 
 ---
 

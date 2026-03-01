@@ -107,7 +107,14 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	if err != nil {
 		return fmt.Errorf("marshaling batch insert cmd: %w", err)
 	}
-	g.nc.Publish(ws.TopicBatchInsert(g.room), data)
+	// P1-14: Check publish error; refund balance if NATS is unreachable.
+	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
+		refundKey := uuid.NewString()
+		if _, refundErr := g.game.RefundBatchInsert(ctx, accountID, req.Count, refundKey); refundErr != nil {
+			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
+		}
+		return fmt.Errorf("nats publish failed (balance refunded): %w", err)
+	}
 
 	share := g.heat.GetShareForUser(accountID)
 

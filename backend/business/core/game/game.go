@@ -92,3 +92,16 @@ func (c *Core) ProcessBatchInsert(ctx context.Context, accountID uuid.UUID, coin
 		BalancePlay: newPlay.String(),
 	}, nil
 }
+
+// RefundBatchInsert credits back the play balance after a failed NATS publish.
+func (c *Core) RefundBatchInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (GameEventResult, error) {
+	newPlay, err := c.acctCore.ProcessGameInsertRefund(ctx, accountID, coinCount, referenceID)
+	if err != nil {
+		return GameEventResult{Success: false, Error: err.Error()}, nil
+	}
+
+	return GameEventResult{
+		Success:     true,
+		BalancePlay: newPlay.String(),
+	}, nil
+}

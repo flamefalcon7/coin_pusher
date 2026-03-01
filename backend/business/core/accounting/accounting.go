@@ -166,6 +166,46 @@ func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinC
 	return newPlay, nil
 }
 
+// ProcessGameInsertRefund reverses a game insert by crediting play balance back.
+// Used when NATS publish fails after balance was already debited.
+func (c *Core) ProcessGameInsertRefund(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (decimal.Decimal, error) {
+	amount := decimal.NewFromInt(int64(coinCount))
+
+	var newPlay decimal.Decimal
+	err := c.execTx(ctx, func(s txStores) error {
+		if err := s.userCore.IncrementPlayBalance(ctx, accountID, amount); err != nil {
+			return err
+		}
+
+		acct, err := s.userCore.QueryByID(ctx, accountID)
+		if err != nil {
+			return err
+		}
+		newPlay = acct.BalancePlay
+
+		now := time.Now().UTC()
+		log := AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  ActionGameInsertRefund,
+			Amount:      amount,
+			Currency:    CurrencyPlay,
+			ReferenceID: referenceID,
+			CreatedAt:   now,
+		}
+
+		if txErr := s.storer.Create(ctx, log); txErr != nil {
+			return fmt.Errorf("creating game insert refund log: %w", txErr)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return newPlay, nil
+}
+
 // ProcessGameReward handles a game reward event (coins distributed via heat shares).
 // Credits the account's cash balance and creates a ledger entry atomically.
 func (c *Core) ProcessGameReward(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, referenceID string) error {

@@ -14,6 +14,7 @@ const (
 	ActionExchangePlay     = "EXCHANGE_PLAY"
 	ActionExchangeCashPlay = "EXCHANGE_CASH_PLAY"
 	ActionGameInsert       = "GAME_INSERT"
+	ActionGameInsertRefund = "GAME_INSERT_REFUND"
 	ActionGameReward       = "GAME_REWARD"
 	ActionWithdraw          = "WITHDRAW"
 	ActionWithdrawRefund    = "WITHDRAW_REFUND"

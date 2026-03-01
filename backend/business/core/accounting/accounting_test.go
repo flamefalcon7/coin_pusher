@@ -281,6 +281,105 @@ func TestProcessGameInsert(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ProcessGameInsertRefund
+// ---------------------------------------------------------------------------
+
+func TestProcessGameInsertRefund(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+
+	tests := []struct {
+		name       string
+		count      int
+		mockBal    decimal.Decimal
+		updateErr  error
+		queryErr   error
+		createErr  error
+		wantErr    bool
+		wantAction string
+	}{
+		{
+			name:       "successful refund",
+			count:      5,
+			mockBal:    decimal.NewFromInt(105),
+			wantErr:    false,
+			wantAction: ActionGameInsertRefund,
+		},
+		{
+			name:      "increment balance fails",
+			count:     5,
+			updateErr: errors.New("db error"),
+			wantErr:   true,
+		},
+		{
+			name:     "query after increment fails",
+			count:    5,
+			queryErr: errors.New("db error"),
+			wantErr:  true,
+		},
+		{
+			name:      "create log fails",
+			count:     5,
+			mockBal:   decimal.NewFromInt(105),
+			createErr: errors.New("insert failed"),
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var loggedAction string
+			userStr := &mockUserStorer{
+				updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+					if tc.updateErr != nil {
+						return decimal.Zero, tc.updateErr
+					}
+					return decimal.Zero, nil
+				},
+				queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
+					if tc.queryErr != nil {
+						return user.Account{}, tc.queryErr
+					}
+					return user.Account{BalancePlay: tc.mockBal}, nil
+				},
+			}
+			acctStr := &mockAcctStorer{
+				createFn: func(ctx context.Context, log AccountingLog) error {
+					loggedAction = log.ActionType
+					if tc.createErr != nil {
+						return tc.createErr
+					}
+					return nil
+				},
+			}
+
+			userCore := user.NewCore(userStr)
+			core := NewCore(nil, acctStr, userCore, nil, nil)
+
+			newPlay, err := core.ProcessGameInsertRefund(context.Background(), accountID, tc.count, "refund-ref-123")
+
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.wantErr {
+				if !newPlay.Equal(tc.mockBal) {
+					t.Errorf("newPlay = %s, want %s", newPlay, tc.mockBal)
+				}
+				if loggedAction != tc.wantAction {
+					t.Errorf("action_type = %q, want %q", loggedAction, tc.wantAction)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // ProcessGameReward
 // ---------------------------------------------------------------------------
 
