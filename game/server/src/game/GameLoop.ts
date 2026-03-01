@@ -26,6 +26,8 @@ export class GameLoop {
   private coinOwners: Map<number, string> = new Map(); // coinId → userId
   private keyCoinIds: Set<number> = new Set();
   private running: boolean = false;
+  private draining: boolean = false;
+  private drainResolve?: () => void;
   private intervalId?: NodeJS.Timeout;
   private statsIntervalId?: NodeJS.Timeout;
   private tickCount: number = 0;
@@ -116,6 +118,54 @@ export class GameLoop {
       clearInterval(this.statsIntervalId);
     }
     console.log("🛑 Game loop stopped");
+  }
+
+  /**
+   * Begin graceful drain: cancel abilities, let DropScheduler empty,
+   * wait for all coins to settle or despawn, then resolve.
+   * The game loop keeps ticking so physics continues processing.
+   * Resolves when coins === 0 or after timeoutMs.
+   */
+  drain(timeoutMs: number = 60_000): Promise<void> {
+    if (this.draining) return Promise.resolve();
+    this.draining = true;
+
+    // Cancel active abilities immediately so coins can settle
+    this.tornadoActive = false;
+    this.lightningActive = false;
+
+    console.log(`⏳ Drain started: ${this.coins.size} coins, ${this.dropScheduler.getSlotCounts().reduce((a, b) => a + b, 0)} queued`);
+
+    return new Promise<void>((resolve) => {
+      this.drainResolve = resolve;
+
+      const timeout = setTimeout(() => {
+        console.log(`⏳ Drain timeout (${timeoutMs}ms), ${this.coins.size} coins remaining — forcing shutdown`);
+        this.drainResolve = undefined;
+        resolve();
+      }, timeoutMs);
+
+      // Check every tick if drain is complete (piggybacked in tick via drainCheck)
+      // Store timeout ref so we can clear it on early completion
+      const originalResolve = resolve;
+      this.drainResolve = () => {
+        clearTimeout(timeout);
+        originalResolve();
+      };
+    });
+  }
+
+  /** Called at end of each tick during drain to check completion. */
+  private drainCheck(): void {
+    if (!this.draining || !this.drainResolve) return;
+
+    const queuedTotal = this.dropScheduler.getSlotCounts().reduce((a, b) => a + b, 0);
+    if (this.coins.size === 0 && queuedTotal === 0) {
+      console.log("⏳ Drain complete: all coins settled/despawned");
+      const resolve = this.drainResolve;
+      this.drainResolve = undefined;
+      resolve();
+    }
   }
 
   private tick(): void {
@@ -346,7 +396,10 @@ export class GameLoop {
       );
     }
 
-    // 9. Increment tick
+    // 9. Check drain completion
+    this.drainCheck();
+
+    // 10. Increment tick
     this.gameState.incrementTick();
   }
 

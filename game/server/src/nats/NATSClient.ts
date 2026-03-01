@@ -77,6 +77,7 @@ export type RewardEvent = {
 export class NATSClient {
   private nc: NatsConnection | null = null;
   private subs: Subscription[] = [];
+  private cmdSubs: Subscription[] = [];
   private room: string;
 
   constructor(room: string = "main") {
@@ -92,6 +93,7 @@ export class NATSClient {
   subscribeCoinInsert(handler: (cmd: CoinInsertCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.coin_insert`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as CoinInsertCommand;
@@ -104,6 +106,7 @@ export class NATSClient {
   subscribeSpawnStack(handler: (cmd: SpawnStackCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.spawn_stack`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as SpawnStackCommand;
@@ -116,6 +119,7 @@ export class NATSClient {
   subscribeShock(handler: (cmd: ShockCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.shock`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as ShockCommand;
@@ -128,6 +132,7 @@ export class NATSClient {
   subscribeTornado(handler: (cmd: TornadoCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.tornado`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as TornadoCommand;
@@ -140,6 +145,7 @@ export class NATSClient {
   subscribeExplosion(handler: (cmd: ExplosionCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.explosion`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as ExplosionCommand;
@@ -152,6 +158,7 @@ export class NATSClient {
   subscribeLightning(handler: (cmd: LightningCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.lightning`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as LightningCommand;
@@ -164,6 +171,7 @@ export class NATSClient {
   subscribeSuperPush(handler: (cmd: SuperPushCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.super_push`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as SuperPushCommand;
@@ -176,6 +184,7 @@ export class NATSClient {
   subscribeClearAll(handler: (cmd: ClearAllCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.clear_all`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as ClearAllCommand;
@@ -188,6 +197,7 @@ export class NATSClient {
   subscribeFillPlatform(handler: (cmd: FillPlatformCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.fill_platform`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as FillPlatformCommand;
@@ -200,6 +210,7 @@ export class NATSClient {
   subscribeUpdateSceneObjects(handler: (cmd: UpdateSceneObjectsCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.update_scene_objects`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as UpdateSceneObjectsCommand;
@@ -432,12 +443,22 @@ export class NATSClient {
   subscribeBatchInsert(handler: (cmd: BatchInsertCommand) => void): void {
     const sub = this.nc!.subscribe(`game.${this.room}.cmd.batch_insert`);
     this.subs.push(sub);
+    this.cmdSubs.push(sub);
     (async () => {
       for await (const msg of sub) {
         const cmd = JSON.parse(sc.decode(msg.data)) as BatchInsertCommand;
         handler(cmd);
       }
     })();
+  }
+
+  /** Unsubscribe from all command subscriptions (stop accepting new game commands). */
+  unsubscribeCommands(): void {
+    for (const sub of this.cmdSubs) {
+      sub.unsubscribe();
+    }
+    this.cmdSubs = [];
+    console.log("NATS command subscriptions closed");
   }
 
   // Graceful close

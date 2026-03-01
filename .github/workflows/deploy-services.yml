@@ -1,0 +1,46 @@
+name: Deploy Services
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'game/shared/**'
+      - 'docker-compose.services.yml'
+      - 'deploy/nginx/**'
+      - '.github/workflows/deploy-services.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Services Machine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_SERVICES_HOST }}
+          username: ${{ secrets.DEPLOY_SERVICES_USER }}
+          key: ${{ secrets.DEPLOY_SERVICES_KEY }}
+          script: |
+            set -e
+            cd /opt/coin_pusher
+            git pull origin main
+
+            # Run migrations before restarting backend
+            docker compose -f docker-compose.services.yml build backend
+            docker compose -f docker-compose.services.yml up -d postgres
+            sleep 5
+            docker compose -f docker-compose.services.yml run --rm backend /bin/admin migrate
+
+            # Build and restart all services
+            docker compose -f docker-compose.services.yml build
+            docker compose -f docker-compose.services.yml up -d
+
+            # Health check: wait for backend to respond
+            sleep 5
+            docker compose -f docker-compose.services.yml exec backend wget -qO- http://localhost:4000/health || echo "WARNING: health check failed"
+
+            docker compose -f docker-compose.services.yml ps
+            docker image prune -f

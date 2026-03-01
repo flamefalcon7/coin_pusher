@@ -1,0 +1,17 @@
+# Game machine: physics server only.
+# Connects to NATS on the services machine via VPC private IP.
+# Set NATS_URL in .env, e.g. NATS_URL=nats://10.x.x.x:4222
+
+services:
+  game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NATS_URL: ${NATS_URL}
+    stop_grace_period: 90s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

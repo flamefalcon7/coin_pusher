@@ -1,0 +1,122 @@
+# Services machine: backend API, database, NATS, nginx, indexer, executor
+# Deploy to the services droplet alongside PostgreSQL and NATS.
+# Game machine connects to NATS via VPC private IP on port 4222.
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["--http_port", "8222"]
+    ports:
+      - "4222:4222"
+    networks: [app]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: zarf/docker/Dockerfile.backend
+    restart: unless-stopped
+    expose:
+      - "4000"
+    environment:
+      BACKEND_DB_HOST: postgres:5432
+      BACKEND_DB_USER: ${DB_USER}
+      BACKEND_DB_PASSWORD: ${DB_PASSWORD}
+      BACKEND_DB_NAME: ${DB_NAME}
+      BACKEND_DB_DISABLE_TLS: "true"
+      BACKEND_NATS_URL: nats://nats:4222
+      BACKEND_AUTH_DEV_MODE: "false"
+      BACKEND_AUTH_KEYS_FOLDER: /app/zarf/keys
+      BACKEND_WEB_CORS_ORIGINS: ${CORS_ORIGINS}
+      BACKEND_GAME_API_KEY: ${GAME_API_KEY}
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  executor:
+    build:
+      context: ./backend
+      dockerfile: zarf/docker/Dockerfile.backend
+    restart: unless-stopped
+    command: ["/bin/executor"]
+    environment:
+      BACKEND_DB_HOST: postgres:5432
+      BACKEND_DB_USER: ${DB_USER}
+      BACKEND_DB_PASSWORD: ${DB_PASSWORD}
+      BACKEND_DB_NAME: ${DB_NAME}
+      BACKEND_DB_DISABLE_TLS: "true"
+      BACKEND_WALLET_SEED: ${WALLET_SEED}
+      BACKEND_EXECUTOR_RPC_URL: ${EXECUTOR_RPC_URL:-https://mainnet.base.org}
+      BACKEND_EXECUTOR_USDC_CONTRACT: ${EXECUTOR_USDC_CONTRACT:-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  indexer:
+    build:
+      context: ./backend
+      dockerfile: zarf/docker/Dockerfile.backend
+    restart: unless-stopped
+    command: ["/bin/indexer"]
+    environment:
+      BACKEND_DB_HOST: postgres:5432
+      BACKEND_DB_USER: ${DB_USER}
+      BACKEND_DB_PASSWORD: ${DB_PASSWORD}
+      BACKEND_DB_NAME: ${DB_NAME}
+      BACKEND_DB_DISABLE_TLS: "true"
+      BACKEND_WALLET_SEED: ${WALLET_SEED}
+      BACKEND_INDEXER_RPC_URL: ${INDEXER_RPC_URL:-https://mainnet.base.org}
+      BACKEND_INDEXER_USDC_CONTRACT: ${INDEXER_USDC_CONTRACT:-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913}
+      BACKEND_INDEXER_POLL_INTERVAL: ${INDEXER_POLL_INTERVAL:-10s}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_started }
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+    networks: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
+
+networks:
+  app:
+    driver: bridge

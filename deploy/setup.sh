@@ -87,19 +87,23 @@ fi
 
 echo "=== 7. Start services ==="
 cd "$APP_DIR"
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.services.yml up -d --build
 
 echo "=== 8. Run DB migrations ==="
 sleep 5
-docker compose -f docker-compose.prod.yml exec backend /bin/admin migrate
+docker compose -f docker-compose.services.yml exec backend /bin/admin migrate
 
 echo "=== 9. Configure UFW firewall ==="
 if command -v ufw &>/dev/null; then
   ufw allow 22/tcp
   ufw allow 80/tcp
   ufw allow 443/tcp
+  # Allow NATS from game machine via VPC private IP.
+  # Replace 10.x.x.x with your game machine's private IP.
+  # ufw allow from 10.x.x.x to any port 4222
   ufw --force enable
   echo "UFW enabled: allowing SSH (22), HTTP (80), and HTTPS (443)."
+  echo "NOTE: Uncomment and edit the NATS rule above for game machine access."
 else
   echo "UFW not found, skipping firewall setup."
 fi
@@ -107,11 +111,13 @@ fi
 echo ""
 echo "=== Setup complete ==="
 echo "Services running:"
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.services.yml ps
 echo ""
 echo "Next steps:"
 echo "  1. Point Cloudflare DNS 'api' A record to this server's IP"
 echo "  2. Set Cloudflare SSL mode to Full (or Full strict after replacing cert with Origin CA cert)"
 echo "  3. Connect GitHub repo to Cloudflare Pages for frontend"
 echo "  4. Set VITE_WS_URL=wss://api.<your-domain>/ws in Cloudflare Pages env"
-echo "  5. Add GitHub Actions secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_KEY"
+echo "  5. Add GitHub Actions secrets: DEPLOY_SERVICES_HOST, DEPLOY_SERVICES_USER, DEPLOY_SERVICES_KEY"
+echo "  6. Run deploy/setup-game.sh on the game machine"
+echo "  7. Add UFW rule: ufw allow from <game-private-ip> to any port 4222"
