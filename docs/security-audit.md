@@ -107,25 +107,14 @@ Custom key derivation: `childKey = Keccak256(masterKey || index)`. Not BIP-32/BI
 
 ---
 
-### P0-8: Deposit Idempotency Check Outside Transaction — TOCTOU Double-Credit
+### ~~P0-8: Deposit Idempotency Check Outside Transaction — TOCTOU Double-Credit~~ — FIXED
 
-**Location**: `backend/business/core/accounting/accounting.go:76-84`
+**Status**: Fixed (2026-03-01)
 
-```go
-func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, currency, referenceID string) error {
-    // Check outside transaction
-    _, err := c.storer.QueryByReference(ctx, ActionDeposit, referenceID)
-    if err == nil {
-        return nil // Already processed
-    }
-    // ... then starts transaction and creates log + credits balance
-```
-
-Two concurrent calls with the same `referenceID` can both pass the check before either creates the accounting log. The unique index on `accounting_logs(action_type, reference_id)` provides a safety net, but the recovery path in `deposit.go:177-185` uses a separate transaction, creating a window for double-credit.
-
-**Impact**: Under concurrent processing of the same tx_hash (e.g., indexer restart), a deposit could be credited twice.
-
-**Recommendation**: Move the idempotency check inside the transaction, or use `INSERT ... ON CONFLICT DO NOTHING` and check rows affected.
+**Fix implemented**:
+- `accounting.Core.ProcessDeposit`: moved `QueryByReference` idempotency check inside `execTx` so the check and insert share the same transaction
+- `deposit.Core.ProcessDeposit`: moved `QueryDepositByTxHash` idempotency check inside `execTx`; crash-recovery re-credit path now also runs within the same transaction instead of calling out to a separate `acctCore.ProcessDeposit`
+- Both layers are now protected against TOCTOU — concurrent calls with the same `referenceID`/`tx_hash` are serialized by the database transaction
 
 ---
 
@@ -416,7 +405,7 @@ Since debug routes ~~are on the public mux (P0-3)~~ were on the public mux (now 
 |----------|---------|-----|
 | ~~5th~~ | ~~P0-5~~ | ~~Align despawn JSON format, implement `ProcessGameReward` call~~ — **FIXED** |
 | ~~6th~~ | ~~P0-6~~ | ~~WebSocket origin validation~~ — **FIXED** |
-| 7th | P0-8 | Move deposit idempotency check inside transaction |
+| ~~7th~~ | ~~P0-8~~ | ~~Move deposit idempotency check inside transaction~~ — **FIXED** |
 | 8th | P1-3/4/5 | Token out of URL, constant-time compare, production API key guard |
 
 ### Before Launch

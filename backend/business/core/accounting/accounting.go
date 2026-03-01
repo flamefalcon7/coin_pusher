@@ -71,30 +71,30 @@ func (c *Core) execTx(ctx context.Context, fn func(s txStores) error) error {
 
 // ProcessDeposit handles an on-chain deposit event idempotently.
 // The reference_id (tx hash) ensures each deposit is only applied once.
-// The log insert and balance credit are wrapped in a single transaction.
+// The idempotency check and balance credit are wrapped in a single transaction
+// to prevent TOCTOU double-credit under concurrent calls.
 func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, currency, referenceID string) error {
-	// Check if this deposit was already processed (read-only, outside tx).
-	_, err := c.storer.QueryByReference(ctx, ActionDeposit, referenceID)
-	if err == nil {
-		// Already processed — idempotent success.
-		return nil
-	}
-	if !errors.Is(err, v1.ErrNotFound) {
-		return fmt.Errorf("checking reference: %w", err)
-	}
-
-	now := time.Now().UTC()
-	log := AccountingLog{
-		LogID:       uuid.New(),
-		AccountID:   accountID,
-		ActionType:  ActionDeposit,
-		Amount:      amount,
-		Currency:    currency,
-		ReferenceID: referenceID,
-		CreatedAt:   now,
-	}
-
 	return c.execTx(ctx, func(s txStores) error {
+		// Idempotency check inside tx to prevent TOCTOU race.
+		_, err := s.storer.QueryByReference(ctx, ActionDeposit, referenceID)
+		if err == nil {
+			return nil // Already processed.
+		}
+		if !errors.Is(err, v1.ErrNotFound) {
+			return fmt.Errorf("checking reference: %w", err)
+		}
+
+		now := time.Now().UTC()
+		log := AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  ActionDeposit,
+			Amount:      amount,
+			Currency:    currency,
+			ReferenceID: referenceID,
+			CreatedAt:   now,
+		}
+
 		if err := s.storer.Create(ctx, log); err != nil {
 			return fmt.Errorf("creating deposit log: %w", err)
 		}
