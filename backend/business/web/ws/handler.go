@@ -30,37 +30,48 @@ const (
 	slotCap        = 500
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
-}
-
 // Handler upgrades HTTP connections to WebSocket and manages the read loop.
 type Handler struct {
-	log           *zap.SugaredLogger
-	hub           *Hub
-	nc            *nats.Conn
-	auth          *auth.Auth
-	room          string
-	gameCore      *game.Core
-	heat          *heat.HeatEngine
-	inventoryCore *inventory.Core
-	slotCounts    [numSlots]int64 // atomic — optimistic per-slot pending count
+	log            *zap.SugaredLogger
+	hub            *Hub
+	nc             *nats.Conn
+	auth           *auth.Auth
+	room           string
+	gameCore       *game.Core
+	heat           *heat.HeatEngine
+	inventoryCore  *inventory.Core
+	slotCounts     [numSlots]int64 // atomic — optimistic per-slot pending count
+	allowedOrigins []string
+	upgrader       websocket.Upgrader
 }
 
 // NewHandler constructs a WS Handler.
-func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core) *Handler {
-	return &Handler{
-		log:           log,
-		hub:           hub,
-		nc:            nc,
-		auth:          a,
-		room:          "main",
-		gameCore:      gameCore,
-		heat:          heat,
-		inventoryCore: inventoryCore,
+func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, allowedOrigins []string) *Handler {
+	h := &Handler{
+		log:            log,
+		hub:            hub,
+		nc:             nc,
+		auth:           a,
+		room:           "main",
+		gameCore:       gameCore,
+		heat:           heat,
+		inventoryCore:  inventoryCore,
+		allowedOrigins: allowedOrigins,
 	}
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			for _, allowed := range h.allowedOrigins {
+				if allowed == "*" || allowed == origin {
+					return true
+				}
+			}
+			return false
+		},
+	}
+	return h
 }
 
 // ServeHTTP upgrades to WS, validates auth, starts read/write pumps.
@@ -68,7 +79,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Upgrade to WebSocket first, then validate auth.
 	// This lets us send a proper WS close code (4401) instead of HTTP 401,
 	// which the client can detect reliably (HTTP errors only produce code 1006).
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Errorw("ws upgrade failed", "error", err)
 		return

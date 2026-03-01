@@ -95,29 +95,15 @@ func (h *Handler) handleCoinInsert(c *Connection, msg ClientMessage) {
 
 ---
 
-### P0-6: WebSocket Upgrader Accepts All Origins
+### ~~P0-6: WebSocket Upgrader Accepts All Origins~~ — FIXED
 
-**Location**: `backend/business/web/ws/handler.go:33-37`
+**Status**: Fixed (2026-03-01)
 
-```go
-var upgrader = websocket.Upgrader{
-    ReadBufferSize:  1024,
-    WriteBufferSize: 1024,
-    CheckOrigin:     func(r *http.Request) bool { return true },
-}
-```
-
-Combined with JWT token passed as URL query parameter, this enables Cross-Site WebSocket Hijacking (CSWSH). A malicious website can establish a WebSocket connection and perform actions as the victim user.
-
-**Impact**: If an attacker obtains a user's JWT (which is in URL query strings, server logs, browser history), they can control the user's game session from any domain — including spending balance and triggering withdrawals.
-
-**Recommendation**: Validate the origin against configured CORS origins:
-```go
-CheckOrigin: func(r *http.Request) bool {
-    origin := r.Header.Get("Origin")
-    return isAllowedOrigin(origin)
-},
-```
+**Fix implemented**:
+- Moved `websocket.Upgrader` from package-level var to `Handler` instance field
+- `CheckOrigin` now validates `Origin` header against `allowedOrigins` (parsed from `cfg.Web.CORSOrigins`)
+- In dev mode (`CORSOrigins=*`), all origins are allowed (same as before)
+- In production, only explicitly configured origins are accepted — consistent with HTTP CORS middleware
 
 ---
 
@@ -452,7 +438,7 @@ Since debug routes ~~are on the public mux (P0-3)~~ were on the public mux (now 
 | Priority | Finding | Fix |
 |----------|---------|-----|
 | ~~5th~~ | ~~P0-5~~ | ~~Align despawn JSON format, implement `ProcessGameReward` call~~ — **FIXED** |
-| 6th | P0-6 | WebSocket origin validation |
+| ~~6th~~ | ~~P0-6~~ | ~~WebSocket origin validation~~ — **FIXED** |
 | 7th | P0-8 | Move deposit idempotency check inside transaction |
 | 8th | P1-3/4/5 | Token out of URL, constant-time compare, production API key guard |
 
