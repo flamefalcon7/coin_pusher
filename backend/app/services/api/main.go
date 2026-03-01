@@ -449,7 +449,6 @@ func run() error {
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
-		const coinPrecision = 1e6
 		for {
 			select {
 			case <-ticker.C:
@@ -458,14 +457,15 @@ func run() error {
 				notifyAccum = make(map[uuid.UUID]float64)
 				rewardMu.Unlock()
 
+				const coinPrecision = 1e6
 				for uid, amount := range batch {
 					truncated := math.Floor(amount*coinPrecision) / coinPrecision
 					if truncated < 1/coinPrecision {
 						continue
 					}
 					msg := struct {
-						Op     string `json:"op"`
-						UserID string `json:"user_id"`
+						Op     string  `json:"op"`
+						UserID string  `json:"user_id"`
 						Amount float64 `json:"amount"`
 					}{
 						Op:     "reward",
@@ -677,9 +677,14 @@ func buildAPIMux(
 	// Global middleware.
 	origins := []string{"https://*", "http://*"}
 	if corsOrigins != "*" {
-		origins = strings.Split(corsOrigins, ",")
-		for i := range origins {
-			origins[i] = strings.TrimSpace(origins[i])
+		origins = nil
+		for _, o := range strings.Split(corsOrigins, ",") {
+			o = strings.TrimSpace(o)
+			if strings.Contains(o, "*") {
+				log.Warnw("rejecting wildcard CORS origin in production", "origin", o)
+				continue
+			}
+			origins = append(origins, o)
 		}
 	}
 	mux.Use(cors.Handler(cors.Options{

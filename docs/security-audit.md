@@ -110,7 +110,9 @@
 
 ## P1 Findings (High — Strongly Recommended Before Launch)
 
-### P1-1: Slot Machine and Jackpot Wheel Use `Math.random()`
+### ~~P1-1: Slot Machine and Jackpot Wheel Use `Math.random()`~~ — **WON'T FIX**
+
+**Status**: Won't fix (2026-03-01). Practical exploitation requires observing consecutive raw xorshift128+ outputs, but clients only see modular indices with hundreds of unobservable physics calls in between. Risk is theoretical only.
 
 **Location**: `game/server/src/game/GameLoop.ts:796-800` (slot machine), `GameLoop.ts:877` (wheel)
 
@@ -128,7 +130,9 @@ const reels: [SlotSymbol, SlotSymbol, SlotSymbol] = [
 
 ---
 
-### P1-2: NATS `JSON.parse()` Without try/catch — Single Bad Message Kills Subscription
+### ~~P1-2: NATS `JSON.parse()` Without try/catch — Single Bad Message Kills Subscription~~ — **WON'T FIX**
+
+**Status**: Won't fix (2026-03-01). Wrapping in try/catch silently swallows handler bugs, making them harder to detect than a dead subscription. NATS messages are internal (game server → game server), not externally injectable. Prefer crash-loud over silent-fail.
 
 **Location**: `game/server/src/nats/NATSClient.ts:92-101` (all 11 subscription methods)
 
@@ -221,7 +225,9 @@ Both the HTTP and WS handlers only check `count > 0` with no upper bound. The HT
 
 ---
 
-### P1-8: Reward Accumulator Uses `float64`
+### ~~P1-8: Reward Accumulator Uses `float64`~~ — **WON'T FIX**
+
+**Status**: Won't fix (2026-03-01). Accumulator flushes every 10s with tiny per-user amounts. float64 has 15-16 significant digits; precision loss at USDC's 6 decimal places would require billion-scale accumulation per flush window. Not a realistic concern.
 
 **Location**: `backend/app/services/api/main.go:333`
 

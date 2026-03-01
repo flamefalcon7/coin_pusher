@@ -37,7 +37,6 @@ func readinessHandler(db *sqlx.DB) http.HandlerFunc {
 		if err := database.StatusCheck(context.Background(), db); err != nil {
 			v1.Respond(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "not ready",
-				"error":  err.Error(),
 			})
 			return
 		}
