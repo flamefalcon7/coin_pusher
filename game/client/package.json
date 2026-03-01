@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^6.38.1",
+    "@babylonjs/loaders": "^6.49.0",
     "@babylonjs/materials": "^6.49.0",
     "@bufbuild/protobuf": "^2.11.0",
     "@coin-pusher/shared": "workspace:*",

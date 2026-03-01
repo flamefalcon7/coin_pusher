@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { InventoryClient, type ChestOpenResponse } from '../net/InventoryClient';
 import type { ScrollCounts } from '../ui/Toolbar';
+import { ChestViewer3D } from './ChestViewer3D';
 import './ChestPage.css';
 
 const SCROLL_INFO: { key: keyof ScrollCounts; label: string; emoji: string }[] = [
@@ -134,10 +135,9 @@ export const ChestPage: React.FC<ChestPageProps> = ({
       </div>
 
       <div className="chest-area">
-        <div className={`chest-visual ${chestState === 'shaking' ? 'shaking' : ''} ${chestState === 'open' || chestState === 'reveal' ? 'open' : ''}`}>
-          <div className="chest-lid" />
-          <div className="chest-body" />
-          <div className="chest-glow" />
+        <div className="chest-visual-3d">
+          <ChestViewer3D chestState={chestState} />
+          <div className="chest-glow-overlay" data-visible={chestState === 'open' || chestState === 'reveal' ? '' : undefined} />
           <div className="chest-particles">
             {particles.map(p => (
               <div
