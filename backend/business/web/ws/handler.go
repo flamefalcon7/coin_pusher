@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -16,6 +18,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
 )
 
@@ -40,13 +43,14 @@ type Handler struct {
 	gameCore       *game.Core
 	heat           *heat.HeatEngine
 	inventoryCore  *inventory.Core
+	userCore       *user.Core
 	slotCounts     [numSlots]int64 // atomic — optimistic per-slot pending count
 	allowedOrigins []string
 	upgrader       websocket.Upgrader
 }
 
 // NewHandler constructs a WS Handler.
-func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, allowedOrigins []string) *Handler {
+func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, userCore *user.Core, allowedOrigins []string) *Handler {
 	h := &Handler{
 		log:            log,
 		hub:            hub,
@@ -56,6 +60,7 @@ func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, g
 		gameCore:       gameCore,
 		heat:           heat,
 		inventoryCore:  inventoryCore,
+		userCore:       userCore,
 		allowedOrigins: allowedOrigins,
 	}
 	h.upgrader = websocket.Upgrader{
@@ -127,6 +132,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Send megaspeaker history.
+	for _, packed := range h.hub.GetMegaspeakerHistory() {
+		c.SendRaw(packed)
+	}
+
 	// Start write pump in a goroutine.
 	go c.writePump()
 
@@ -187,6 +197,8 @@ func (h *Handler) readPump(c *Connection) {
 			h.handlePing(c)
 		case "update_scene_objects":
 			h.handleUpdateSceneObjects(c, msg)
+		case "megaspeaker":
+			h.handleMegaspeaker(c, msg)
 		}
 	}
 }
@@ -528,6 +540,60 @@ func (h *Handler) handlePing(c *Connection) {
 	})
 }
 
+func (h *Handler) handleMegaspeaker(c *Connection, msg ClientMessage) {
+	trimmed := strings.TrimSpace(msg.Message)
+	if len(trimmed) == 0 || utf8.RuneCountInString(trimmed) > 150 {
+		c.SendMessage(map[string]interface{}{
+			"op":    "megaspeaker_error",
+			"error": "invalid_message",
+		})
+		return
+	}
+
+	userID, err := uuid.Parse(c.userID)
+	if err != nil {
+		h.log.Errorw("megaspeaker invalid user_id", "user_id", c.userID, "error", err)
+		return
+	}
+
+	if err := h.inventoryCore.ConsumeMegaspeaker(context.Background(), userID); err != nil {
+		c.SendMessage(map[string]interface{}{
+			"op":    "megaspeaker_error",
+			"error": "no_charge",
+		})
+		return
+	}
+
+	// Resolve display name.
+	speakerName := c.userID[:8] + "..."
+	acct, err := h.userCore.QueryByID(context.Background(), userID)
+	if err == nil && acct.DisplayName != nil {
+		speakerName = *acct.DisplayName
+	}
+
+	// Broadcast directly via hub (no NATS — single-instance, no game server involvement).
+	packed, err := msgpack.Marshal(struct {
+		Op          string `msgpack:"op"`
+		SpeakerName string `msgpack:"speaker_name"`
+		Message     string `msgpack:"message"`
+		Timestamp   int64  `msgpack:"timestamp"`
+	}{
+		Op:          "megaspeaker",
+		SpeakerName: speakerName,
+		Message:     trimmed,
+		Timestamp:   time.Now().UnixMilli(),
+	})
+	if err != nil {
+		h.log.Errorw("msgpack marshal megaspeaker", "error", err)
+		return
+	}
+	h.hub.AddMegaspeakerMsg(packed)
+	h.hub.Broadcast(packed)
+
+	// Send inventory update to the user.
+	h.sendInventoryUpdate(c, userID)
+}
+
 // consumeScroll attempts to consume a scroll of the given type for the user.
 // On success it sends an inventory_update to the client and returns nil.
 // On failure it sends an error message and returns the error.
@@ -567,6 +633,7 @@ func (h *Handler) sendInventoryUpdate(c *Connection, userID uuid.UUID) {
 		"scroll_explosion":  inv.ScrollExplosion,
 		"scroll_lightning":  inv.ScrollLightning,
 		"scroll_super_push": inv.ScrollSuperPush,
+		"megaspeaker":       inv.Megaspeaker,
 	})
 }
 

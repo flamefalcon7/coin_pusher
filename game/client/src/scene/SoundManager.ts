@@ -502,6 +502,27 @@ export class SoundManager {
     noise.stop(t + duration);
   }
 
+  /** Short notification chime — two ascending triangle-wave notes. */
+  playMegaspeaker(): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    const notes = [880, 1100];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, t + i * 0.1);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.setValueAtTime(0.2, t + i * 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t + i * 0.1);
+      osc.stop(t + i * 0.1 + 0.15);
+    });
+  }
+
   dispose(): void {
     if (this.ctx) {
       this.ctx.close();

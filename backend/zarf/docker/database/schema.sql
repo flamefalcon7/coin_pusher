@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     scroll_explosion    INT           NOT NULL DEFAULT 0 CHECK (scroll_explosion >= 0),
     scroll_lightning    INT           NOT NULL DEFAULT 0 CHECK (scroll_lightning >= 0),
     scroll_super_push   INT           NOT NULL DEFAULT 0 CHECK (scroll_super_push >= 0),
+    megaspeaker         INT           NOT NULL DEFAULT 0 CHECK (megaspeaker >= 0),
     updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 

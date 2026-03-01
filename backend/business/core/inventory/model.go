@@ -14,6 +14,7 @@ const (
 	ScrollExplosion = "explosion"
 	ScrollLightning = "lightning"
 	ScrollSuperPush = "super_push"
+	ItemMegaspeaker = "megaspeaker"
 )
 
 // ScrollWeights defines the weighted random loot table for chest opens.
@@ -26,6 +27,7 @@ var ScrollWeights = []struct {
 	{ScrollExplosion, 20},
 	{ScrollLightning, 20},
 	{ScrollSuperPush, 10},
+	{ItemMegaspeaker, 15},
 }
 
 // TotalWeight is the sum of all scroll weights.
@@ -46,6 +48,7 @@ type Inventory struct {
 	ScrollExplosion int       `db:"scroll_explosion" json:"scroll_explosion"`
 	ScrollLightning int       `db:"scroll_lightning" json:"scroll_lightning"`
 	ScrollSuperPush int       `db:"scroll_super_push" json:"scroll_super_push"`
+	Megaspeaker     int       `db:"megaspeaker" json:"megaspeaker"`
 	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
 

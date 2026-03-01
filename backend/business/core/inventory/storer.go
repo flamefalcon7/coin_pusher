@@ -14,6 +14,7 @@ type DevDefaults struct {
 	ScrollExplosion int
 	ScrollLightning int
 	ScrollSuperPush int
+	Megaspeaker     int
 }
 
 // Storer interface declares the core database operations for inventory.
@@ -24,5 +25,7 @@ type Storer interface {
 	DecrementKeyCoins(ctx context.Context, accountID uuid.UUID) error
 	IncrementScroll(ctx context.Context, accountID uuid.UUID, scrollType string) error
 	DecrementScroll(ctx context.Context, accountID uuid.UUID, scrollType string) error
+	IncrementMegaspeaker(ctx context.Context, accountID uuid.UUID) error
+	DecrementMegaspeaker(ctx context.Context, accountID uuid.UUID) error
 	CreateChestOpen(ctx context.Context, co ChestOpen) error
 }

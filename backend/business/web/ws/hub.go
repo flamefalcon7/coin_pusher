@@ -8,6 +8,8 @@ type Hub struct {
 	mu          sync.RWMutex
 	snapshot    []byte
 	snapshotMu  sync.RWMutex
+	megaMsgs    [][]byte
+	megaMu      sync.RWMutex
 }
 
 // NewHub constructs a Hub.
@@ -60,6 +62,25 @@ func (h *Hub) GetSnapshot() []byte {
 	h.snapshotMu.RLock()
 	defer h.snapshotMu.RUnlock()
 	return h.snapshot
+}
+
+// AddMegaspeakerMsg appends a packed megaspeaker message to the ring buffer (max 50).
+func (h *Hub) AddMegaspeakerMsg(packed []byte) {
+	h.megaMu.Lock()
+	h.megaMsgs = append(h.megaMsgs, packed)
+	if len(h.megaMsgs) > 50 {
+		h.megaMsgs = h.megaMsgs[len(h.megaMsgs)-50:]
+	}
+	h.megaMu.Unlock()
+}
+
+// GetMegaspeakerHistory returns a copy of the megaspeaker ring buffer.
+func (h *Hub) GetMegaspeakerHistory() [][]byte {
+	h.megaMu.RLock()
+	defer h.megaMu.RUnlock()
+	out := make([][]byte, len(h.megaMsgs))
+	copy(out, h.megaMsgs)
+	return out
 }
 
 // SendToUser sends raw bytes to the connection belonging to userID.

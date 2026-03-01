@@ -6,11 +6,12 @@ import { ChestViewer3D } from './ChestViewer3D';
 import './ChestPage.css';
 
 const SCROLL_INFO: { key: keyof ScrollCounts; label: string; emoji: string }[] = [
-  { key: 'shock',     label: 'Shock',      emoji: '\u26A1' },
-  { key: 'tornado',   label: 'Tornado',    emoji: '\uD83C\uDF2A\uFE0F' },
-  { key: 'explosion', label: 'Explosion',  emoji: '\uD83D\uDCA5' },
-  { key: 'lightning', label: 'Lightning',  emoji: '\uD83C\uDF29\uFE0F' },
-  { key: 'superPush', label: 'Super Push', emoji: '\uD83D\uDCAA' },
+  { key: 'shock',       label: 'Shock',       emoji: '\u26A1' },
+  { key: 'tornado',     label: 'Tornado',     emoji: '\uD83C\uDF2A\uFE0F' },
+  { key: 'explosion',   label: 'Explosion',   emoji: '\uD83D\uDCA5' },
+  { key: 'lightning',   label: 'Lightning',   emoji: '\uD83C\uDF29\uFE0F' },
+  { key: 'superPush',   label: 'Super Push',  emoji: '\uD83D\uDCAA' },
+  { key: 'megaspeaker', label: 'Megaspeaker', emoji: '\uD83D\uDCE2' },
 ];
 
 const SCROLL_KEY_MAP: Record<string, keyof ScrollCounts> = {
@@ -19,6 +20,7 @@ const SCROLL_KEY_MAP: Record<string, keyof ScrollCounts> = {
   explosion: 'explosion',
   lightning: 'lightning',
   super_push: 'superPush',
+  megaspeaker: 'megaspeaker',
 };
 
 interface ChestPageProps {
@@ -77,6 +79,7 @@ export const ChestPage: React.FC<ChestPageProps> = ({
         explosion: inv.scroll_explosion,
         lightning: inv.scroll_lightning,
         superPush: inv.scroll_super_push,
+        megaspeaker: inv.megaspeaker,
       });
     } catch (err) {
       console.warn('Failed to refresh inventory:', err);

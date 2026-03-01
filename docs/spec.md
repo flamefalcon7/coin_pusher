@@ -543,6 +543,107 @@ The cooperative-competitive tension creates a potential free rider issue:
 
 > This is an open problem. The current 5% fixed floor is a placeholder for onboarding UX and will need revision before real-money play.
 
+### 4.7 Megaspeaker — Broadcast Chat
+
+Players can spend a **megaspeaker charge** to broadcast a text message to all players in the room. Messages appear in a collapsible message panel that holds the most recent 50 messages.
+
+#### How Megaspeaker Charges Are Earned
+
+Megaspeaker charges are obtained from chests, alongside scrolls. The chest loot table becomes:
+
+| Item | Weight | Probability |
+|---|---|---|
+| Shock scroll | 30 | ~26.1% |
+| Tornado scroll | 20 | ~17.4% |
+| Explosion scroll | 20 | ~17.4% |
+| Lightning scroll | 20 | ~17.4% |
+| Super Push scroll | 10 | ~8.7% |
+| **Megaspeaker** | **15** | **~13.0%** |
+
+(Total weight: 115. Megaspeaker weight is tunable.)
+
+**Cost**: 1 charge per broadcast.
+
+#### Message Rules
+
+| Rule | Value |
+|---|---|
+| Max length | 150 UTF-8 characters (e.g. 150 Chinese characters, 150 ASCII, or any mix) |
+| Min content | At least 1 non-whitespace character |
+| Emoji | Allowed |
+| Profanity filter | Client-side only — matched words replaced with `***` (loose matching) |
+
+#### Message Data
+
+Each broadcast message contains:
+
+| Field | Type | Description |
+|---|---|---|
+| `speaker_name` | string | Display name (or truncated wallet address if no custom name) |
+| `message` | string | Raw text content (unfiltered — client applies filter on render) |
+| `timestamp` | number | Server Unix timestamp (milliseconds) |
+
+#### Scope
+
+- **Room-level**: Broadcast reaches all players in the current room only
+- Currently single room (`"main"`), single-instance only (direct hub broadcast, no NATS relay)
+
+#### Storage
+
+- **In-memory ring buffer** (50 messages) maintained by the relay/hub on the backend
+- No database persistence — messages are lost on server restart
+- New or reconnecting players receive the full buffer on WebSocket connect (as individual `megaspeaker` messages)
+
+#### Data Flow
+
+**Sending a message**:
+```
+Client → WS send { op: "megaspeaker", message: string }
+    → Relay: validate message (1–150 runes, non-whitespace), check megaspeaker charge ≥ 1
+    → Deduct 1 megaspeaker charge from inventory
+    → Resolve display_name (fallback: user_id[:8] + "...")
+    → hub.AddMegaspeakerMsg() (ring buffer) + hub.Broadcast() to all WS clients
+    → Each client appends to local message list, plays sound effect
+    → Relay sends inventory_update to sender (updated megaspeaker count)
+```
+
+**Receiving history on connect**:
+```
+Player connects → WebSocket handshake completes
+    → Relay sends each buffered megaspeaker message individually (up to 50)
+    → Client appends to message panel
+```
+
+#### Client UI
+
+| Aspect | Behavior |
+|---|---|
+| Panel position | Bottom-right (or side), overlaying game canvas |
+| Default state | **Collapsed** — only shows a megaspeaker icon with unread count badge |
+| Expanded state | Scrollable list of up to 50 messages, newest at bottom |
+| Message format | `[username] message content` with relative timestamp (e.g. "剛剛", "3分鐘前", "1小時前") |
+| Send UI | Text input + send button, visible only when expanded and player has ≥ 1 charge |
+| Charge display | Badge on send button showing remaining charges |
+| Sound effect | Short notification sound on new message received |
+| Visual effect | None (no animation or particle effects) |
+
+#### Inventory Integration
+
+The `inventory_update` WebSocket message adds a new field:
+
+| Field | Type | Description |
+|---|---|---|
+| `megaspeaker` | number | Remaining megaspeaker charges |
+
+Chest open result can now return `"megaspeaker"` as the item type (in addition to existing scroll types).
+
+#### Design Notes
+
+- **No cooldown**: Players can send messages as fast as the API allows. If rapid spam becomes a problem, consider adding a 2–3 second minimum interval server-side.
+- **Client-side profanity filter only**: Raw messages are stored and broadcast. Malicious clients (modified JS) can bypass the filter. Server-side filtering can be added later if abuse occurs.
+- **No message editing or deletion**: Once sent, messages are immutable. Admin tools for message moderation are out of scope for v1.
+- **Sound can be muted**: Client should respect a mute/volume setting (shared with other game sounds).
+
 ---
 
 ## 5. Planned Features (TODO)
