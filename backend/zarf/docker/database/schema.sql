@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==========================================================================
 CREATE TABLE IF NOT EXISTS accounts (
     account_id          UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
-    display_name        TEXT          NOT NULL DEFAULT '',
+    display_name        TEXT,                                -- NULL = not set (show truncated address)
 
     -- Three-currency balances
     balance_usdc        NUMERIC(20,6) NOT NULL DEFAULT 0,   -- on-chain deposit staging
@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS accounts (
 
     -- Role
     role                TEXT          NOT NULL DEFAULT 'user',
+
+    -- Referral system
+    referral_code       TEXT          NOT NULL,              -- random default, customizable at $10 deposit
+    referral_code_customized BOOLEAN NOT NULL DEFAULT FALSE,
+    referred_by         UUID          REFERENCES accounts(account_id),
+    referral_reward_paid BOOLEAN      NOT NULL DEFAULT FALSE,
+    lifetime_deposit_usdc NUMERIC(20,6) NOT NULL DEFAULT 0, -- cumulative USDC deposited
 
     -- Security
     totp_secret         TEXT          NOT NULL DEFAULT '',   -- encrypted TOTP seed, '' = unbound
@@ -24,8 +31,14 @@ CREATE TABLE IF NOT EXISTS accounts (
 
     CONSTRAINT chk_balance_usdc_nonneg CHECK (balance_usdc >= 0),
     CONSTRAINT chk_balance_play_nonneg CHECK (balance_play >= 0),
-    CONSTRAINT chk_balance_cash_nonneg CHECK (balance_cash >= 0)
+    CONSTRAINT chk_balance_cash_nonneg CHECK (balance_cash >= 0),
+    CONSTRAINT chk_lifetime_deposit_nonneg CHECK (lifetime_deposit_usdc >= 0)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_referral_code
+    ON accounts(LOWER(referral_code));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_display_name
+    ON accounts(LOWER(display_name)) WHERE display_name IS NOT NULL;
 
 -- ==========================================================================
 -- 2. auth_providers (multi-login: wallet / email / google ...)
@@ -155,7 +168,8 @@ CREATE TABLE IF NOT EXISTS accounting_logs (
         'WITHDRAW_REFUND',
         'WITHDRAW_FEE',
         'WITHDRAW_FEE_REFUND',
-        'PROGRESS_REWARD'
+        'PROGRESS_REWARD',
+        'REFERRAL_REWARD'
     )),
     amount              NUMERIC(20,6) NOT NULL,
     currency            TEXT          NOT NULL CHECK (currency IN ('USDC','PLAY','CASH')),

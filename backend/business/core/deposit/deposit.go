@@ -236,6 +236,46 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 			return fmt.Errorf("crediting play balance: %w", err)
 		}
 
+		// Track lifetime deposit (inside tx — crash-safe).
+		if err := s.userCore.IncrementLifetimeDeposit(ctx, accountID, amount); err != nil {
+			return fmt.Errorf("incrementing lifetime deposit: %w", err)
+		}
+
+		// Referral reward: 10% of first deposit to referrer.
+		// The preceding UPDATE already row-locks the depositor, so concurrent
+		// deposits on the same account are serialized here.
+		acct, qErr := s.userCore.QueryByID(ctx, accountID)
+		if qErr != nil {
+			return fmt.Errorf("querying account for referral: %w", qErr)
+		}
+
+		if acct.ReferredBy != nil && !acct.ReferralRewardPaid {
+			reward := amount.Mul(decimal.NewFromFloat(0.10))
+			refID := fmt.Sprintf("referral:%s", accountID)
+
+			rewardLog := accounting.AccountingLog{
+				LogID:       uuid.New(),
+				AccountID:   *acct.ReferredBy,
+				ActionType:  accounting.ActionReferralReward,
+				Amount:      reward,
+				Currency:    accounting.CurrencyPlay,
+				ReferenceID: refID,
+				CreatedAt:   now,
+			}
+
+			if err := s.acctStore.Create(ctx, rewardLog); err != nil {
+				return fmt.Errorf("creating referral reward log: %w", err)
+			}
+
+			if err := s.userCore.IncrementPlayBalance(ctx, *acct.ReferredBy, reward); err != nil {
+				return fmt.Errorf("crediting referrer balance: %w", err)
+			}
+
+			if err := s.userCore.MarkReferralRewardPaid(ctx, accountID); err != nil {
+				return fmt.Errorf("marking referral reward paid: %w", err)
+			}
+		}
+
 		return nil
 	})
 	if err != nil {

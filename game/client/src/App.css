@@ -45,6 +45,17 @@
   user-select: none;
 }
 
+.player-info-name {
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-purple);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
 .player-info-balances {
   display: flex;
   gap: 12px;
@@ -106,6 +117,16 @@
 .player-info-withdraw:hover {
   opacity: 1;
   border-color: var(--accent-orange);
+}
+
+.player-info-profile {
+  color: var(--accent-purple);
+  border-color: rgba(122, 48, 105, 0.3);
+}
+
+.player-info-profile:hover {
+  opacity: 1;
+  border-color: var(--accent-purple);
 }
 
 .player-info-missions {
@@ -367,6 +388,33 @@
 
 .wallet-login-retry:hover {
   background: rgba(232, 57, 107, 0.15);
+}
+
+.wallet-login-referral {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(26, 14, 46, 0.6);
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.wallet-login-referral:focus {
+  border-color: var(--accent-purple);
+}
+
+.wallet-login-referral::placeholder {
+  color: rgba(245, 230, 184, 0.25);
+}
+
+.wallet-login-referral:disabled {
+  opacity: 0.5;
 }
 
 /* ── Mobile ≤ 480px ────────────────────────────────────────────────────── */

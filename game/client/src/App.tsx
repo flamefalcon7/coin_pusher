@@ -11,13 +11,14 @@ import { RewardToast } from "./ui/RewardToast";
 import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
 import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
-import { getSavedAuth, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
+import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
 import { InventoryClient } from "./net/InventoryClient";
 import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
 import { ProgressPage } from "./pages/ProgressPage";
+import { ProfilePage } from "./pages/ProfilePage";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -34,9 +35,11 @@ const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostna
 
 function App() {
   const [auth, setAuth] = useState(() => getSavedAuth());
+  const [address, setAddress] = useState(() => getSavedAddress() ?? '');
 
   const handleLoginSuccess = useCallback((result: AuthResult) => {
     setAuth({ token: result.token, account: result.account });
+    setAddress(getSavedAddress() ?? '');
   }, []);
 
   const handleAuthFailure = useCallback(() => {
@@ -48,16 +51,17 @@ function App() {
     return <WalletLogin apiBase={API_URL} onSuccess={handleLoginSuccess} />;
   }
 
-  return <Game token={auth.token} account={auth.account} onAuthFailure={handleAuthFailure} />;
+  return <Game token={auth.token} account={auth.account} address={address} onAuthFailure={handleAuthFailure} />;
 }
 
 interface GameProps {
   token: string;
   account: Account | null;
+  address: string;
   onAuthFailure: () => void;
 }
 
-function Game({ token, account, onAuthFailure }: GameProps) {
+function Game({ token, account, address, onAuthFailure }: GameProps) {
   const location = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
@@ -691,6 +695,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   const showDepositPage = location.pathname === '/deposit';
   const showWithdrawPage = location.pathname === '/withdraw';
   const showProgressPage = location.pathname === '/progress';
+  const showProfilePage = location.pathname === '/profile';
 
   const handleCashBalanceChange = useCallback((newBalance: string) => {
     setBalanceCash(newBalance);
@@ -699,7 +704,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
-      <PlayerInfo balancePlay={balance} balanceCash={balanceCash} onLogout={onAuthFailure} />
+      <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} onLogout={onAuthFailure} />
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
 
       <Toolbar
@@ -876,6 +881,14 @@ function Game({ token, account, onAuthFailure }: GameProps) {
             setBalance(play);
             setBalanceCash(cash);
           }}
+        />
+      )}
+
+      {showProfilePage && (
+        <ProfilePage
+          token={token}
+          apiUrl={API_URL}
+          address={address}
         />
       )}
     </div>

@@ -75,6 +75,19 @@ func (m *mockUserStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) 
 func (m *mockUserStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
 	return nil
 }
+func (m *mockUserStorer) QueryByReferralCode(_ context.Context, _ string) (user.Account, error) {
+	return user.Account{}, nil
+}
+func (m *mockUserStorer) SetDisplayName(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+func (m *mockUserStorer) SetReferralCode(_ context.Context, _ uuid.UUID, _ string) error {
+	return nil
+}
+func (m *mockUserStorer) SetReferredBy(_ context.Context, _, _ uuid.UUID) error { return nil }
+func (m *mockUserStorer) IncrementLifetimeDeposit(_ context.Context, _ uuid.UUID, _ decimal.Decimal) error {
+	return nil
+}
+func (m *mockUserStorer) MarkReferralRewardPaid(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockUserStorer) CountReferrals(_ context.Context, _ uuid.UUID) (int, error)  { return 0, nil }
 
 type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log accounting.AccountingLog) error

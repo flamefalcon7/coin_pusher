@@ -10,23 +10,28 @@ import (
 
 // Account represents an account in the system.
 type Account struct {
-	ID                  uuid.UUID       `db:"account_id" json:"account_id"`
-	DisplayName         string          `db:"display_name" json:"display_name"`
-	BalanceUSDC         decimal.Decimal `db:"balance_usdc" json:"balance_usdc"`
-	BalancePlay         decimal.Decimal `db:"balance_play" json:"balance_play"`
-	BalanceCash         decimal.Decimal `db:"balance_cash" json:"balance_cash"`
-	Role                string          `db:"role" json:"role"`
-	TOTPSecret          string          `db:"totp_secret" json:"-"`
-	WithdrawLockedUntil *time.Time      `db:"withdraw_locked_until" json:"-"`
-	CreatedAt           time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time       `db:"updated_at" json:"updated_at"`
+	ID                   uuid.UUID       `db:"account_id" json:"account_id"`
+	DisplayName          *string         `db:"display_name" json:"display_name"`
+	BalanceUSDC          decimal.Decimal `db:"balance_usdc" json:"balance_usdc"`
+	BalancePlay          decimal.Decimal `db:"balance_play" json:"balance_play"`
+	BalanceCash          decimal.Decimal `db:"balance_cash" json:"balance_cash"`
+	Role                 string          `db:"role" json:"role"`
+	ReferralCode         string          `db:"referral_code" json:"referral_code"`
+	ReferralCodeCustomized bool          `db:"referral_code_customized" json:"referral_code_customized"`
+	ReferredBy           *uuid.UUID      `db:"referred_by" json:"referred_by,omitempty"`
+	ReferralRewardPaid   bool            `db:"referral_reward_paid" json:"-"`
+	LifetimeDepositUSDC  decimal.Decimal `db:"lifetime_deposit_usdc" json:"lifetime_deposit_usdc"`
+	TOTPSecret           string          `db:"totp_secret" json:"-"`
+	WithdrawLockedUntil  *time.Time      `db:"withdraw_locked_until" json:"-"`
+	CreatedAt            time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt            time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // NewAccount contains information needed to create a new account.
 type NewAccount struct {
-	DisplayName  string
 	ProviderType string // "wallet", "email", "google"
 	ProviderUID  string // wallet address or email
+	ReferralCode string // optional: referrer's code
 }
 
 // AuthProvider represents a login method linked to an account.
@@ -47,12 +52,12 @@ type NonceRecord struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-// NewAccount contains information needed to create a new account with metadata.
+// NewAccountWithMeta contains information needed to create a new account with metadata.
 type NewAccountWithMeta struct {
-	DisplayName  string
 	ProviderType string
 	ProviderUID  string
 	MetadataJSON string
+	ReferralCode string // optional: referrer's code
 }
 
 // Currency types for balance operations.

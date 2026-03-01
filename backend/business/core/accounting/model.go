@@ -20,6 +20,7 @@ const (
 	ActionWithdrawFee       = "WITHDRAW_FEE"
 	ActionWithdrawFeeRefund = "WITHDRAW_FEE_REFUND"
 	ActionProgressReward    = "PROGRESS_REWARD"
+	ActionReferralReward    = "REFERRAL_REWARD"
 )
 
 // Currency types.

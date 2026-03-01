@@ -38,6 +38,7 @@ var (
 	ErrAuthFailed       = errors.New("authentication failed")
 	ErrForbidden        = errors.New("forbidden")
 	ErrInsufficientFund = errors.New("insufficient balance")
+	ErrConflict         = errors.New("conflict")
 )
 
 // NewNotFoundError creates a not-found RequestError.
