@@ -26,6 +26,7 @@ export function PlayerInfo({ balancePlay, balanceCash, onLogout }: PlayerInfoPro
         </span>
       </div>
       <div className="player-info-actions">
+        <Link to="/progress" className="player-info-action-btn player-info-missions">Missions</Link>
         <Link to="/deposit" className="player-info-action-btn player-info-deposit">Deposit</Link>
         <Link to="/withdraw" className="player-info-action-btn player-info-withdraw">Withdraw</Link>
         <button className="player-info-logout" onClick={onLogout}>

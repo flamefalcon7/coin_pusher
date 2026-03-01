@@ -123,6 +123,20 @@ func (c *Core) OpenChest(ctx context.Context, accountID uuid.UUID) (OpenChestRes
 	return result, nil
 }
 
+// CreditScroll adds 1 scroll of the given type to an account's inventory.
+func (c *Core) CreditScroll(ctx context.Context, accountID uuid.UUID, scrollType string) error {
+	if !validScrollType(scrollType) {
+		return v1.NewRequestError(fmt.Errorf("invalid scroll type: %s", scrollType), 400)
+	}
+	if err := c.storer.EnsureInventory(ctx, accountID, c.devDefaults); err != nil {
+		return fmt.Errorf("ensure inventory: %w", err)
+	}
+	if err := c.storer.IncrementScroll(ctx, accountID, scrollType); err != nil {
+		return fmt.Errorf("credit scroll %s: %w", scrollType, err)
+	}
+	return nil
+}
+
 // ConsumeScroll decrements a specific scroll type. Returns error if none available.
 func (c *Core) ConsumeScroll(ctx context.Context, accountID uuid.UUID, scrollType string) error {
 	if !validScrollType(scrollType) {
