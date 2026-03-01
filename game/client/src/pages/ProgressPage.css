@@ -1,0 +1,283 @@
+.progress-page {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-deep);
+  overflow-y: auto;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  color: var(--text-color);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.progress-header {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.progress-back-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.progress-back-link:hover {
+  opacity: 1;
+}
+
+.progress-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-teal);
+}
+
+/* ── Loading / Error / Empty ─────────────────────────────────────────── */
+
+.progress-loading {
+  margin-top: 80px;
+  font-size: 16px;
+  color: rgba(245, 230, 184, 0.5);
+  animation: progressPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.progress-error {
+  margin-top: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-error p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--accent-pink);
+}
+
+.progress-retry-btn {
+  padding: 8px 24px;
+  border: 1px solid var(--accent-pink);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-pink);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.progress-retry-btn:hover {
+  background: rgba(232, 57, 107, 0.15);
+}
+
+.progress-empty {
+  margin-top: 80px;
+  font-size: 15px;
+  color: rgba(245, 230, 184, 0.35);
+}
+
+/* ── List ─────────────────────────────────────────────────────────────── */
+
+.progress-list {
+  width: 100%;
+  max-width: 480px;
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+
+.progress-card {
+  padding: 16px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: progressCardIn 0.35s ease-out;
+}
+
+.progress-card--done {
+  opacity: 0.65;
+}
+
+@keyframes progressCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.progress-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.progress-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-color);
+  line-height: 1.3;
+}
+
+.progress-card-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(245, 230, 184, 0.5);
+  line-height: 1.4;
+}
+
+.progress-card-status {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.progress-card-status--active {
+  color: rgba(245, 230, 184, 0.4);
+}
+
+.progress-card-status--achieved {
+  color: var(--accent-orange);
+  background: rgba(232, 150, 32, 0.12);
+}
+
+.progress-card-status--disbursed {
+  color: var(--accent-green);
+  background: rgba(107, 191, 89, 0.12);
+}
+
+/* ── Progress bar ────────────────────────────────────────────────────── */
+
+.progress-card-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-card-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(245, 230, 184, 0.08);
+  overflow: hidden;
+}
+
+.progress-card-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-pink), var(--accent-orange));
+  transition: width 0.4s ease-out;
+  min-width: 0;
+}
+
+.progress-card-bar-fill--done {
+  background: var(--accent-green);
+}
+
+.progress-card-nums {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: rgba(245, 230, 184, 0.45);
+  font-weight: 600;
+}
+
+/* ── Reward ───────────────────────────────────────────────────────────── */
+
+.progress-card-reward {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(245, 230, 184, 0.06);
+  font-size: 13px;
+}
+
+.progress-card-reward-label {
+  color: rgba(245, 230, 184, 0.4);
+  font-weight: 600;
+}
+
+.progress-card-reward-value {
+  color: var(--accent-teal);
+  font-weight: 700;
+}
+
+/* ── Claim button + timing ───────────────────────────────────────────── */
+
+.progress-card-claim-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(245, 230, 184, 0.06);
+}
+
+.progress-card-claim-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-orange));
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.progress-card-claim-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.progress-card-expires {
+  font-size: 11px;
+  color: var(--accent-pink);
+  font-weight: 600;
+}
+
+.progress-card-timing {
+  padding-top: 6px;
+  font-size: 12px;
+  color: rgba(245, 230, 184, 0.45);
+  font-weight: 600;
+  text-align: center;
+}
+
+.progress-card-timing--expired {
+  color: var(--accent-pink);
+  opacity: 0.7;
+}
+
+.progress-card-status--expired {
+  color: var(--accent-pink);
+  background: rgba(232, 57, 107, 0.12);
+}

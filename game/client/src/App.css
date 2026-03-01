@@ -108,6 +108,16 @@
   border-color: var(--accent-orange);
 }
 
+.player-info-missions {
+  color: var(--accent-pink);
+  border-color: rgba(232, 57, 107, 0.3);
+}
+
+.player-info-missions:hover {
+  opacity: 1;
+  border-color: var(--accent-pink);
+}
+
 .player-info-logout {
   padding: 2px 8px;
   border: 1px solid rgba(245, 230, 184, 0.2);

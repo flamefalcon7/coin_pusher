@@ -30,6 +30,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/depositgrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/gamegrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/inventorygrp"
+	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/progressgrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/usergrp"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
@@ -39,6 +40,8 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
 	inventorydb "github.com/flamefalcon/coin-pusher/backend/business/core/inventory/stores/inventorydb"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/progress"
+	progressdb "github.com/flamefalcon/coin-pusher/backend/business/core/progress/stores/progressdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
@@ -177,6 +180,20 @@ func run() error {
 		})
 	}
 
+	// Progress/promotion domain.
+	progressCore := progress.NewCore(
+		log,
+		db,
+		progressdb.NewStore(db),
+		func(dbtx database.DBTX) progress.Storer { return progressdb.NewStore(dbtx) },
+		func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
+		func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
+		inventoryCore,
+	)
+
+	// Wire metric recorder callbacks.
+	acctCore.SetMetricRecorder(progressCore.RecordMetric)
+
 	// Deposit/withdrawal domain (requires wallet seed).
 	var depositCore *deposit.Core
 	if cfg.Wallet.Seed != "" {
@@ -194,6 +211,7 @@ func run() error {
 			func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
 			func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
 		)
+		depositCore.SetMetricRecorder(progressCore.RecordMetric)
 		log.Infow("deposit/withdrawal system initialized")
 	} else {
 		log.Warnw("BACKEND_WALLET_SEED not set — deposit/withdrawal routes disabled")
@@ -238,7 +256,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -548,6 +566,27 @@ func run() error {
 	defer keyCoinSub.Unsubscribe()
 
 	// -------------------------------------------------------------------------
+	// Progress expiration worker (30s interval) — expires unclaimed rewards past deadline
+	stopExpire := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				n, err := progressCore.ExpireOverdue(context.Background(), time.Now().UTC(), 100)
+				if err != nil {
+					log.Errorw("progress expire error", "error", err)
+				} else if n > 0 {
+					log.Infow("progress expired", "count", n)
+				}
+			case <-stopExpire:
+				return
+			}
+		}
+	}()
+
+	// -------------------------------------------------------------------------
 	// Shutdown
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
@@ -563,6 +602,7 @@ func run() error {
 		close(stopFlush)
 		close(stopNotify)
 		close(stopNoncePurge)
+		close(stopExpire)
 
 		// Flush remaining accumulated rewards to DB before exit.
 		log.Infow("flushing remaining rewards")
@@ -623,6 +663,7 @@ func buildAPIMux(
 	heatEngine *heat.HeatEngine,
 	inventoryCore *inventory.Core,
 	depositCore *deposit.Core,
+	progressCore *progress.Core,
 	nc *nats.Conn,
 	wsHandler *ws.Handler,
 ) *chi.Mux {
@@ -663,12 +704,23 @@ func buildAPIMux(
 	}
 
 	// JWT-protected
+	progGrp := progressgrp.New(progressCore, userCore)
 	mux.Group(func(r chi.Router) {
 		r.Use(mid.Authenticate(a))
 		r.Get("/v1/user/profile", mid.Errors(log, userGrp.Profile))
 		r.Post("/v1/game/batch-insert", mid.Errors(log, gameGrp.BatchInsert))
 		r.Get("/v1/inventory", mid.Errors(log, invGrp.GetInventory))
 		r.Post("/v1/chest/open", mid.Errors(log, invGrp.OpenChest))
+
+		// Progress routes (user).
+		r.Get("/v1/progress", mid.Errors(log, progGrp.ListUserProgress))
+		r.Post("/v1/progress/{id}/claim", mid.Errors(log, progGrp.ClaimProgress))
+
+		// Progress admin routes (role check inside handler).
+		r.Post("/v1/admin/progress", mid.Errors(log, progGrp.CreateProgress))
+		r.Put("/v1/admin/progress/{id}", mid.Errors(log, progGrp.UpdateProgress))
+		r.Get("/v1/admin/progress", mid.Errors(log, progGrp.ListAllProgress))
+		r.Get("/v1/admin/progress/{id}/users", mid.Errors(log, progGrp.ListUserProgressByProgressID))
 
 		// Deposit/withdrawal routes (only if wallet is configured).
 		if depositCore != nil {

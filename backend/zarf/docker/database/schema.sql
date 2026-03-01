@@ -154,7 +154,8 @@ CREATE TABLE IF NOT EXISTS accounting_logs (
         'WITHDRAW',
         'WITHDRAW_REFUND',
         'WITHDRAW_FEE',
-        'WITHDRAW_FEE_REFUND'
+        'WITHDRAW_FEE_REFUND',
+        'PROGRESS_REWARD'
     )),
     amount              NUMERIC(20,6) NOT NULL,
     currency            TEXT          NOT NULL CHECK (currency IN ('USDC','PLAY','CASH')),
@@ -214,3 +215,46 @@ CREATE TABLE IF NOT EXISTS chest_opens (
     scroll_count        INT           NOT NULL DEFAULT 1,
     created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
+
+-- ==========================================================================
+-- 11. progress (admin-defined promotion definitions)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS progress (
+    progress_id         UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title               TEXT          NOT NULL,
+    description         TEXT          NOT NULL DEFAULT '',
+    metric_type         TEXT          NOT NULL,
+    threshold           NUMERIC(20,6) NOT NULL,
+    reward_type         TEXT          NOT NULL,
+    reward_amount       NUMERIC(20,6) NOT NULL,
+    disburse_delay      INTERVAL      NOT NULL DEFAULT '0',
+    claim_deadline      INTERVAL,                             -- NULL = no expiration
+    active_from         TIMESTAMPTZ,
+    active_until        TIMESTAMPTZ,
+    enabled             BOOLEAN       NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_progress_metric_enabled
+    ON progress(metric_type) WHERE enabled = TRUE;
+
+-- ==========================================================================
+-- 12. account_progress (per-user tracking for each progress)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS account_progress (
+    account_id          UUID          NOT NULL REFERENCES accounts(account_id),
+    progress_id         UUID          NOT NULL REFERENCES progress(progress_id),
+    current_value       NUMERIC(20,6) NOT NULL DEFAULT 0,
+    status              TEXT          NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active','achieved','disbursed','expired')),
+    achieved_at         TIMESTAMPTZ,
+    disbursed_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (account_id, progress_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_progress_disbursable
+    ON account_progress(status, achieved_at) WHERE status = 'achieved';

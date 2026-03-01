@@ -17,6 +17,7 @@ import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
+import { ProgressPage } from "./pages/ProgressPage";
 
 import { SceneManager } from "./scene/SceneManager";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
@@ -689,6 +690,7 @@ function Game({ token, account, onAuthFailure }: GameProps) {
   const showChestPage = location.pathname === '/chest';
   const showDepositPage = location.pathname === '/deposit';
   const showWithdrawPage = location.pathname === '/withdraw';
+  const showProgressPage = location.pathname === '/progress';
 
   const handleCashBalanceChange = useCallback((newBalance: string) => {
     setBalanceCash(newBalance);
@@ -863,6 +865,17 @@ function Game({ token, account, onAuthFailure }: GameProps) {
           apiUrl={API_URL}
           balanceCash={balanceCash}
           onBalanceChange={handleCashBalanceChange}
+        />
+      )}
+
+      {showProgressPage && (
+        <ProgressPage
+          token={token}
+          apiUrl={API_URL}
+          onBalanceChange={(play, cash) => {
+            setBalance(play);
+            setBalanceCash(cash);
+          }}
         />
       )}
     </div>

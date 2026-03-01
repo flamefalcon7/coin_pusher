@@ -41,6 +41,9 @@ type txStores struct {
 	acctStore accounting.Storer
 }
 
+// MetricRecorder is a callback for recording metric events to the progress system.
+type MetricRecorder func(ctx context.Context, accountID uuid.UUID, metricType string, delta decimal.Decimal) error
+
 // Core manages the set of APIs for deposit/withdrawal access.
 type Core struct {
 	db              *sqlx.DB
@@ -53,6 +56,7 @@ type Core struct {
 	newAcctStorer   AcctStorerFactory
 	defaultAcctStore accounting.Storer // for test mode (db==nil)
 	runTx           TxRunner
+	metricRecorder  MetricRecorder
 }
 
 // NewCore constructs a deposit Core.
@@ -82,6 +86,11 @@ func NewCore(
 		})
 	}
 	return c
+}
+
+// SetMetricRecorder sets the callback for recording metric events.
+func (c *Core) SetMetricRecorder(fn MetricRecorder) {
+	c.metricRecorder = fn
 }
 
 // execTx runs fn inside a database transaction with all tx-bound stores.
@@ -173,7 +182,7 @@ func (c *Core) GetOrCreateAddress(ctx context.Context, accountID uuid.UUID, chai
 // Idempotent: if a deposit with the same tx_hash already exists, it verifies
 // the accounting log also exists and re-credits if missing.
 func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, txHash string, blockNumber int64, fromAddress string) error {
-	return c.execTx(ctx, func(s txStores) error {
+	err := c.execTx(ctx, func(s txStores) error {
 		// Idempotency check inside tx to prevent TOCTOU race.
 		_, err := s.storer.QueryDepositByTxHash(ctx, txHash)
 		if err == nil {
@@ -229,6 +238,19 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Record deposit metric for progress system (after tx succeeds).
+	if c.metricRecorder != nil {
+		if mrErr := c.metricRecorder(ctx, accountID, "deposit_usdc", amount); mrErr != nil {
+			// Log but don't fail the primary operation.
+			_ = mrErr
+		}
+	}
+
+	return nil
 }
 
 // RequestWithdrawal validates and creates a withdrawal request.

@@ -21,6 +21,9 @@ type StorerFactory func(database.DBTX) Storer
 // UserStorerFactory builds a user.Storer bound to the given DBTX.
 type UserStorerFactory func(database.DBTX) user.Storer
 
+// MetricRecorder is a callback for recording metric events to the progress system.
+type MetricRecorder func(ctx context.Context, accountID uuid.UUID, metricType string, delta decimal.Decimal) error
+
 // Core manages the set of APIs for accounting access.
 type Core struct {
 	db              *sqlx.DB         // needed to start transactions; nil in unit tests
@@ -28,6 +31,7 @@ type Core struct {
 	userCore        *user.Core       // default user core (non-tx)
 	newStorer       StorerFactory    // creates tx-bound accounting storer
 	newUserStorer   UserStorerFactory // creates tx-bound user storer
+	metricRecorder  MetricRecorder
 }
 
 // NewCore constructs an accounting Core.
@@ -43,6 +47,11 @@ func NewCore(db *sqlx.DB, storer Storer, userCore *user.Core, newStorer StorerFa
 		newStorer:     newStorer,
 		newUserStorer: newUserStorer,
 	}
+}
+
+// SetMetricRecorder sets the callback for recording metric events.
+func (c *Core) SetMetricRecorder(fn MetricRecorder) {
+	c.metricRecorder = fn
 }
 
 // txStores holds tx-bound instances used inside execTx.
@@ -146,6 +155,14 @@ func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinC
 	if err != nil {
 		return decimal.Zero, err
 	}
+
+	// Record game insert metric for progress system (after tx succeeds).
+	if c.metricRecorder != nil {
+		if mrErr := c.metricRecorder(ctx, accountID, "game_insert_count", amount); mrErr != nil {
+			_ = mrErr
+		}
+	}
+
 	return newPlay, nil
 }
 
