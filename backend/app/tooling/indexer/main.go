@@ -44,11 +44,12 @@ type config struct {
 		Seed string `conf:"mask"`
 	}
 	Indexer struct {
-		RPCURL       string        `conf:"default:https://mainnet.base.org"`
-		USDCContract string        `conf:"default:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"`
-		PollInterval time.Duration `conf:"default:10s"`
-		StartBlock   int64         `conf:"default:0"`
-		BlockRange   int64         `conf:"default:1000"`
+		RPCURL             string        `conf:"default:https://mainnet.base.org"`
+		USDCContract       string        `conf:"default:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"`
+		PollInterval       time.Duration `conf:"default:10s"`
+		StartBlock         int64         `conf:"default:0"`
+		BlockRange         int64         `conf:"default:1000"`
+		ConfirmationBlocks int64         `conf:"default:50"`
 	}
 }
 
@@ -194,7 +195,7 @@ func run() error {
 			log.Infow("indexer shutting down")
 			return nil
 		case <-ticker.C:
-			if err := pollOnce(ctx, log, client, depositCore, usdcAddr, &lastBlock, cfg.Indexer.BlockRange, db); err != nil {
+			if err := pollOnce(ctx, log, client, depositCore, usdcAddr, &lastBlock, cfg.Indexer.BlockRange, cfg.Indexer.ConfirmationBlocks, db); err != nil {
 				log.Errorw("poll error", "error", err)
 			}
 		}
@@ -209,6 +210,7 @@ func pollOnce(
 	usdcAddr common.Address,
 	lastBlock *int64,
 	blockRange int64,
+	confirmationBlocks int64,
 	db *sqlx.DB,
 ) error {
 	// Get the latest block number.
@@ -216,7 +218,8 @@ func pollOnce(
 	if err != nil {
 		return fmt.Errorf("getting latest block: %w", err)
 	}
-	latestBlock := header.Number.Int64()
+	// P1-12: Only process blocks with sufficient confirmations to avoid reorgs.
+	latestBlock := header.Number.Int64() - confirmationBlocks
 
 	if *lastBlock >= latestBlock {
 		return nil
@@ -299,15 +302,13 @@ func pollOnce(
 		)
 
 		if err := depositCore.ProcessDeposit(ctx, depAddr.AccountID, amount, txHash, blockNum, fromAddr.Hex()); err != nil {
-			log.Errorw("process deposit error",
-				"tx_hash", txHash,
-				"error", err,
-			)
-			continue
+			// P1-17: Do NOT advance cursor past failed deposits.
+			// Return error so the block range is retried next poll.
+			return fmt.Errorf("process deposit tx %s: %w", txHash, err)
 		}
 	}
 
-	// Update cursor.
+	// Update cursor — only reached when ALL deposits in range succeeded.
 	*lastBlock = toBlock
 	saveBlockCursor(ctx, db, toBlock)
 

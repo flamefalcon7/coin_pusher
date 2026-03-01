@@ -501,7 +501,15 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		h.log.Errorw("json marshal batch_insert", "error", err)
 		return
 	}
-	h.nc.Publish(TopicBatchInsert(h.room), data)
+	// P1-14: Check publish error; refund balance if NATS is unreachable.
+	if err := h.nc.Publish(TopicBatchInsert(h.room), data); err != nil {
+		h.log.Errorw("nats publish batch_insert failed, refunding", "error", err, "user_id", c.userID, "count", accepted)
+		refundKey := uuid.NewString()
+		if _, refundErr := h.gameCore.RefundBatchInsert(context.Background(), userID, int(accepted), refundKey); refundErr != nil {
+			h.log.Errorw("refund after nats failure also failed", "error", refundErr, "user_id", c.userID)
+		}
+		return
+	}
 
 	// Send response to the requesting client.
 	share := h.heat.GetShareForUser(userID)
