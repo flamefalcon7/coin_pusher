@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
@@ -24,6 +25,9 @@ func Routes(mux *chi.Mux, db *sqlx.DB) {
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	// Prometheus metrics endpoint.
+	mux.Handle("/metrics", promhttp.Handler())
 }
 
 func healthHandler() http.HandlerFunc {

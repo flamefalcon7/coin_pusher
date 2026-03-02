@@ -7,6 +7,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
+
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // Hub manages the set of active WebSocket connections and caches the latest snapshot.
@@ -30,6 +32,7 @@ func NewHub() *Hub {
 func (h *Hub) Add(c *Connection) {
 	h.mu.Lock()
 	h.connections[c] = true
+	metrics.WSConnectionsActive.Inc()
 	h.mu.Unlock()
 }
 
@@ -37,6 +40,7 @@ func (h *Hub) Add(c *Connection) {
 func (h *Hub) Remove(c *Connection) {
 	h.mu.Lock()
 	delete(h.connections, c)
+	metrics.WSConnectionsActive.Dec()
 	h.mu.Unlock()
 }
 

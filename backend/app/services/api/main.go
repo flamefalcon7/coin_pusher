@@ -50,6 +50,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/keystore"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/logger"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 	foundnats "github.com/flamefalcon/coin-pusher/backend/foundation/nats"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/wallet"
 )
@@ -145,6 +146,8 @@ func run() error {
 		return fmt.Errorf("connecting to db: %w", err)
 	}
 	defer db.Close()
+
+	metrics.StartDBCollector(db.DB, 5*time.Second)
 
 	// -------------------------------------------------------------------------
 	// Auth
@@ -316,8 +319,12 @@ func run() error {
 		for {
 			select {
 			case <-ticker.C:
+				workerStart := time.Now()
+				metrics.WorkerRuns.WithLabelValues("heat_broadcast").Inc()
+
 				shares := heatEngine.GetShares()
 				if len(shares) == 0 {
+					metrics.WorkerDuration.WithLabelValues("heat_broadcast").Observe(time.Since(workerStart).Seconds())
 					continue
 				}
 				type playerHeat struct {
@@ -340,12 +347,15 @@ func run() error {
 				data, err := msgpack.Marshal(msg)
 				if err != nil {
 					log.Errorw("heat broadcast marshal error", "error", err)
+					metrics.WorkerErrors.WithLabelValues("heat_broadcast").Inc()
+					metrics.WorkerDuration.WithLabelValues("heat_broadcast").Observe(time.Since(workerStart).Seconds())
 					continue
 				}
 				nc.Publish(ws.TopicHeatUpdate("main"), data)
 
 				// Prune stale heat entries.
 				heatEngine.Prune()
+				metrics.WorkerDuration.WithLabelValues("heat_broadcast").Observe(time.Since(workerStart).Seconds())
 			case <-stopHeat:
 				return
 			}
@@ -361,12 +371,16 @@ func run() error {
 		for {
 			select {
 			case <-ticker.C:
+				workerStart := time.Now()
+				metrics.WorkerRuns.WithLabelValues("nonce_purge").Inc()
 				n, err := userCore.PurgeExpiredNonces(context.Background())
 				if err != nil {
 					log.Errorw("nonce purge error", "error", err)
+					metrics.WorkerErrors.WithLabelValues("nonce_purge").Inc()
 				} else if n > 0 {
 					log.Infow("purged expired nonces", "count", n)
 				}
+				metrics.WorkerDuration.WithLabelValues("nonce_purge").Observe(time.Since(workerStart).Seconds())
 			case <-stopNoncePurge:
 				return
 			}
@@ -423,6 +437,9 @@ func run() error {
 	defer despawnSub.Unsubscribe()
 
 	flushRewards := func() {
+		workerStart := time.Now()
+		metrics.WorkerRuns.WithLabelValues("reward_flush").Inc()
+		metrics.RewardFlushTotal.Inc()
 		rewardMu.Lock()
 		batch := rewardAccum
 		rewardAccum = make(map[uuid.UUID]float64)
@@ -439,8 +456,11 @@ func run() error {
 			amt := decimal.NewFromFloat(truncated)
 			if err := acctCore.ProcessGameReward(context.Background(), uid, amt, refKey); err != nil {
 				log.Errorw("heat reward flush error", "user_id", uid, "amount", truncated, "error", err)
+				metrics.RewardFlushErrors.Inc()
+				metrics.WorkerErrors.WithLabelValues("reward_flush").Inc()
 			}
 		}
+		metrics.WorkerDuration.WithLabelValues("reward_flush").Observe(time.Since(workerStart).Seconds())
 	}
 
 	stopFlush := make(chan struct{})
@@ -465,6 +485,9 @@ func run() error {
 		for {
 			select {
 			case <-ticker.C:
+				workerStart := time.Now()
+				metrics.WorkerRuns.WithLabelValues("reward_notify").Inc()
+
 				rewardMu.Lock()
 				batch := notifyAccum
 				notifyAccum = make(map[uuid.UUID]float64)
@@ -488,10 +511,15 @@ func run() error {
 					data, err := json.Marshal(msg)
 					if err != nil {
 						log.Errorw("reward_notify marshal error", "error", err)
+						metrics.WorkerErrors.WithLabelValues("reward_notify").Inc()
 						continue
 					}
-					nc.Publish(ws.TopicRewardNotify("main"), data)
+					if err := nc.Publish(ws.TopicRewardNotify("main"), data); err != nil {
+						log.Errorw("reward_notify publish error", "error", err)
+						metrics.WorkerErrors.WithLabelValues("reward_notify").Inc()
+					}
 				}
+				metrics.WorkerDuration.WithLabelValues("reward_notify").Observe(time.Since(workerStart).Seconds())
 			case <-stopNotify:
 				return
 			}
@@ -544,6 +572,7 @@ func run() error {
 			log.Errorw("key coin credit error", "user_id", winnerID, "count", evt.Count, "error", err)
 			return
 		}
+		metrics.KeyCoinDrawTotal.Inc()
 
 		// Look up winner display name.
 		winnerName := ""
@@ -593,12 +622,16 @@ func run() error {
 		for {
 			select {
 			case <-ticker.C:
+				workerStart := time.Now()
+				metrics.WorkerRuns.WithLabelValues("progress_expire").Inc()
 				n, err := progressCore.ExpireOverdue(context.Background(), time.Now().UTC(), 100)
 				if err != nil {
 					log.Errorw("progress expire error", "error", err)
+					metrics.WorkerErrors.WithLabelValues("progress_expire").Inc()
 				} else if n > 0 {
 					log.Infow("progress expired", "count", n)
 				}
+				metrics.WorkerDuration.WithLabelValues("progress_expire").Observe(time.Since(workerStart).Seconds())
 			case <-stopExpire:
 				return
 			}

@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
+
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
@@ -47,6 +51,16 @@ func Logger(log *zap.SugaredLogger) func(http.Handler) http.Handler {
 				"duration", time.Since(start).String(),
 				"correlation_id", GetCorrelationID(r.Context()),
 			)
+
+			path := r.URL.Path
+			if rctx := chi.RouteContext(r.Context()); rctx != nil {
+				if pattern := rctx.RoutePattern(); pattern != "" {
+					path = pattern
+				}
+			}
+			status := strconv.Itoa(rw.statusCode)
+			metrics.HTTPRequestsTotal.WithLabelValues(r.Method, path, status).Inc()
+			metrics.HTTPRequestDuration.WithLabelValues(r.Method, path).Observe(time.Since(start).Seconds())
 		})
 	}
 }

@@ -6,6 +6,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 const (
@@ -92,6 +94,7 @@ func (c *Connection) SendRaw(data []byte) {
 	case c.send <- data:
 	default:
 		// Drop message if send buffer is full.
+		metrics.WSSendBufferOverflow.Inc()
 	}
 }
 

@@ -6,6 +6,7 @@ import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
 import type { DropScheduler } from "./DropScheduler.js";
+import * as metrics from "../metrics.js";
 import type {
   StateDeltaMessage,
   DespawnMessage,
@@ -288,6 +289,16 @@ export class GameLoop {
         });
       });
     }
+    if (isNetworkTick) {
+      metrics.coinsActive.set(updates.length);
+      metrics.coinsSleeping.set(sleepingCount);
+    }
+
+    // Count despawns by zone for Prometheus
+    for (const d of classifiedDespawns) {
+      metrics.coinsDespawned.labels(d.zone).inc();
+    }
+
     const tAfterStateCollect = performance.now();
 
     // 5. Handle despawns
@@ -372,6 +383,15 @@ export class GameLoop {
     this.profilePublish.push(publishMs);
     this.profileActiveCounts.push(updates.length);
     this.profileSleepingCounts.push(sleepingCount);
+
+    // Observe Prometheus metrics
+    metrics.tickDuration.observe(tickMs / 1000);
+    metrics.tickPhaseDuration.labels("pusher").observe(pusherMs / 1000);
+    metrics.tickPhaseDuration.labels("coin_update").observe(coinUpdateMs / 1000);
+    metrics.tickPhaseDuration.labels("physics").observe(physicsMs / 1000);
+    metrics.tickPhaseDuration.labels("state_collect").observe(stateCollectMs / 1000);
+    metrics.tickPhaseDuration.labels("despawn").observe(despawnMs / 1000);
+    metrics.tickPhaseDuration.labels("publish").observe(publishMs / 1000);
 
     if (this.tickTimings.length > GameLoop.TIMING_WINDOW) {
       this.tickTimings.shift();
@@ -606,6 +626,7 @@ export class GameLoop {
   }
 
   startTornado(x: number, z: number): void {
+    metrics.tornadoActive.set(1);
     this.tornadoActive = true;
     this.tornadoCenter = { x, z };
     this.tornadoStartTime = performance.now();
@@ -618,6 +639,7 @@ export class GameLoop {
     const elapsed = performance.now() - this.tornadoStartTime;
     if (elapsed > GameLoop.TORNADO_DURATION) {
       this.tornadoActive = false;
+      metrics.tornadoActive.set(0);
       console.log("🌪️  Tornado ended");
       return;
     }
@@ -732,6 +754,7 @@ export class GameLoop {
 
   /** Start a 3-second sustained lightning storm (like tornado pattern). */
   lightning(): void {
+    metrics.lightningActive.set(1);
     this.lightningActive = true;
     this.lightningStartTime = performance.now();
     this.lightningTickCounter = 0;
@@ -744,6 +767,7 @@ export class GameLoop {
     const elapsed = performance.now() - this.lightningStartTime;
     if (elapsed > GameLoop.LIGHTNING_DURATION) {
       this.lightningActive = false;
+      metrics.lightningActive.set(0);
       console.log("⚡ Lightning storm ended");
       return;
     }
@@ -828,6 +852,7 @@ export class GameLoop {
     if (this.slotSpinning) return;
 
     this.slotCounter++;
+    metrics.slotCounter.set(this.slotCounter);
     this.natsClient.publishSlotCounter({
       op: "slot_counter",
       counter: this.slotCounter,
@@ -841,6 +866,8 @@ export class GameLoop {
   }
 
   private triggerSlotSpin(): void {
+    metrics.slotSpinsTotal.inc();
+    metrics.slotCounter.set(0);
     this.slotSpinning = true;
     this.slotCounter = 0;
 
@@ -910,6 +937,7 @@ export class GameLoop {
     if (this.wheelSpinning) return;
 
     this.wheelCounter++;
+    metrics.wheelCounter.set(this.wheelCounter);
     this.natsClient.publishWheelCounter({
       op: "wheel_counter",
       counter: this.wheelCounter,
@@ -923,6 +951,8 @@ export class GameLoop {
   }
 
   private triggerWheelSpin(): void {
+    metrics.wheelSpinsTotal.inc();
+    metrics.wheelCounter.set(0);
     this.wheelSpinning = true;
     this.wheelCounter = 0;
 
