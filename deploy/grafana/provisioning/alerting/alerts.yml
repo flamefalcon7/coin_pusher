@@ -1,0 +1,353 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: P0 - Critical
+    folder: Alerts
+    interval: 1m
+    rules:
+      - uid: p0-api-down
+        title: "P0: API server down"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="backend"} == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 1m
+        labels:
+          severity: P0
+        annotations:
+          summary: "API server is DOWN"
+
+      - uid: p0-game-down
+        title: "P0: Game server down"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="game"} == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 1m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Game server is DOWN"
+
+      - uid: p0-db-pool
+        title: "P0: DB pool exhausted"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_db_pool_in_use / coinpusher_db_pool_max_open > 0.9
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "DB connection pool >90% utilized"
+
+      - uid: p0-nats-disconnect
+        title: "P0: NATS disconnected"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_nats_disconnects_total[2m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "NATS connection lost"
+
+      - uid: p0-indexer-lag
+        title: "P0: Indexer block lag >100"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_indexer_block_lag > 100
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer is >100 blocks behind chain tip"
+
+      - uid: p0-executor-failures
+        title: "P0: Executor consecutive failures"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_executor_withdrawals_failed_total[10m]) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Executor has >5 failed withdrawals in 10min"
+
+  - orgId: 1
+    name: P1 - Urgent
+    folder: Alerts
+    interval: 5m
+    rules:
+      - uid: p1-5xx-rate
+        title: "P1: HTTP 5xx rate >5%"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: rate(coinpusher_http_requests_total{status=~"5.."}[5m]) / rate(coinpusher_http_requests_total[5m]) > 0.05
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "HTTP 5xx error rate exceeds 5%"
+
+      - uid: p1-latency
+        title: "P1: API latency p99 >2s"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(coinpusher_http_request_duration_seconds_bucket[5m])) > 2
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "API p99 latency exceeds 2 seconds"
+
+      - uid: p1-ws-mass-disconnect
+        title: "P1: WS mass disconnect >50%"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_ws_connections_active < (coinpusher_ws_connections_active offset 5m) * 0.5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "WebSocket connections dropped >50% in 5 minutes"
+
+      - uid: p1-tick-overrun
+        title: "P1: Physics frame overrun p99 >33ms"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(coinpusher_game_tick_duration_seconds_bucket[5m])) > 0.033
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Game tick p99 exceeds 33ms budget"
+
+      - uid: p1-reward-flush-errors
+        title: "P1: Reward flush errors"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_reward_flush_errors_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Reward flush encountered errors"
+
+  - orgId: 1
+    name: P2 - Important
+    folder: Alerts
+    interval: 15m
+    rules:
+      - uid: p2-memory-high
+        title: "P2: Backend memory high"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: process_resident_memory_bytes{job="backend"} > 1.5e9
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 15m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Backend RSS memory exceeds 1.5GB"
+
+      - uid: p2-ws-buffer-overflow
+        title: "P2: WS message drops"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_ws_send_buffer_overflow_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "WebSocket send buffer overflows detected"
+
+      - uid: p2-worker-errors
+        title: "P2: Worker errors trending"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_worker_errors_total[1h]) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Worker errors exceeding threshold (>5/hour)"

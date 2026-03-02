@@ -20,6 +20,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 const (
@@ -176,29 +177,43 @@ func (h *Handler) readPump(c *Connection) {
 
 		switch msg.Op {
 		case "spawn_stack":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleSpawnStack(c, msg)
 		case "shock":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleShock(c)
 		case "tornado":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleTornado(c, msg)
 		case "explosion":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleExplosion(c, msg)
 		case "lightning":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleLightning(c)
 		case "super_push":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleSuperPush(c)
 		case "clear_all":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleClearAll(c)
 		case "fill_platform":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleFillPlatform(c)
 		case "batch_insert":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleBatchInsert(c, msg)
 		case "ping":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handlePing(c)
 		case "update_scene_objects":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleUpdateSceneObjects(c, msg)
 		case "megaspeaker":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleMegaspeaker(c, msg)
+		default:
+			metrics.WSMessagesReceived.WithLabelValues("unknown").Inc()
 		}
 	}
 }
@@ -248,12 +263,14 @@ func (h *Handler) handleShock(c *Connection) {
 	c.TouchActivity()
 
 	if !c.CanShock() {
+		metrics.WSRateLimit.WithLabelValues("shock").Inc()
 		return
 	}
 
 	if err := h.consumeScroll(c, inventory.ScrollShock); err != nil {
 		return
 	}
+	metrics.AbilityUsageTotal.WithLabelValues("shock").Inc()
 
 	cmd := NATSShockCmd{
 		UserID: c.userID,
@@ -272,12 +289,14 @@ func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 	c.TouchActivity()
 
 	if !c.CanTornado() {
+		metrics.WSRateLimit.WithLabelValues("tornado").Inc()
 		return
 	}
 
 	if err := h.consumeScroll(c, inventory.ScrollTornado); err != nil {
 		return
 	}
+	metrics.AbilityUsageTotal.WithLabelValues("tornado").Inc()
 
 	// Clamp x to valid range.
 	x := msg.X
@@ -318,12 +337,14 @@ func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 	c.TouchActivity()
 
 	if !c.CanExplosion() {
+		metrics.WSRateLimit.WithLabelValues("explosion").Inc()
 		return
 	}
 
 	if err := h.consumeScroll(c, inventory.ScrollExplosion); err != nil {
 		return
 	}
+	metrics.AbilityUsageTotal.WithLabelValues("explosion").Inc()
 
 	// Clamp x to valid range.
 	x := msg.X
@@ -364,12 +385,14 @@ func (h *Handler) handleLightning(c *Connection) {
 	c.TouchActivity()
 
 	if !c.CanLightning() {
+		metrics.WSRateLimit.WithLabelValues("lightning").Inc()
 		return
 	}
 
 	if err := h.consumeScroll(c, inventory.ScrollLightning); err != nil {
 		return
 	}
+	metrics.AbilityUsageTotal.WithLabelValues("lightning").Inc()
 
 	cmd := NATSLightningCmd{
 		UserID: c.userID,
@@ -388,12 +411,14 @@ func (h *Handler) handleSuperPush(c *Connection) {
 	c.TouchActivity()
 
 	if !c.CanSuperPush() {
+		metrics.WSRateLimit.WithLabelValues("super_push").Inc()
 		return
 	}
 
 	if err := h.consumeScroll(c, inventory.ScrollSuperPush); err != nil {
 		return
 	}
+	metrics.AbilityUsageTotal.WithLabelValues("super_push").Inc()
 
 	cmd := NATSSuperPushCmd{
 		UserID: c.userID,
@@ -466,6 +491,7 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	}
 
 	if !c.CanBatchInsert() {
+		metrics.WSRateLimit.WithLabelValues("batch_insert").Inc()
 		return
 	}
 
@@ -510,6 +536,7 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 
 	// Optimistic increment slot count.
 	atomic.AddInt64(&h.slotCounts[slotID], accepted)
+	metrics.BatchInsertCoins.Add(float64(accepted))
 
 	// Add heat on commit.
 	h.heat.AddHeat(userID, int(accepted))
@@ -603,6 +630,7 @@ func (h *Handler) handleMegaspeaker(c *Connection, msg ClientMessage) {
 	}
 	h.hub.AddMegaspeakerMsg(packed)
 	h.hub.Broadcast(packed)
+	metrics.MegaspeakerTotal.Inc()
 
 	// Send inventory update to the user.
 	h.sendInventoryUpdate(c, userID)

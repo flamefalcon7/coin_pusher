@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "backend"
+    static_configs:
+      - targets: ["backend:4010"]
+    metrics_path: /metrics
+
+  # NOTE: NATS /varz returns JSON, not Prometheus format.
+  # Use nats-exporter if NATS metrics are needed in Prometheus.
+
+  - job_name: "indexer"
+    static_configs:
+      - targets: ["indexer:9091"]
+    metrics_path: /metrics
+
+  - job_name: "executor"
+    static_configs:
+      - targets: ["executor:9092"]
+    metrics_path: /metrics
+
+  - job_name: "game"
+    static_configs:
+      - targets: ["${GAME_VPC_IP}:9100"]
+    metrics_path: /metrics

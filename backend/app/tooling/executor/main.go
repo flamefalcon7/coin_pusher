@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
@@ -66,6 +70,30 @@ var baseChainID = big.NewInt(8453)
 // only one executor instance runs at a time.
 const advisoryKeyExecutor int64 = 0x65786563_75746F72 // "executor"
 
+var (
+	executorWithdrawalsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_executor_withdrawals_processed_total",
+		Help: "Total withdrawals successfully processed.",
+	})
+	executorWithdrawalsFailed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_executor_withdrawals_failed_total",
+		Help: "Total failed withdrawals.",
+	})
+	executorSweepsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_executor_sweeps_total",
+		Help: "Total sweep operations.",
+	})
+	executorGasPrice = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_executor_gas_price_gwei",
+		Help: "Current base fee in gwei.",
+	})
+	executorRPCLatency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "coinpusher_executor_rpc_latency_seconds",
+		Help:    "RPC call latency.",
+		Buckets: prometheus.DefBuckets,
+	})
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -93,6 +121,15 @@ func run() error {
 		return fmt.Errorf("constructing logger: %w", err)
 	}
 	defer log.Sync()
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		log.Infow("executor metrics server starting", "host", ":9092")
+		if err := http.ListenAndServe(":9092", mux); err != nil {
+			log.Errorw("executor metrics server error", "error", err)
+		}
+	}()
 
 	if cfg.Wallet.Seed == "" {
 		return fmt.Errorf("BACKEND_WALLET_SEED is required")
@@ -571,6 +608,7 @@ func executeWithdrawal(
 
 	if receipt.Status == types.ReceiptStatusFailed {
 		errMsg := "on-chain tx reverted"
+		executorWithdrawalsFailed.Inc()
 		return true, depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg)
 	}
 
@@ -578,6 +616,7 @@ func executeWithdrawal(
 	if err := depositCore.UpdateWithdrawStatus(ctx, wr.RequestID, "confirmed", &txHash, nil); err != nil {
 		return true, fmt.Errorf("update status to confirmed: %w", err)
 	}
+	executorWithdrawalsProcessed.Inc()
 
 	log.Infow("withdrawal confirmed",
 		"request_id", wr.RequestID,
@@ -654,6 +693,7 @@ func processSweeps(
 			"balance_usdc", balanceDecimal,
 			"derivation_index", depAddr.DerivationIndex,
 		)
+		executorSweepsTotal.Inc()
 
 		if err := executeSweep(ctx, log, client, depositCore, w, hotKey, depAddr, hotAddress, hotAddr, usdcAddr, balance, balanceDecimal, gasFundWei); err != nil {
 			log.Errorw("sweep failed",
@@ -915,11 +955,14 @@ func waitForReceipt(ctx context.Context, client *ethclient.Client, txHash common
 // gasTooExpensive checks if the current base fee exceeds the configured max.
 // Returns true (skip this tick) if gas is too expensive or if the check fails.
 func gasTooExpensive(ctx context.Context, log *zap.SugaredLogger, client *ethclient.Client, maxGasPriceWei *big.Int) bool {
+	rpcStart := time.Now()
 	head, err := client.HeaderByNumber(ctx, nil)
+	executorRPCLatency.Observe(time.Since(rpcStart).Seconds())
 	if err != nil {
 		log.Errorw("gas price check: failed to get header", "error", err)
 		return true
 	}
+	executorGasPrice.Set(float64(head.BaseFee.Int64()) / 1e9)
 	if head.BaseFee.Cmp(maxGasPriceWei) > 0 {
 		log.Infow("gas too expensive — skipping this tick",
 			"base_fee_gwei", new(big.Int).Div(head.BaseFee, big.NewInt(1_000_000_000)),

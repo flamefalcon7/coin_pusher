@@ -1,4 +1,5 @@
 import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type SuperPushCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
+import { startMetricsServer } from "./metrics.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
@@ -27,6 +28,8 @@ let gameLoop: GameLoop;
 let snapshotInterval: NodeJS.Timeout;
 
 async function initialize() {
+  startMetricsServer(9100);
+
   // Initialize physics
   await physicsWorld.init();
 

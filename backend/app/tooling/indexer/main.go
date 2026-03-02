@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,6 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
@@ -59,6 +63,30 @@ var transferTopic = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f1
 // USDC uses 6 decimals.
 var usdcDecimals = decimal.NewFromInt(1_000_000)
 
+var (
+	indexerBlockLag = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_indexer_block_lag",
+		Help: "Number of blocks behind the chain tip.",
+	})
+	indexerBlockCursor = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_indexer_block_cursor",
+		Help: "Current block cursor position.",
+	})
+	indexerDepositsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_indexer_deposits_processed_total",
+		Help: "Total deposits successfully processed.",
+	})
+	indexerPollErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_indexer_poll_errors_total",
+		Help: "Total poll errors.",
+	})
+	indexerRPCLatency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "coinpusher_indexer_rpc_latency_seconds",
+		Help:    "RPC call latency.",
+		Buckets: prometheus.DefBuckets,
+	})
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -86,6 +114,15 @@ func run() error {
 		return fmt.Errorf("constructing logger: %w", err)
 	}
 	defer log.Sync()
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		log.Infow("indexer metrics server starting", "host", ":9091")
+		if err := http.ListenAndServe(":9091", mux); err != nil {
+			log.Errorw("indexer metrics server error", "error", err)
+		}
+	}()
 
 	if cfg.Wallet.Seed == "" {
 		return fmt.Errorf("BACKEND_WALLET_SEED is required")
@@ -197,6 +234,7 @@ func run() error {
 		case <-ticker.C:
 			if err := pollOnce(ctx, log, client, depositCore, usdcAddr, &lastBlock, cfg.Indexer.BlockRange, cfg.Indexer.ConfirmationBlocks, db); err != nil {
 				log.Errorw("poll error", "error", err)
+				indexerPollErrors.Inc()
 			}
 		}
 	}
@@ -214,7 +252,9 @@ func pollOnce(
 	db *sqlx.DB,
 ) error {
 	// Get the latest block number.
+	rpcStart := time.Now()
 	header, err := client.HeaderByNumber(ctx, nil)
+	indexerRPCLatency.Observe(time.Since(rpcStart).Seconds())
 	if err != nil {
 		return fmt.Errorf("getting latest block: %w", err)
 	}
@@ -306,11 +346,14 @@ func pollOnce(
 			// Return error so the block range is retried next poll.
 			return fmt.Errorf("process deposit tx %s: %w", txHash, err)
 		}
+		indexerDepositsProcessed.Inc()
 	}
 
 	// Update cursor — only reached when ALL deposits in range succeeded.
 	*lastBlock = toBlock
 	saveBlockCursor(ctx, db, toBlock)
+	indexerBlockCursor.Set(float64(toBlock))
+	indexerBlockLag.Set(float64(latestBlock - toBlock))
 
 	return nil
 }

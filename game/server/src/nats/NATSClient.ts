@@ -1,4 +1,5 @@
 import { connect, type NatsConnection, type Subscription, StringCodec } from "nats";
+import * as metrics from "../metrics.js";
 import { create, toBinary } from "@bufbuild/protobuf";
 import type { StateDeltaMessage, DespawnMessage, WorldSnapshotMessage, SlotMachineSpinMessage, SlotMachineCounterMessage, AbilityEventMessage, CoinSpawnMessage, QueueUpdateMessage, SlotStatusMessage, WheelSpinMessage, WheelCounterMessage } from "@coin-pusher/shared";
 import { GameMessageSchema } from "@coin-pusher/shared";
@@ -82,6 +83,18 @@ export class NATSClient {
 
   constructor(room: string = "main") {
     this.room = room;
+  }
+
+  /** Publish with metrics tracking. */
+  private trackedPublish(subject: string, data: Uint8Array): void {
+    const shortTopic = subject.replace(`game.${this.room}.`, "");
+    metrics.natsPublishTotal.labels(shortTopic).inc();
+    try {
+      this.nc!.publish(subject, data);
+    } catch (err) {
+      metrics.natsPublishErrors.labels(shortTopic).inc();
+      console.error(`NATS publish error [${shortTopic}]:`, err);
+    }
   }
 
   async connect(url: string = "nats://localhost:4222"): Promise<void> {
@@ -275,7 +288,7 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.state_delta`, toBinary(GameMessageSchema, msg));
+    this.trackedPublish(`game.${this.room}.state_delta`, toBinary(GameMessageSchema, msg));
   }
 
   // Publish despawn event (protobuf encoded)
@@ -289,12 +302,12 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.despawn`, toBinary(GameMessageSchema, msg));
+    this.trackedPublish(`game.${this.room}.despawn`, toBinary(GameMessageSchema, msg));
   }
 
   // Publish reward event (JSON encoded)
   publishReward(reward: RewardEvent): void {
-    this.nc!.publish(`game.${this.room}.reward`, sc.encode(JSON.stringify(reward)));
+    this.trackedPublish(`game.${this.room}.reward`, sc.encode(JSON.stringify(reward)));
   }
 
   // Publish slot machine spin result (protobuf encoded)
@@ -308,7 +321,7 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.slot_spin`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.slot_spin`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish slot machine counter update (protobuf encoded)
@@ -321,7 +334,7 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.slot_counter`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.slot_counter`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish ability event (protobuf encoded, broadcast to all clients)
@@ -336,7 +349,7 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.ability`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.ability`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish full world snapshot for caching (protobuf encoded)
@@ -363,12 +376,12 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.snapshot`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.snapshot`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish classified coin despawn events (JSON encoded, for backend processing)
   publishCoinDespawn(data: { coins: { id: number; zone: string; owner_id: string }[]; tick: number }): void {
-    this.nc!.publish(`game.${this.room}.evt.coin_despawn`, sc.encode(JSON.stringify(data)));
+    this.trackedPublish(`game.${this.room}.evt.coin_despawn`, sc.encode(JSON.stringify(data)));
   }
 
   // Publish coin spawn notification (protobuf encoded, for client broadcast)
@@ -385,12 +398,12 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.coin_spawn`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.coin_spawn`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish key coin front despawn event (JSON encoded, for backend processing)
   publishKeyCoinFrontDespawn(data: { count: number; tick: number }): void {
-    this.nc!.publish(`game.${this.room}.evt.key_coin_front_despawn`, sc.encode(JSON.stringify(data)));
+    this.trackedPublish(`game.${this.room}.evt.key_coin_front_despawn`, sc.encode(JSON.stringify(data)));
   }
 
   // Publish queue update notification (protobuf encoded, for client broadcast)
@@ -404,7 +417,7 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.queue_update`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.queue_update`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish jackpot wheel spin result (protobuf encoded)
@@ -418,7 +431,7 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.wheel_spin`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.wheel_spin`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish jackpot wheel counter update (protobuf encoded)
@@ -431,12 +444,12 @@ export class NATSClient {
         },
       },
     });
-    this.nc!.publish(`game.${this.room}.wheel_counter`, toBinary(GameMessageSchema, gm));
+    this.trackedPublish(`game.${this.room}.wheel_counter`, toBinary(GameMessageSchema, gm));
   }
 
   // Publish slot status for backend sync (JSON encoded, 1Hz)
   publishSlotStatus(msg: SlotStatusMessage): void {
-    this.nc!.publish(`game.${this.room}.slot_status`, sc.encode(JSON.stringify(msg)));
+    this.trackedPublish(`game.${this.room}.slot_status`, sc.encode(JSON.stringify(msg)));
   }
 
   // Subscribe to batch_insert commands (JSON encoded)

@@ -7,6 +7,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
+
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // Config holds the settings for connecting to NATS.
@@ -23,9 +25,11 @@ func Connect(cfg Config, log *zap.SugaredLogger) (*nats.Conn, error) {
 		nats.MaxReconnects(cfg.MaxReconnects),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			log.Warnw("nats disconnected", "error", err)
+			metrics.NATSDisconnects.Inc()
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			log.Infow("nats reconnected", "url", nc.ConnectedUrl())
+			metrics.NATSReconnects.Inc()
 		}),
 		nats.ClosedHandler(func(_ *nats.Conn) {
 			log.Infow("nats connection closed")
