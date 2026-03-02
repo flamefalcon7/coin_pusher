@@ -103,6 +103,9 @@ func (m *mockUserStorer) IncrementLifetimeDeposit(_ context.Context, _ uuid.UUID
 }
 func (m *mockUserStorer) MarkReferralRewardPaid(_ context.Context, _ uuid.UUID) error { return nil }
 func (m *mockUserStorer) CountReferrals(_ context.Context, _ uuid.UUID) (int, error)  { return 0, nil }
+func (m *mockUserStorer) QueryWalletAddress(_ context.Context, _ uuid.UUID) (string, error) {
+	return "", nil
+}
 
 type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log accounting.AccountingLog) error

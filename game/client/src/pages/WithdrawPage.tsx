@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { requestWithdrawal, getWithdrawals, type WithdrawalRecord } from '../net/DepositClient';
+import { requestWithdrawal, getWithdrawals, getWithdrawNonce, type WithdrawalRecord } from '../net/DepositClient';
+import { getSavedAddress } from '../net/auth';
 import './WithdrawPage.css';
 
 const WITHDRAW_FEE = 0.5;
@@ -84,9 +85,31 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
 
     setSubmitting(true);
     try {
+      // 1. Fetch one-time nonce from server.
+      const { nonce } = await getWithdrawNonce(apiUrl, token);
+
+      // 2. Build the canonical withdraw message and sign with wallet.
+      const amountFixed = amountNum.toFixed(6);
+      const normalizedTo = toAddress; // Server normalizes via EIP-55
+      const message = `Coin Pusher Withdraw\nTo: ${normalizedTo}\nAmount: ${amountFixed} USDC\nNonce: ${nonce}`;
+
+      const eth = window.ethereum;
+      if (!eth) throw new Error('No wallet found. Please install MetaMask.');
+
+      const savedAddr = getSavedAddress();
+      if (!savedAddr) throw new Error('No wallet address found. Please reconnect your wallet.');
+
+      const signature = (await eth.request({
+        method: 'personal_sign',
+        params: [message, savedAddr],
+      })) as string;
+
+      // 3. Submit withdrawal with nonce + signature.
       const res = await requestWithdrawal(apiUrl, token, {
         to_address: toAddress,
-        amount: amountNum.toFixed(6),
+        amount: amountFixed,
+        nonce,
+        signature,
       });
       setSuccess(`Withdrawal submitted: ${formatAmount(res.net_amount)} USDC`);
       setAmount('');

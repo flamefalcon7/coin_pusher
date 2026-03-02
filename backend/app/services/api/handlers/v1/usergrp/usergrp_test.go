@@ -111,6 +111,9 @@ func (m *mockStorer) IncrementLifetimeDeposit(_ context.Context, _ uuid.UUID, _ 
 }
 func (m *mockStorer) MarkReferralRewardPaid(_ context.Context, _ uuid.UUID) error { return nil }
 func (m *mockStorer) CountReferrals(_ context.Context, _ uuid.UUID) (int, error)  { return 0, nil }
+func (m *mockStorer) QueryWalletAddress(_ context.Context, _ uuid.UUID) (string, error) {
+	return "", nil
+}
 
 // ---------------------------------------------------------------------------
 // Helper

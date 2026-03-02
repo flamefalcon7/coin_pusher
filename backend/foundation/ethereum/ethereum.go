@@ -15,6 +15,13 @@ func FormatLoginMessage(nonce string) string {
 	return "Sign in to Coin Pusher\nNonce: " + nonce
 }
 
+// FormatWithdrawMessage builds the canonical withdrawal message that the user
+// must sign via personal_sign. The message binds to_address + amount + nonce
+// so the signature cannot be reused for a different withdrawal.
+func FormatWithdrawMessage(nonce, toAddress, amount string) string {
+	return "Coin Pusher Withdraw\nTo: " + toAddress + "\nAmount: " + amount + " USDC\nNonce: " + nonce
+}
+
 // VerifyPersonalSign recovers the signer address from an EIP-191 personal_sign
 // signature. It returns the EIP-55 checksummed address on success.
 func VerifyPersonalSign(message, sigHex string) (string, error) {

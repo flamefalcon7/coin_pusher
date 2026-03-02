@@ -252,6 +252,9 @@ func (m *mockUserStorer) IncrementLifetimeDeposit(_ context.Context, _ uuid.UUID
 }
 func (m *mockUserStorer) MarkReferralRewardPaid(_ context.Context, _ uuid.UUID) error { return nil }
 func (m *mockUserStorer) CountReferrals(_ context.Context, _ uuid.UUID) (int, error)  { return 0, nil }
+func (m *mockUserStorer) QueryWalletAddress(_ context.Context, _ uuid.UUID) (string, error) {
+	return "", nil
+}
 
 func (m *mockUserStorer) QueryByID(ctx context.Context, accountID uuid.UUID) (user.Account, error) {
 	if m.queryByIDFn != nil {

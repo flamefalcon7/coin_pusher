@@ -27,6 +27,9 @@ type Storer interface {
 	MarkReferralRewardPaid(ctx context.Context, accountID uuid.UUID) error
 	CountReferrals(ctx context.Context, accountID uuid.UUID) (int, error)
 
+	// Wallet address lookup.
+	QueryWalletAddress(ctx context.Context, accountID uuid.UUID) (string, error)
+
 	// Nonce operations for wallet login.
 	CreateNonce(ctx context.Context, nonce, address string, expiresAt time.Time) error
 	ConsumeNonce(ctx context.Context, nonce string) (NonceRecord, error)
