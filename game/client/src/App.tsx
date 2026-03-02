@@ -14,6 +14,7 @@ import { WalletLogin } from "./ui/WalletLogin";
 import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
 import { InventoryClient } from "./net/InventoryClient";
 import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
+import { TargetingHint } from "./ui/TargetingHint";
 import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
@@ -485,6 +486,16 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
       // Don't handle shortcuts when typing in an input
       if ((event.target as HTMLElement).tagName === "INPUT") return;
 
+      // ESC cancels targeting
+      if (event.key === "Escape") {
+        if (tornadoTargeting || explosionTargeting) {
+          setTornadoTargeting(false);
+          setExplosionTargeting(false);
+          sceneManagerRef.current?.hideTargetingReticle();
+        }
+        return;
+      }
+
       // Editor toggle
       if (event.key === "e" || event.key === "E") {
         toggleEditor();
@@ -538,7 +549,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [toggleEditor]);
+  }, [toggleEditor, tornadoTargeting, explosionTargeting]);
 
   const handleInsertCoin = (slotIndex: number, count: number = 1) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
@@ -567,11 +578,23 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!gameClientRef.current || !gameClientRef.current.isConnected() || tornadoCooldown) {
       return;
     }
+    if (tornadoTargeting) {
+      // Toggle cancel
+      setTornadoTargeting(false);
+      sceneManagerRef.current?.hideTargetingReticle();
+      return;
+    }
+    // Cancel explosion targeting if active
+    if (explosionTargeting) {
+      setExplosionTargeting(false);
+    }
     setTornadoTargeting(true);
+    sceneManagerRef.current?.showTargetingReticle('tornado');
   };
 
   const handleTornadoPlace = (x: number, z: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
+    sceneManagerRef.current?.confirmTargetingReticle();
     gameClientRef.current.tornado(x, z);
     // VFX/cooldown now synced via server ability broadcast
     setTornadoTargeting(false);
@@ -581,11 +604,23 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!gameClientRef.current || !gameClientRef.current.isConnected() || explosionCooldown) {
       return;
     }
+    if (explosionTargeting) {
+      // Toggle cancel
+      setExplosionTargeting(false);
+      sceneManagerRef.current?.hideTargetingReticle();
+      return;
+    }
+    // Cancel tornado targeting if active
+    if (tornadoTargeting) {
+      setTornadoTargeting(false);
+    }
     setExplosionTargeting(true);
+    sceneManagerRef.current?.showTargetingReticle('explosion');
   };
 
   const handleExplosionPlace = (x: number, z: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
+    sceneManagerRef.current?.confirmTargetingReticle();
     gameClientRef.current.explosion(x, z);
     // VFX/cooldown now synced via server ability broadcast
     setExplosionTargeting(false);
@@ -610,6 +645,25 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!tornadoTargeting && !explosionTargeting) return;
 
+    // On mobile (touch), pointerDown is the first contact — update reticle
+    // position so the user can see where it'll land, then drag to adjust.
+    // Placement is confirmed on pointerUp.
+    const scene = sceneManagerRef.current?.getScene();
+    if (!scene) return;
+
+    const pickResult = scene.pick(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+    if (pickResult?.hit && pickResult.pickedPoint) {
+      sceneManagerRef.current?.updateTargetingReticle(pickResult.pickedPoint);
+      if (!sceneManagerRef.current?.isTargetingReticleVisible()) {
+        const type = tornadoTargeting ? 'tornado' : 'explosion';
+        sceneManagerRef.current?.showTargetingReticle(type);
+      }
+    }
+  };
+
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!tornadoTargeting && !explosionTargeting) return;
+
     const scene = sceneManagerRef.current?.getScene();
     if (!scene) return;
 
@@ -621,9 +675,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         handleExplosionPlace(pickResult.pickedPoint.x, pickResult.pickedPoint.z);
       }
     } else {
-      // Cancel targeting if clicked outside platform
+      // Cancel targeting if released outside platform
       setTornadoTargeting(false);
       setExplosionTargeting(false);
+      sceneManagerRef.current?.hideTargetingReticle();
     }
   };
 
@@ -637,6 +692,22 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!scene) return;
 
     const pickResult = scene.pick(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+
+    // Update targeting reticle position
+    if (tornadoTargeting || explosionTargeting) {
+      if (pickResult?.hit && pickResult.pickedPoint) {
+        sceneManagerRef.current?.updateTargetingReticle(pickResult.pickedPoint);
+        // Show reticle if it was hidden (mouse re-entered platform)
+        if (!sceneManagerRef.current?.isTargetingReticleVisible()) {
+          const type = tornadoTargeting ? 'tornado' : 'explosion';
+          sceneManagerRef.current?.showTargetingReticle(type);
+        }
+      } else {
+        // Mouse off platform — hide reticle
+        sceneManagerRef.current?.hideTargetingReticle();
+      }
+    }
+
     if (pickResult?.hit && pickResult.pickedMesh?.metadata?.holeId) {
       setHoleTooltip({
         holeId: pickResult.pickedMesh.metadata.holeId,
@@ -790,11 +861,30 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
           ref={canvasRef}
           id="babylon-canvas"
           onPointerDown={handleCanvasPointerDown}
+          onPointerUp={handleCanvasPointerUp}
           onPointerMove={handleCanvasPointerMove}
-          onPointerLeave={() => setHoleTooltip(null)}
+          onPointerLeave={() => {
+            setHoleTooltip(null);
+            if (tornadoTargeting || explosionTargeting) {
+              sceneManagerRef.current?.hideTargetingReticle();
+            }
+          }}
+          onContextMenu={(e) => {
+            if (tornadoTargeting || explosionTargeting) {
+              e.preventDefault();
+              setTornadoTargeting(false);
+              setExplosionTargeting(false);
+              sceneManagerRef.current?.hideTargetingReticle();
+            }
+          }}
           style={tornadoTargeting || explosionTargeting ? { cursor: "crosshair" } : undefined}
         />
       </div>
+
+      <TargetingHint
+        visible={tornadoTargeting || explosionTargeting}
+        abilityName={tornadoTargeting ? 'Tornado' : 'Explosion'}
+      />
 
       {/* Dev tools (collapsed by default) */}
       <div className="dev-tools-corner">

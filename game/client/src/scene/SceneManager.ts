@@ -9,6 +9,7 @@ import { CoinMeshManager } from "./CoinMeshManager";
 import { SoundManager } from "./SoundManager";
 import { PostProcessing } from "./PostProcessing";
 import { VFXManager } from "./VFXManager";
+import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 
 // All toon material names to track
@@ -34,6 +35,7 @@ export class SceneManager {
   private soundManager: SoundManager;
   private postProcessing: PostProcessing;
   private vfxManager: VFXManager;
+  private targetingReticle: TargetingReticle;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -101,6 +103,9 @@ export class SceneManager {
 
     // Start VFX after theme is applied so wall colors are cached correctly
     this.vfxManager.init();
+
+    // Initialize targeting reticle (after VFX init)
+    this.targetingReticle = new TargetingReticle(this.scene);
 
     // Initialize hole portal VFX (must be after StaticMeshes + VFXManager init)
     const leftWallParent = this.staticMeshes.getLeftWallFrontParent();
@@ -304,6 +309,7 @@ export class SceneManager {
 
     window.removeEventListener("resize", this.resizeHandler);
 
+    this.targetingReticle.dispose();
     this.vfxManager.dispose();
     this.postProcessing.dispose();
     this.soundManager.dispose();
@@ -594,6 +600,28 @@ export class SceneManager {
 
   getJackpotWheel() {
     return this.staticMeshes.getJackpotWheel();
+  }
+
+  // ── Targeting Reticle ──────────────────────────────────────────────────
+
+  showTargetingReticle(type: TargetingType): void {
+    this.targetingReticle.show(type);
+  }
+
+  hideTargetingReticle(): void {
+    this.targetingReticle.hide();
+  }
+
+  updateTargetingReticle(pos: Vector3): void {
+    this.targetingReticle.update(pos);
+  }
+
+  confirmTargetingReticle(): void {
+    this.targetingReticle.playConfirm();
+  }
+
+  isTargetingReticleVisible(): boolean {
+    return this.targetingReticle.isVisible();
   }
 
   // ── VFX Triggers (called from App) ─────────────────────────────────────
