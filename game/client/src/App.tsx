@@ -392,6 +392,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
           const isSnapshotFrame = gameClient.consumeSnapshotFlag();
           if (isSnapshotFrame) {
             knownCoins.clear();
+            sceneManager.clearCoins();
             // Seed key coin IDs from snapshot body types
             const snapshotKeyCoinIds = gameClient.consumeSnapshotKeyCoinIds();
             if (snapshotKeyCoinIds) {
