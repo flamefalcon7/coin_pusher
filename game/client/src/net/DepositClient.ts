@@ -33,6 +33,13 @@ export interface WithdrawalRecord {
 export interface WithdrawRequest {
   to_address: string;
   amount: string;
+  nonce: string;
+  signature: string;
+}
+
+export interface WithdrawNonceResponse {
+  nonce: string;
+  expires_in: number;
 }
 
 export interface WithdrawResponse {
@@ -58,6 +65,14 @@ export async function getDeposits(apiUrl: string, token: string): Promise<{ depo
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`Failed to fetch deposits: ${res.status}`);
+  return res.json();
+}
+
+export async function getWithdrawNonce(apiUrl: string, token: string): Promise<WithdrawNonceResponse> {
+  const res = await fetch(`${apiUrl}/v1/withdraw/nonce`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Failed to fetch withdraw nonce: ${res.status}`);
   return res.json();
 }
 

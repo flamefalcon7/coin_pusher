@@ -3,24 +3,29 @@ package depositgrp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/deposit"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/ethereum"
 )
 
 // Group holds the handler dependencies.
 type Group struct {
 	deposit *deposit.Core
+	user    *user.Core
 }
 
 // New constructs a handler Group.
-func New(deposit *deposit.Core) *Group {
-	return &Group{deposit: deposit}
+func New(deposit *deposit.Core, user *user.Core) *Group {
+	return &Group{deposit: deposit, user: user}
 }
 
 // =========================================================================
@@ -111,12 +116,41 @@ func (g *Group) ListDeposits(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 // =========================================================================
+// GET /v1/withdraw/nonce
+// =========================================================================
+
+type nonceResponse struct {
+	Nonce     string `json:"nonce"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// WithdrawNonce generates a one-time nonce for withdraw signature verification.
+func (g *Group) WithdrawNonce(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	_, ok := mid.GetClaims(ctx)
+	if !ok {
+		return v1.NewAuthError()
+	}
+
+	rec, err := g.user.GenerateNonce(ctx)
+	if err != nil {
+		return err
+	}
+
+	return v1.Respond(w, http.StatusOK, nonceResponse{
+		Nonce:     rec.Nonce,
+		ExpiresIn: 300,
+	})
+}
+
+// =========================================================================
 // POST /v1/withdraw
 // =========================================================================
 
 type withdrawRequest struct {
 	ToAddress string `json:"to_address"`
 	Amount    string `json:"amount"`
+	Nonce     string `json:"nonce"`
+	Signature string `json:"signature"`
 }
 
 type withdrawResponse struct {
@@ -130,6 +164,8 @@ type withdrawResponse struct {
 }
 
 // RequestWithdrawal handles a withdrawal request from the user.
+// It verifies the user's wallet signature (EIP-191 personal_sign) before
+// proceeding with the withdrawal.
 func (g *Group) RequestWithdrawal(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	claims, ok := mid.GetClaims(ctx)
 	if !ok {
@@ -146,11 +182,46 @@ func (g *Group) RequestWithdrawal(ctx context.Context, w http.ResponseWriter, r 
 		return err
 	}
 
+	if req.Nonce == "" || req.Signature == "" {
+		return v1.NewRequestError(fmt.Errorf("nonce and signature are required"), http.StatusBadRequest)
+	}
+
 	amount, err := decimal.NewFromString(req.Amount)
 	if err != nil {
 		return v1.NewRequestError(err, http.StatusBadRequest)
 	}
 
+	// 1. Consume nonce (prevents replay).
+	if _, err := g.user.ConsumeNonce(ctx, req.Nonce); err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid or expired nonce"), http.StatusUnauthorized)
+	}
+
+	// 2. Validate to_address is a well-formed hex address.
+	if _, err := ethereum.NormalizeAddress(req.ToAddress); err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid to_address"), http.StatusBadRequest)
+	}
+
+	// 3. Reconstruct the signed message and recover the signer address.
+	// IMPORTANT: Use req.ToAddress (raw) — NOT the EIP-55 normalized form —
+	// because the client signs with the address as the user typed it.
+	message := ethereum.FormatWithdrawMessage(req.Nonce, req.ToAddress, amount.StringFixed(6))
+	recoveredAddr, err := ethereum.VerifyPersonalSign(message, req.Signature)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid signature"), http.StatusUnauthorized)
+	}
+
+	// 4. Look up the wallet address bound to this account.
+	walletAddr, err := g.user.QueryWalletAddress(ctx, accountID)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("no wallet linked to account"), http.StatusUnauthorized)
+	}
+
+	// 5. Compare recovered address with bound wallet address.
+	if !strings.EqualFold(recoveredAddr, walletAddr) {
+		return v1.NewRequestError(fmt.Errorf("signature does not match wallet"), http.StatusUnauthorized)
+	}
+
+	// 6. Proceed with the existing withdrawal logic.
 	wr, err := g.deposit.RequestWithdrawal(ctx, accountID, req.ToAddress, amount, deposit.DefaultChain)
 	if err != nil {
 		return err

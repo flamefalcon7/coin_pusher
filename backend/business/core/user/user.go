@@ -162,6 +162,17 @@ func (c *Core) IncrementUSDCBalance(ctx context.Context, accountID uuid.UUID, am
 	return err
 }
 
+// QueryWalletAddress returns the wallet address bound to an account.
+func (c *Core) QueryWalletAddress(ctx context.Context, accountID uuid.UUID) (string, error) {
+	return c.storer.QueryWalletAddress(ctx, accountID)
+}
+
+// ConsumeNonce atomically consumes (deletes) a nonce. Returns ErrNotFound if
+// the nonce does not exist or has expired.
+func (c *Core) ConsumeNonce(ctx context.Context, nonce string) (NonceRecord, error) {
+	return c.storer.ConsumeNonce(ctx, nonce)
+}
+
 // -------------------------------------------------------------------------
 // Wallet Login
 // -------------------------------------------------------------------------

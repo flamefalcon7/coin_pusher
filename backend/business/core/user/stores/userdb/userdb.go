@@ -308,3 +308,23 @@ func (s *Store) CountReferrals(ctx context.Context, accountID uuid.UUID) (int, e
 
 	return count, nil
 }
+
+// QueryWalletAddress returns the wallet address bound to an account via
+// auth_providers (provider_type='wallet'). Returns ErrNotFound if no wallet
+// provider is linked.
+func (s *Store) QueryWalletAddress(ctx context.Context, accountID uuid.UUID) (string, error) {
+	const q = `
+		SELECT provider_uid FROM auth_providers
+		WHERE account_id = $1 AND provider_type = 'wallet'
+		LIMIT 1`
+
+	var addr string
+	if err := s.db.QueryRowContext(ctx, q, accountID).Scan(&addr); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", v1.NewRequestError(v1.ErrNotFound, 404)
+		}
+		return "", fmt.Errorf("querying wallet address for account[%s]: %w", accountID, err)
+	}
+
+	return addr, nil
+}

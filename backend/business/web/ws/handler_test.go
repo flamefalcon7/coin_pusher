@@ -101,6 +101,9 @@ func (m *mockUserStorer) ConsumeNonce(_ context.Context, _ string) (user.NonceRe
 	return user.NonceRecord{}, nil
 }
 func (m *mockUserStorer) PurgeExpiredNonces(_ context.Context) (int64, error) { return 0, nil }
+func (m *mockUserStorer) QueryWalletAddress(_ context.Context, _ uuid.UUID) (string, error) {
+	return "", nil
+}
 
 // ---------------------------------------------------------------------------
 // Test helper

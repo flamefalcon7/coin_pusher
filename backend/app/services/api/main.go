@@ -751,9 +751,10 @@ func buildAPIMux(
 
 		// Deposit/withdrawal routes (only if wallet is configured).
 		if depositCore != nil {
-			depGrp := depositgrp.New(depositCore)
+			depGrp := depositgrp.New(depositCore, userCore)
 			r.Get("/v1/deposit/address", mid.Errors(log, depGrp.GetAddress))
 			r.Get("/v1/deposits", mid.Errors(log, depGrp.ListDeposits))
+			r.Get("/v1/withdraw/nonce", mid.Errors(log, depGrp.WithdrawNonce))
 			r.Post("/v1/withdraw", mid.Errors(log, depGrp.RequestWithdrawal))
 			r.Get("/v1/withdrawals", mid.Errors(log, depGrp.ListWithdrawals))
 		}
