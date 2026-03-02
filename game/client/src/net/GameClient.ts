@@ -38,6 +38,8 @@ export type InventoryUpdateCallback = (inventory: {
 }) => void;
 export type MegaspeakerCallback = (speakerName: string, message: string, timestamp: number) => void;
 export type MegaspeakerErrorCallback = (error: string) => void;
+export type IdleWarningCallback = () => void;
+export type IdleTimeoutCallback = () => void;
 
 export class GameClient {
   private wsClient: WebSocketClient;
@@ -62,6 +64,8 @@ export class GameClient {
   private inventoryUpdateCallback?: InventoryUpdateCallback;
   private megaspeakerCallback?: MegaspeakerCallback;
   private megaspeakerErrorCallback?: MegaspeakerErrorCallback;
+  private idleWarningCallback?: IdleWarningCallback;
+  private idleTimeoutCallback?: IdleTimeoutCallback;
   private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
@@ -91,6 +95,16 @@ export class GameClient {
     this.wsClient.onClose((code) => {
       if ((code === 4401 || code === 4403) && this.authFailureCallback) {
         this.authFailureCallback();
+        return;
+      }
+      if (code === 4408) {
+        if (this.idleTimeoutCallback) {
+          this.idleTimeoutCallback();
+        }
+        // Still fire disconnected so UI disables buttons etc.
+        if (this.connectionStatusCallback) {
+          this.connectionStatusCallback("disconnected");
+        }
         return;
       }
       if (this.connectionStatusCallback) {
@@ -269,6 +283,12 @@ export class GameClient {
         }
         break;
 
+      case "idle_warning":
+        if (this.idleWarningCallback) {
+          this.idleWarningCallback();
+        }
+        break;
+
       case "welcome":
         this.userId = message.user_id;
         console.log("Assigned user ID:", this.userId);
@@ -440,6 +460,14 @@ export class GameClient {
 
   onMegaspeakerError(callback: MegaspeakerErrorCallback): void {
     this.megaspeakerErrorCallback = callback;
+  }
+
+  onIdleWarning(callback: IdleWarningCallback): void {
+    this.idleWarningCallback = callback;
+  }
+
+  onIdleTimeout(callback: IdleTimeoutCallback): void {
+    this.idleTimeoutCallback = callback;
   }
 
   sendMegaspeaker(message: string): void {

@@ -243,6 +243,11 @@ export type MegaspeakerErrorMessage = {
   error: string;
 };
 
+// Server → Client: Idle warning (sent ~5min before disconnect)
+export type IdleWarningMessage = {
+  op: "idle_warning";
+};
+
 // Server → Client: Chest open result
 export type ChestOpenResultMessage = {
   op: "chest_open_result";
@@ -343,7 +348,8 @@ export type ServerMessage =
   | InventoryUpdateMessage
   | ChestOpenResultMessage
   | MegaspeakerMessage
-  | MegaspeakerErrorMessage;
+  | MegaspeakerErrorMessage
+  | IdleWarningMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
@@ -410,7 +416,8 @@ export const NETWORK_CONFIG = {
   EXTRAPOLATION_MAX_TIME: 150, // ms (max time to extrapolate into the future)
   PING_INTERVAL: 5000, // ms
   RTT_SAMPLES: 5, // Number of RTT samples for median calculation
-  CONNECTION_IDLE_TIMEOUT: 300000, // 5 minutes (300000 ms) - disconnect idle connections
+  CONNECTION_IDLE_TIMEOUT: 1800000, // 30 minutes (1800000 ms) - disconnect idle connections
+  CONNECTION_IDLE_WARNING: 1500000, // 25 minutes (1500000 ms) - warn before disconnect
   CONNECTION_CHECK_INTERVAL: 30000, // 30 seconds - check for idle connections
 } as const;
 

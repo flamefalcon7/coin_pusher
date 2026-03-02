@@ -245,6 +245,8 @@ func (h *Handler) handleSpawnStack(c *Connection, msg ClientMessage) {
 }
 
 func (h *Handler) handleShock(c *Connection) {
+	c.TouchActivity()
+
 	if !c.CanShock() {
 		return
 	}
@@ -267,6 +269,8 @@ func (h *Handler) handleShock(c *Connection) {
 }
 
 func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
+	c.TouchActivity()
+
 	if !c.CanTornado() {
 		return
 	}
@@ -311,6 +315,8 @@ func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 }
 
 func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
+	c.TouchActivity()
+
 	if !c.CanExplosion() {
 		return
 	}
@@ -355,6 +361,8 @@ func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 }
 
 func (h *Handler) handleLightning(c *Connection) {
+	c.TouchActivity()
+
 	if !c.CanLightning() {
 		return
 	}
@@ -377,6 +385,8 @@ func (h *Handler) handleLightning(c *Connection) {
 }
 
 func (h *Handler) handleSuperPush(c *Connection) {
+	c.TouchActivity()
+
 	if !c.CanSuperPush() {
 		return
 	}
@@ -448,6 +458,8 @@ func (h *Handler) handleUpdateSceneObjects(c *Connection, msg ClientMessage) {
 const maxBatchCount = 100
 
 func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
+	c.TouchActivity()
+
 	count := msg.Count
 	if count <= 0 || count > maxBatchCount {
 		return
@@ -541,6 +553,8 @@ func (h *Handler) handlePing(c *Connection) {
 }
 
 func (h *Handler) handleMegaspeaker(c *Connection, msg ClientMessage) {
+	c.TouchActivity()
+
 	trimmed := strings.TrimSpace(msg.Message)
 	if len(trimmed) == 0 || utf8.RuneCountInString(trimmed) > 150 {
 		c.SendMessage(map[string]interface{}{

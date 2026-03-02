@@ -1,0 +1,79 @@
+/* ── Idle Warning Banner ─────────────────────────────────────────────── */
+.idle-warning-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  padding: 10px 16px;
+  background: rgba(232, 150, 32, 0.92);
+  color: #1a0e2e;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  animation: idle-banner-slide-in 0.3s ease-out;
+}
+
+@keyframes idle-banner-slide-in {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ── Idle Timeout Overlay ────────────────────────────────────────────── */
+.idle-timeout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 14, 46, 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.idle-timeout-card {
+  text-align: center;
+  padding: 32px 48px;
+  border-radius: 12px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.idle-timeout-card h2 {
+  margin: 0 0 8px;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 22px;
+  color: var(--accent-pink);
+}
+
+.idle-timeout-card p {
+  margin: 0 0 20px;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  color: var(--text-color);
+  opacity: 0.8;
+}
+
+.idle-timeout-btn {
+  padding: 10px 32px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-teal);
+  color: #1a0e2e;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.idle-timeout-btn:hover {
+  background: #5ee0d6;
+  transform: scale(1.04);
+}
+
+.idle-timeout-btn:active {
+  transform: scale(0.97);
+}

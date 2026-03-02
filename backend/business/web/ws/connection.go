@@ -28,6 +28,8 @@ type Connection struct {
 	lastExplosion  time.Time
 	lastLightning  time.Time
 	lastSuperPush  time.Time
+	lastActivity   time.Time
+	idleWarned     bool
 	mu             sync.Mutex
 	closed         bool
 }
@@ -35,11 +37,12 @@ type Connection struct {
 // NewConnection creates a Connection and registers it with the hub.
 func NewConnection(conn *websocket.Conn, hub *Hub, userID, role string) *Connection {
 	return &Connection{
-		conn:   conn,
-		send:   make(chan []byte, sendBufLen),
-		hub:    hub,
-		userID: userID,
-		role:   role,
+		conn:         conn,
+		send:         make(chan []byte, sendBufLen),
+		hub:          hub,
+		userID:       userID,
+		role:         role,
+		lastActivity: time.Now(),
 	}
 }
 
@@ -179,6 +182,22 @@ func (c *Connection) CanSuperPush() bool {
 	}
 	c.lastSuperPush = now
 	return true
+}
+
+// TouchActivity resets the idle timer (called on game actions, not pings).
+func (c *Connection) TouchActivity() {
+	c.mu.Lock()
+	c.lastActivity = time.Now()
+	c.idleWarned = false
+	c.mu.Unlock()
+}
+
+// IdleDuration returns how long the connection has been idle.
+func (c *Connection) IdleDuration() time.Duration {
+	c.mu.Lock()
+	d := time.Since(c.lastActivity)
+	c.mu.Unlock()
+	return d
 }
 
 // Close closes the connection.
