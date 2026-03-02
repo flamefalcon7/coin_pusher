@@ -1,6 +1,13 @@
 package ws
 
-import "sync"
+import (
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/vmihailenco/msgpack/v5"
+	"go.uber.org/zap"
+)
 
 // Hub manages the set of active WebSocket connections and caches the latest snapshot.
 type Hub struct {
@@ -95,4 +102,59 @@ func (h *Hub) SendToUser(userID string, data []byte) {
 			return
 		}
 	}
+}
+
+const (
+	idleCloseCode = 4408
+	idleCloseText = "idle timeout"
+)
+
+// StartIdleChecker starts a goroutine that periodically checks for idle
+// connections. It sends an idle_warning message at warningDur, and closes the
+// connection with code 4408 at timeoutDur.
+func (h *Hub) StartIdleChecker(log *zap.SugaredLogger, checkInterval, warningDur, timeoutDur time.Duration) {
+	go func() {
+		ticker := time.NewTicker(checkInterval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			h.mu.RLock()
+			// Snapshot the connection set to avoid holding the lock during I/O.
+			conns := make([]*Connection, 0, len(h.connections))
+			for c := range h.connections {
+				conns = append(conns, c)
+			}
+			h.mu.RUnlock()
+
+			for _, c := range conns {
+				idle := c.IdleDuration()
+
+				if idle >= timeoutDur {
+					log.Infow("idle timeout, closing connection", "user_id", c.userID, "idle", idle)
+					// Send WS close frame with custom code, then close.
+					msg := websocket.FormatCloseMessage(idleCloseCode, idleCloseText)
+					c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(writeWait))
+					c.conn.Close()
+					continue
+				}
+
+				if idle >= warningDur {
+					c.mu.Lock()
+					alreadyWarned := c.idleWarned
+					c.idleWarned = true
+					c.mu.Unlock()
+
+					if !alreadyWarned {
+						log.Infow("idle warning sent", "user_id", c.userID, "idle", idle)
+						data, err := msgpack.Marshal(map[string]interface{}{
+							"op": "idle_warning",
+						})
+						if err == nil {
+							c.SendRaw(data)
+						}
+					}
+				}
+			}
+		}
+	}()
 }

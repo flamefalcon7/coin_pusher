@@ -238,6 +238,18 @@ func run() error {
 	// -------------------------------------------------------------------------
 	// WebSocket Hub, Relay, Handler
 	hub := ws.NewHub()
+
+	idleWarning := 25 * time.Minute
+	idleTimeout := 30 * time.Minute
+	idleCheck := 30 * time.Second
+	if os.Getenv("IDLE_TEST") == "1" {
+		idleWarning = 10 * time.Second
+		idleTimeout = 20 * time.Second
+		idleCheck = 3 * time.Second
+		log.Infow("idle timeout TEST MODE enabled", "warning", idleWarning, "timeout", idleTimeout)
+	}
+	hub.StartIdleChecker(log, idleCheck, idleWarning, idleTimeout)
+
 	relay := ws.NewRelay(log, nc, hub, "main")
 	if err := relay.Start(); err != nil {
 		return fmt.Errorf("starting nats relay: %w", err)

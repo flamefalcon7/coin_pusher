@@ -111,6 +111,7 @@ services:
       - BACKEND_AUTH_DEV_MODE=true
       - BACKEND_GAME_API_KEY=dev-secret
       - BACKEND_NATS_URL=nats://nats:4222
+      - IDLE_TEST=${IDLE_TEST:-0}
     networks:
       - coin-pusher-network
     depends_on:

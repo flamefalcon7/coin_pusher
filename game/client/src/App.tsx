@@ -15,6 +15,7 @@ import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type Auth
 import { InventoryClient } from "./net/InventoryClient";
 import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
 import { TargetingHint } from "./ui/TargetingHint";
+import { IdleWarningBanner, IdleTimeoutOverlay } from "./ui/IdleOverlay";
 import { PlayerInfo } from "./ui/PlayerInfo";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
@@ -107,6 +108,8 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   });
   const [megaspeakerCount, setMegaspeakerCount] = useState(0);
   const [megaspeakerMessages, setMegaspeakerMessages] = useState<MegaspeakerMsg[]>([]);
+  const [idleWarning, setIdleWarning] = useState(false);
+  const [idleTimeout, setIdleTimeout] = useState(false);
   const [megaspeakerOpen, setMegaspeakerOpen] = useState(false);
   const [megaspeakerUnread, setMegaspeakerUnread] = useState(0);
   const megaspeakerOpenRef = useRef(false);
@@ -317,6 +320,14 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
     gameClient.onMegaspeakerError((error) => {
       console.warn("Megaspeaker error:", error);
+    });
+
+    gameClient.onIdleWarning(() => {
+      setIdleWarning(true);
+    });
+
+    gameClient.onIdleTimeout(() => {
+      setIdleTimeout(true);
     });
 
     // Connect to server
@@ -558,6 +569,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
       return;
     }
 
+    setIdleWarning(false);
     lastRequestedAmount.current = count;
     gameClientRef.current.batchInsert(slotIndex, count);
     sceneManagerRef.current?.getSoundManager().playCoinInsert();
@@ -571,6 +583,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!gameClientRef.current || !gameClientRef.current.isConnected() || shockCooldown) {
       return;
     }
+    setIdleWarning(false);
     gameClientRef.current.shock();
     // VFX/sound/cooldown now synced via server ability broadcast
   };
@@ -595,6 +608,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
   const handleTornadoPlace = (x: number, z: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
+    setIdleWarning(false);
     sceneManagerRef.current?.confirmTargetingReticle();
     gameClientRef.current.tornado(x, z);
     // VFX/cooldown now synced via server ability broadcast
@@ -621,6 +635,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
   const handleExplosionPlace = (x: number, z: number) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) return;
+    setIdleWarning(false);
     sceneManagerRef.current?.confirmTargetingReticle();
     gameClientRef.current.explosion(x, z);
     // VFX/cooldown now synced via server ability broadcast
@@ -631,6 +646,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!gameClientRef.current || !gameClientRef.current.isConnected() || lightningCooldown) {
       return;
     }
+    setIdleWarning(false);
     gameClientRef.current.lightning();
     // VFX/cooldown now synced via server ability broadcast
   };
@@ -639,6 +655,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!gameClientRef.current || !gameClientRef.current.isConnected() || superPushCooldown) {
       return;
     }
+    setIdleWarning(false);
     gameClientRef.current.superPush();
     // VFX/cooldown now synced via server ability broadcast
   };
@@ -1027,6 +1044,9 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         onToggle={handleMegaspeakerToggle}
         isOpen={megaspeakerOpen}
       />
+
+      {idleWarning && !idleTimeout && <IdleWarningBanner />}
+      {idleTimeout && <IdleTimeoutOverlay />}
     </div>
   );
 }
