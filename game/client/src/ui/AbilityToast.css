@@ -1,0 +1,63 @@
+.ability-toast-container {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 200;
+}
+
+.ability-toast-item {
+  background: rgba(30, 20, 50, 0.92);
+  color: #F5E6B8;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: clamp(13px, 2.5vw, 16px);
+  font-weight: 700;
+  padding: 8px 20px;
+  border-radius: 10px;
+  border: 2px solid rgba(160, 120, 255, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  animation: ability-toast-in 0.3s ease-out;
+  white-space: nowrap;
+}
+
+.ability-toast-item.fading {
+  animation: ability-toast-out 0.4s ease-in forwards;
+}
+
+.ability-toast-icon {
+  font-size: 1.2em;
+}
+
+.ability-toast-text strong {
+  color: #B8A0FF;
+}
+
+@keyframes ability-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ability-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+}

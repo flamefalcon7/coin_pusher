@@ -98,33 +98,33 @@ async function initialize() {
   });
 
   // Subscribe to shock commands from Go backend
-  natsClient.subscribeShock((_cmd: ShockCommand) => {
+  natsClient.subscribeShock((cmd: ShockCommand) => {
     gameLoop.shockPins();
-    natsClient.publishAbilityEvent({ op: "ability", ability: "shock" });
+    natsClient.publishAbilityEvent({ op: "ability", ability: "shock", username: cmd.username });
   });
 
   // Subscribe to tornado commands from Go backend
   natsClient.subscribeTornado((cmd: TornadoCommand) => {
     gameLoop.startTornado(cmd.x, cmd.z);
-    natsClient.publishAbilityEvent({ op: "ability", ability: "tornado", x: cmd.x, z: cmd.z });
+    natsClient.publishAbilityEvent({ op: "ability", ability: "tornado", x: cmd.x, z: cmd.z, username: cmd.username });
   });
 
   // Subscribe to explosion commands from Go backend
   natsClient.subscribeExplosion((cmd: ExplosionCommand) => {
     gameLoop.explode(cmd.x, cmd.z);
-    natsClient.publishAbilityEvent({ op: "ability", ability: "explosion", x: cmd.x, z: cmd.z });
+    natsClient.publishAbilityEvent({ op: "ability", ability: "explosion", x: cmd.x, z: cmd.z, username: cmd.username });
   });
 
   // Subscribe to lightning commands from Go backend
-  natsClient.subscribeLightning((_cmd: LightningCommand) => {
+  natsClient.subscribeLightning((cmd: LightningCommand) => {
     gameLoop.lightning();
-    natsClient.publishAbilityEvent({ op: "ability", ability: "lightning" });
+    natsClient.publishAbilityEvent({ op: "ability", ability: "lightning", username: cmd.username });
   });
 
   // Subscribe to super_push commands from Go backend
-  natsClient.subscribeSuperPush((_cmd: SuperPushCommand) => {
+  natsClient.subscribeSuperPush((cmd: SuperPushCommand) => {
     pusher.startSuperPush();
-    natsClient.publishAbilityEvent({ op: "ability", ability: "superPush" });
+    natsClient.publishAbilityEvent({ op: "ability", ability: "superPush", username: cmd.username });
   });
 
   // Subscribe to clear_all commands from Go backend

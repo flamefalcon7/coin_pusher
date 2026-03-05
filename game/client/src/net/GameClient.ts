@@ -17,7 +17,7 @@ export type ConnectionStatusCallback = (
 export type PingCallback = (ping: number) => void;
 export type SlotSpinCallback = (reels: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean) => void;
 export type SlotCounterCallback = (counter: number) => void;
-export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number) => void;
+export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number, username?: string) => void;
 export type CoinSpawnCallback = (coins: { id: number; owner_id: string; is_key_coin?: boolean }[]) => void;
 export type HeatUpdateCallback = (players: { user_id: string; share: number; raw_heat: number }[]) => void;
 export type QueueUpdateCallback = (userId: string, pending: number) => void;
@@ -199,7 +199,7 @@ export class GameClient {
 
       case "ability":
         if (this.abilityEventCallback) {
-          this.abilityEventCallback(message.ability, message.x, message.z);
+          this.abilityEventCallback(message.ability, message.x, message.z, message.username);
         }
         break;
 

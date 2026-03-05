@@ -12,31 +12,36 @@ type NATSSpawnStackCmd struct {
 
 // NATSShockCmd is published to game.{room}.cmd.shock.
 type NATSShockCmd struct {
-	UserID string `json:"user_id"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
 }
 
 // NATSTornadoCmd is published to game.{room}.cmd.tornado.
 type NATSTornadoCmd struct {
-	UserID string  `json:"user_id"`
-	X      float64 `json:"x"`
-	Z      float64 `json:"z"`
+	UserID   string  `json:"user_id"`
+	Username string  `json:"username"`
+	X        float64 `json:"x"`
+	Z        float64 `json:"z"`
 }
 
 // NATSExplosionCmd is published to game.{room}.cmd.explosion.
 type NATSExplosionCmd struct {
-	UserID string  `json:"user_id"`
-	X      float64 `json:"x"`
-	Z      float64 `json:"z"`
+	UserID   string  `json:"user_id"`
+	Username string  `json:"username"`
+	X        float64 `json:"x"`
+	Z        float64 `json:"z"`
 }
 
 // NATSLightningCmd is published to game.{room}.cmd.lightning.
 type NATSLightningCmd struct {
-	UserID string `json:"user_id"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
 }
 
 // NATSSuperPushCmd is published to game.{room}.cmd.super_push.
 type NATSSuperPushCmd struct {
-	UserID string `json:"user_id"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
 }
 
 // NATSClearAllCmd is published to game.{room}.cmd.clear_all.

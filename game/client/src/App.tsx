@@ -9,6 +9,7 @@ import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 import { HeatMeter } from "./ui/HeatMeter";
 import { RewardToast } from "./ui/RewardToast";
 import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
+import { AbilityToast, type AbilityToastEntry } from "./ui/AbilityToast";
 import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
 import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
@@ -117,6 +118,8 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     winnerName: string; count: number; isMe: boolean; id: number;
   } | null>(null);
   const keyCoinDrawIdRef = useRef(0);
+  const [abilityToasts, setAbilityToasts] = useState<AbilityToastEntry[]>([]);
+  const abilityToastIdRef = useRef(0);
   // Track which coin IDs are key coins for rendering
   const keyCoinIdsRef = useRef<Set<number>>(new Set());
   const lastRequestedAmount = useRef(0);
@@ -196,7 +199,11 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     });
 
     // Set ability event callback — plays VFX/sound + syncs cooldown for ALL clients
-    gameClient.onAbilityEvent((ability, x, z) => {
+    gameClient.onAbilityEvent((ability, x, z, username) => {
+      if (username) {
+        abilityToastIdRef.current++;
+        setAbilityToasts((prev) => [...prev, { id: abilityToastIdRef.current, username, ability }].slice(-3));
+      }
       const platformY = 0.25 + 0.05 / 2;
       switch (ability) {
         case "shock":
@@ -990,6 +997,11 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
           id={keyCoinDraw.id}
         />
       )}
+
+      <AbilityToast
+        entries={abilityToasts}
+        onRemove={(id) => setAbilityToasts((prev) => prev.filter((e) => e.id !== id))}
+      />
 
       {showChestPage && (
         <ChestPage
