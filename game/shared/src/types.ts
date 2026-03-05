@@ -289,6 +289,7 @@ export type AbilityEventMessage = {
   ability: AbilityType;
   x?: number; // position for tornado/explosion
   z?: number;
+  username: string;
 };
 
 // Server → Client: Welcome message with assigned user ID

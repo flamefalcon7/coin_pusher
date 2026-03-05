@@ -29,26 +29,31 @@ export type SpawnStackCommand = {
 
 export type ShockCommand = {
   user_id: string;
+  username: string;
 };
 
 export type TornadoCommand = {
   user_id: string;
+  username: string;
   x: number;
   z: number;
 };
 
 export type ExplosionCommand = {
   user_id: string;
+  username: string;
   x: number;
   z: number;
 };
 
 export type LightningCommand = {
   user_id: string;
+  username: string;
 };
 
 export type SuperPushCommand = {
   user_id: string;
+  username: string;
 };
 
 export type ClearAllCommand = {
@@ -346,6 +351,7 @@ export class NATSClient {
           ability: msg.ability,
           x: msg.x,
           z: msg.z,
+          username: msg.username,
         },
       },
     });

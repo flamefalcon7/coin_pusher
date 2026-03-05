@@ -259,6 +259,21 @@ func (h *Handler) handleSpawnStack(c *Connection, msg ClientMessage) {
 	h.nc.Publish(TopicSpawnStack(h.room), data)
 }
 
+// resolveDisplayName looks up the user's display name, falling back to a
+// truncated user ID on error.
+func (h *Handler) resolveDisplayName(userID string) string {
+	name := userID[:8] + "..."
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return name
+	}
+	acct, err := h.userCore.QueryByID(context.Background(), uid)
+	if err == nil && acct.DisplayName != nil {
+		name = *acct.DisplayName
+	}
+	return name
+}
+
 func (h *Handler) handleShock(c *Connection) {
 	c.TouchActivity()
 
@@ -273,7 +288,8 @@ func (h *Handler) handleShock(c *Connection) {
 	metrics.AbilityUsageTotal.WithLabelValues("shock").Inc()
 
 	cmd := NATSShockCmd{
-		UserID: c.userID,
+		UserID:   c.userID,
+		Username: h.resolveDisplayName(c.userID),
 	}
 
 	data, err := json.Marshal(cmd)
@@ -319,9 +335,10 @@ func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 	}
 
 	cmd := NATSTornadoCmd{
-		UserID: c.userID,
-		X:      x,
-		Z:      z,
+		UserID:   c.userID,
+		Username: h.resolveDisplayName(c.userID),
+		X:        x,
+		Z:        z,
 	}
 
 	data, err := json.Marshal(cmd)
@@ -367,9 +384,10 @@ func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 	}
 
 	cmd := NATSExplosionCmd{
-		UserID: c.userID,
-		X:      x,
-		Z:      z,
+		UserID:   c.userID,
+		Username: h.resolveDisplayName(c.userID),
+		X:        x,
+		Z:        z,
 	}
 
 	data, err := json.Marshal(cmd)
@@ -395,7 +413,8 @@ func (h *Handler) handleLightning(c *Connection) {
 	metrics.AbilityUsageTotal.WithLabelValues("lightning").Inc()
 
 	cmd := NATSLightningCmd{
-		UserID: c.userID,
+		UserID:   c.userID,
+		Username: h.resolveDisplayName(c.userID),
 	}
 
 	data, err := json.Marshal(cmd)
@@ -421,7 +440,8 @@ func (h *Handler) handleSuperPush(c *Connection) {
 	metrics.AbilityUsageTotal.WithLabelValues("super_push").Inc()
 
 	cmd := NATSSuperPushCmd{
-		UserID: c.userID,
+		UserID:   c.userID,
+		Username: h.resolveDisplayName(c.userID),
 	}
 
 	data, err := json.Marshal(cmd)

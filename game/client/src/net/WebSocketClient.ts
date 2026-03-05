@@ -151,6 +151,7 @@ export class WebSocketClient {
           ability: v.ability as import('@coin-pusher/shared').AbilityType,
           x: v.x,
           z: v.z,
+          username: v.username,
         };
       }
       case "coinSpawn": {
