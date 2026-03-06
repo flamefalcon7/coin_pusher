@@ -1011,6 +1011,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
           scrollCounts={scrollCounts}
           onInventoryChange={handleInventoryChange}
           onBalanceChange={setBalance}
+          soundManager={sceneManagerRef.current?.getSoundManager() ?? null}
         />
       )}
 
