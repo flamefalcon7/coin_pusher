@@ -1010,6 +1010,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
           keyCoins={keyCoins}
           scrollCounts={scrollCounts}
           onInventoryChange={handleInventoryChange}
+          onBalanceChange={setBalance}
         />
       )}
 

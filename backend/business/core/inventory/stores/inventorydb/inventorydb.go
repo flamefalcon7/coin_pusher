@@ -76,18 +76,18 @@ func (s *Store) GetInventory(ctx context.Context, accountID uuid.UUID) (inventor
 	return inv, nil
 }
 
-// DecrementKeyCoins decrements key_coins by 1. Fails if key_coins is 0.
-func (s *Store) DecrementKeyCoins(ctx context.Context, accountID uuid.UUID) error {
-	const q = `UPDATE inventory SET key_coins = key_coins - 1, updated_at = NOW()
-		WHERE account_id = $1 AND key_coins > 0`
+// DecrementKeyCoins decrements key_coins by count. Fails if insufficient.
+func (s *Store) DecrementKeyCoins(ctx context.Context, accountID uuid.UUID, count int) error {
+	const q = `UPDATE inventory SET key_coins = key_coins - $2, updated_at = NOW()
+		WHERE account_id = $1 AND key_coins >= $2`
 
-	res, err := s.db.ExecContext(ctx, q, accountID)
+	res, err := s.db.ExecContext(ctx, q, accountID, count)
 	if err != nil {
 		return fmt.Errorf("decrementing key coins: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return v1.NewRequestError(fmt.Errorf("no key coins available"), 400)
+		return v1.NewRequestError(fmt.Errorf("not enough key coins (need %d)", count), 400)
 	}
 	return nil
 }
@@ -168,6 +168,20 @@ func (s *Store) DecrementMegaspeaker(ctx context.Context, accountID uuid.UUID) e
 		return v1.NewRequestError(fmt.Errorf("no megaspeaker charges available"), 400)
 	}
 	return nil
+}
+
+// CreditPlayBalance atomically adds play coins to the account's balance_play
+// within the current transaction. Returns the new balance as a string.
+func (s *Store) CreditPlayBalance(ctx context.Context, accountID uuid.UUID, amount int) (string, error) {
+	const q = `UPDATE accounts SET balance_play = balance_play + $2, updated_at = NOW()
+		WHERE account_id = $1
+		RETURNING balance_play`
+
+	var newBalance string
+	if err := s.db.QueryRowContext(ctx, q, accountID, amount).Scan(&newBalance); err != nil {
+		return "", fmt.Errorf("crediting play balance: %w", err)
+	}
+	return newBalance, nil
 }
 
 // CreateChestOpen inserts a chest open log entry.

@@ -41,7 +41,7 @@ func (m *mockInventoryStorer) GetInventory(ctx context.Context, accountID uuid.U
 	}
 	return inventory.Inventory{}, nil
 }
-func (m *mockInventoryStorer) DecrementKeyCoins(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockInventoryStorer) DecrementKeyCoins(_ context.Context, _ uuid.UUID, _ int) error { return nil }
 func (m *mockInventoryStorer) IncrementScroll(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
@@ -54,6 +54,9 @@ func (m *mockInventoryStorer) DecrementMegaspeaker(ctx context.Context, accountI
 		return m.decrementMegaspeakerFn(ctx, accountID)
 	}
 	return nil
+}
+func (m *mockInventoryStorer) CreditPlayBalance(_ context.Context, _ uuid.UUID, _ int) (string, error) {
+	return "100", nil
 }
 func (m *mockInventoryStorer) CreateChestOpen(_ context.Context, _ inventory.ChestOpen) error {
 	return nil

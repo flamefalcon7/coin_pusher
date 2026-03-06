@@ -13,6 +13,7 @@ export interface InventoryResponse {
 export interface ChestOpenResponse {
   scroll_type: string;
   scroll_count: number;
+  balance_play?: string;
 }
 
 export class InventoryClient {

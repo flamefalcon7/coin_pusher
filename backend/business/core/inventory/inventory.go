@@ -74,13 +74,24 @@ func (c *Core) GetInventory(ctx context.Context, accountID uuid.UUID) (Inventory
 type OpenChestResult struct {
 	ScrollType  string `json:"scroll_type"`
 	ScrollCount int    `json:"scroll_count"`
+	BalancePlay string `json:"balance_play,omitempty"`
 }
 
-// OpenChest consumes 1 key coin and awards a random scroll.
+// OpenChest consumes KeyCoinsPerChest key coins and awards a random item.
 func (c *Core) OpenChest(ctx context.Context, accountID uuid.UUID) (OpenChestResult, error) {
 	scrollType, err := rollScrollType()
 	if err != nil {
 		return OpenChestResult{}, fmt.Errorf("rolling scroll type: %w", err)
+	}
+
+	// For play_coins, determine the coin amount up-front.
+	rewardCount := 1
+	if scrollType == ItemPlayCoins {
+		amt, err := rollPlayCoinsAmount()
+		if err != nil {
+			return OpenChestResult{}, fmt.Errorf("rolling play coins amount: %w", err)
+		}
+		rewardCount = amt
 	}
 
 	var result OpenChestResult
@@ -91,15 +102,23 @@ func (c *Core) OpenChest(ctx context.Context, accountID uuid.UUID) (OpenChestRes
 			return fmt.Errorf("ensure inventory: %w", err)
 		}
 
-		if err := txStorer.DecrementKeyCoins(ctx, accountID); err != nil {
+		if err := txStorer.DecrementKeyCoins(ctx, accountID, KeyCoinsPerChest); err != nil {
 			return err
 		}
 
-		if scrollType == ItemMegaspeaker {
+		var balancePlay string
+		switch scrollType {
+		case ItemMegaspeaker:
 			if err := txStorer.IncrementMegaspeaker(ctx, accountID); err != nil {
 				return fmt.Errorf("increment megaspeaker: %w", err)
 			}
-		} else {
+		case ItemPlayCoins:
+			newBal, err := txStorer.CreditPlayBalance(ctx, accountID, rewardCount)
+			if err != nil {
+				return fmt.Errorf("credit play balance: %w", err)
+			}
+			balancePlay = newBal
+		default:
 			if err := txStorer.IncrementScroll(ctx, accountID, scrollType); err != nil {
 				return fmt.Errorf("increment scroll: %w", err)
 			}
@@ -109,7 +128,7 @@ func (c *Core) OpenChest(ctx context.Context, accountID uuid.UUID) (OpenChestRes
 			OpenID:      uuid.New(),
 			AccountID:   accountID,
 			ScrollType:  scrollType,
-			ScrollCount: 1,
+			ScrollCount: rewardCount,
 			CreatedAt:   time.Now().UTC(),
 		}
 		if err := txStorer.CreateChestOpen(ctx, co); err != nil {
@@ -118,7 +137,8 @@ func (c *Core) OpenChest(ctx context.Context, accountID uuid.UUID) (OpenChestRes
 
 		result = OpenChestResult{
 			ScrollType:  scrollType,
-			ScrollCount: 1,
+			ScrollCount: rewardCount,
+			BalancePlay: balancePlay,
 		}
 		return nil
 	})
@@ -181,6 +201,9 @@ func rollScrollType() (string, error) {
 	return ScrollWeights[len(ScrollWeights)-1].Type, nil
 }
 
+// validScrollType returns true for scroll types that map to dedicated inventory
+// columns (scroll_shock, scroll_tornado, etc.). Megaspeaker and play_coins are
+// NOT scrolls — they have their own increment/credit paths.
 func validScrollType(t string) bool {
 	switch t {
 	case ScrollShock, ScrollTornado, ScrollExplosion, ScrollLightning, ScrollSuperPush:
