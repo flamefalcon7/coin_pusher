@@ -22,10 +22,11 @@ type Storer interface {
 	EnsureInventory(ctx context.Context, accountID uuid.UUID, devDefaults *DevDefaults) error
 	CreditKeyCoins(ctx context.Context, accountID uuid.UUID, count int) error
 	GetInventory(ctx context.Context, accountID uuid.UUID) (Inventory, error)
-	DecrementKeyCoins(ctx context.Context, accountID uuid.UUID) error
+	DecrementKeyCoins(ctx context.Context, accountID uuid.UUID, count int) error
 	IncrementScroll(ctx context.Context, accountID uuid.UUID, scrollType string) error
 	DecrementScroll(ctx context.Context, accountID uuid.UUID, scrollType string) error
 	IncrementMegaspeaker(ctx context.Context, accountID uuid.UUID) error
 	DecrementMegaspeaker(ctx context.Context, accountID uuid.UUID) error
 	CreateChestOpen(ctx context.Context, co ChestOpen) error
+	CreditPlayBalance(ctx context.Context, accountID uuid.UUID, amount int) (string, error)
 }

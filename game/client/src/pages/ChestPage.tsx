@@ -1,9 +1,47 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { InventoryClient, type ChestOpenResponse } from '../net/InventoryClient';
 import type { ScrollCounts } from '../ui/Toolbar';
-import { ChestViewer3D } from './ChestViewer3D';
+import type { SoundManager } from '../scene/SoundManager';
+import { ChestViewer3D, type ChestViewer3DHandle } from './ChestViewer3D';
 import './ChestPage.css';
+
+/* ── Rarity tiers ─────────────────────────────────────────────────────── */
+
+export type RarityTier = 'common' | 'rare' | 'epic';
+
+export const RARITY_COLORS: Record<RarityTier, string> = {
+  common: '#4ECDC4',
+  rare:   '#A855F7',
+  epic:   '#FFD700',
+};
+
+export const RARITY_LABELS: Record<RarityTier, string> = {
+  common: 'Item Acquired!',
+  rare:   'Rare Item!',
+  epic:   'EPIC SCROLL!',
+};
+
+/** Buildup duration in ms per tier. Epic gets a longer buildup for more drama. */
+export const BUILDUP_MS: Record<RarityTier, number> = {
+  common: 800,
+  rare:   1000,
+  epic:   1200,
+};
+
+/** Map server scroll_type → rarity tier */
+function getRarityTier(scrollType: string): RarityTier {
+  if (scrollType === 'super_push') return 'epic';
+  if (scrollType === 'megaspeaker') return 'rare';
+  return 'common';
+}
+
+const KEY_COINS_PER_CHEST = 3;
+
+/** Info for the play_coins reward (not a scroll, handled separately). */
+const PLAY_COINS_INFO = { label: 'Play Coins', emoji: '\uD83E\uDE99' };
+
+/* ── Scroll definitions ───────────────────────────────────────────────── */
 
 const SCROLL_INFO: { key: keyof ScrollCounts; label: string; emoji: string }[] = [
   { key: 'shock',       label: 'Shock',       emoji: '\u26A1' },
@@ -23,15 +61,19 @@ const SCROLL_KEY_MAP: Record<string, keyof ScrollCounts> = {
   megaspeaker: 'megaspeaker',
 };
 
+/* ── Component ────────────────────────────────────────────────────────── */
+
 interface ChestPageProps {
   token: string;
   apiUrl: string;
   keyCoins: number;
   scrollCounts: ScrollCounts;
   onInventoryChange: (keyCoins: number, scrollCounts: ScrollCounts) => void;
+  onBalanceChange?: (balancePlay: string) => void;
+  soundManager?: SoundManager | null;
 }
 
-type ChestState = 'idle' | 'shaking' | 'open' | 'reveal';
+type ChestState = 'idle' | 'buildup' | 'burst' | 'reveal';
 
 export const ChestPage: React.FC<ChestPageProps> = ({
   token,
@@ -39,35 +81,32 @@ export const ChestPage: React.FC<ChestPageProps> = ({
   keyCoins,
   scrollCounts,
   onInventoryChange,
+  onBalanceChange,
+  soundManager,
 }) => {
   const [chestState, setChestState] = useState<ChestState>('idle');
   const [revealResult, setRevealResult] = useState<ChestOpenResponse | null>(null);
+  const [rarityTier, setRarityTier] = useState<RarityTier>('common');
   const [error, setError] = useState<string | null>(null);
-  const [particles, setParticles] = useState<{ id: number; color: string; px: string; py: string }[]>([]);
-  const particleIdRef = useRef(0);
-  const inventoryClientRef = useRef(new InventoryClient(apiUrl));
 
-  const spawnParticles = useCallback(() => {
-    const colors = ['#FFD700', '#E89620', '#E8396B', '#4ECDC4', '#fff'];
-    const newParticles = Array.from({ length: 12 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 40 + Math.random() * 60;
-      return {
-        id: particleIdRef.current++,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        px: `${Math.cos(angle) * dist}px`,
-        py: `${Math.sin(angle) * dist - 30}px`,
-      };
-    });
-    setParticles(newParticles);
+  const inventoryClientRef = useRef(new InventoryClient(apiUrl));
+  const viewerRef = useRef<ChestViewer3DHandle>(null);
+  const skipRef = useRef(false);
+  const animTimersRef = useRef<number[]>([]);
+  const apiResultRef = useRef<ChestOpenResponse | null>(null);
+
+  /** Clear all pending animation timers. */
+  const clearTimers = useCallback(() => {
+    for (const t of animTimersRef.current) clearTimeout(t);
+    animTimersRef.current = [];
   }, []);
 
-  // Clear particles after animation
-  useEffect(() => {
-    if (particles.length === 0) return;
-    const timer = setTimeout(() => setParticles([]), 1100);
-    return () => clearTimeout(timer);
-  }, [particles]);
+  /** Schedule a timeout that can be cleared on skip. */
+  const schedule = useCallback((fn: () => void, ms: number) => {
+    const id = window.setTimeout(fn, ms);
+    animTimersRef.current.push(id);
+    return id;
+  }, []);
 
   // Fetch fresh inventory from server and sync to parent
   const refreshInventory = useCallback(async () => {
@@ -86,119 +125,224 @@ export const ChestPage: React.FC<ChestPageProps> = ({
     }
   }, [token, onInventoryChange]);
 
-  const handleOpen = useCallback(async () => {
-    if (keyCoins <= 0 || chestState !== 'idle') return;
-    setError(null);
+  /** Jump straight to reveal, skipping remaining animation phases. */
+  const skipToReveal = useCallback(() => {
+    if (skipRef.current) return; // already skipping
+    skipRef.current = true;
+    clearTimers();
+    viewerRef.current?.skipToEnd();
 
-    // Phase 1: shake
-    setChestState('shaking');
-
-    // Phase 2: open lid after shake
-    await new Promise(r => setTimeout(r, 550));
-    setChestState('open');
-    spawnParticles();
-
-    // Call API during the open animation
-    try {
-      const result = await inventoryClientRef.current.openChest(token);
-
-      // Phase 3: reveal after a short delay
-      await new Promise(r => setTimeout(r, 600));
+    const result = apiResultRef.current;
+    if (result) {
+      const tier = getRarityTier(result.scroll_type);
+      setRarityTier(tier);
       setRevealResult(result);
       setChestState('reveal');
+    }
+    // If API hasn't returned yet, the handleOpen promise will transition to reveal when it resolves.
+  }, [clearTimers]);
 
-      // Fetch fresh inventory from server
-      await refreshInventory();
+  /** Main open handler — orchestrates the 3-phase animation. */
+  const handleOpen = useCallback(async () => {
+    if (keyCoins < KEY_COINS_PER_CHEST || chestState !== 'idle') return;
+    setError(null);
+    skipRef.current = false;
+    apiResultRef.current = null;
+
+    // ── Phase 1: Buildup ────────────────────────────────────
+    // Fire API + start buildup animation + minimum timer ALL at the same time
+    setChestState('buildup');
+    soundManager?.playChestBuildup('common');
+
+    const apiPromise = inventoryClientRef.current.openChest(token);
+    // Minimum buildup duration (common — will be extended if tier is higher)
+    const minBuildupPromise = new Promise<void>(resolve => {
+      schedule(() => resolve(), BUILDUP_MS.common);
+    });
+
+    // Wait for API result (might resolve before or after timer)
+    let result: ChestOpenResponse;
+    try {
+      result = await apiPromise;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open chest');
+      clearTimers();
       setChestState('idle');
+      return;
     }
-  }, [keyCoins, chestState, token, spawnParticles, refreshInventory]);
+
+    apiResultRef.current = result;
+    if (result.balance_play && onBalanceChange) {
+      onBalanceChange(result.balance_play);
+    }
+    const tier = getRarityTier(result.scroll_type);
+    setRarityTier(tier);
+    viewerRef.current?.setRarityTier(tier);
+
+    // If user already skipped during API wait, jump to reveal now
+    if (skipRef.current) {
+      setRevealResult(result);
+      setChestState('reveal');
+      await refreshInventory();
+      return;
+    }
+
+    // If tier requires longer buildup (rare/epic), schedule the extra time
+    if (BUILDUP_MS[tier] > BUILDUP_MS.common) {
+      const extraMs = BUILDUP_MS[tier] - BUILDUP_MS.common;
+      const extraPromise = new Promise<void>(resolve => {
+        schedule(() => resolve(), extraMs);
+      });
+      // Wait for both: the minimum timer AND the extra time
+      await Promise.all([minBuildupPromise, extraPromise]);
+    } else {
+      // Common tier — just wait for the minimum timer to finish
+      await minBuildupPromise;
+    }
+
+    if (skipRef.current) {
+      setRevealResult(result);
+      setChestState('reveal');
+      await refreshInventory();
+      return;
+    }
+
+    // ── Phase 2: Burst ──────────────────────────────────────
+    setChestState('burst');
+    soundManager?.playChestBurst(tier);
+
+    await new Promise<void>(resolve => {
+      schedule(() => resolve(), 600);
+    });
+
+    if (skipRef.current) {
+      setRevealResult(result);
+      setChestState('reveal');
+      await refreshInventory();
+      return;
+    }
+
+    // ── Phase 3: Reveal ─────────────────────────────────────
+    setRevealResult(result);
+    setChestState('reveal');
+    soundManager?.playChestReveal(tier);
+
+    // Refresh inventory in background
+    await refreshInventory();
+  }, [keyCoins, chestState, token, soundManager, onBalanceChange, refreshInventory, clearTimers, schedule]);
+
+  /** Handle tap-to-skip during animation. */
+  const handleSkipClick = useCallback(() => {
+    if (chestState === 'buildup' || chestState === 'burst') {
+      skipToReveal();
+    }
+  }, [chestState, skipToReveal]);
 
   const handleContinue = useCallback(() => {
     setChestState('idle');
     setRevealResult(null);
-    setParticles([]);
+    setRarityTier('common');
+    skipRef.current = false;
+    apiResultRef.current = null;
   }, []);
 
-  const revealScrollInfo = revealResult
+  const isPlayCoins = revealResult?.scroll_type === 'play_coins';
+  const revealScrollInfo = revealResult && !isPlayCoins
     ? SCROLL_INFO.find(s => SCROLL_KEY_MAP[revealResult.scroll_type] === s.key)
     : null;
+  const revealInfo = isPlayCoins
+    ? PLAY_COINS_INFO
+    : revealScrollInfo;
+
+  const isAnimating = chestState === 'buildup' || chestState === 'burst';
+  const tierColor = RARITY_COLORS[rarityTier];
 
   return (
     <div className="chest-page">
-      <div className="chest-header">
-        <Link to="/" className="chest-back-link">
-          &larr; Back to Game
-        </Link>
-        <div className="chest-key-balance">
-          <span className="chest-key-icon">&#x1F511;</span>
-          <span className="chest-key-count">{keyCoins}</span>
-        </div>
+      {/* Full-screen BabylonJS canvas — background layer */}
+      <div className="chest-canvas-layer">
+        <ChestViewer3D ref={viewerRef} chestState={chestState} rarityTier={rarityTier} />
       </div>
 
-      <div className="chest-area">
-        <div className="chest-visual-3d">
-          <ChestViewer3D chestState={chestState} />
-          <div className="chest-glow-overlay" data-visible={chestState === 'open' || chestState === 'reveal' ? '' : undefined} />
-          <div className="chest-particles">
-            {particles.map(p => (
+      {/* Tap-to-skip zone — covers full screen during animation */}
+      {isAnimating && (
+        <div className="chest-skip-zone" onClick={handleSkipClick} />
+      )}
+
+      {/* UI overlay on top of canvas */}
+      <div className="chest-ui-overlay">
+        <div className="chest-header">
+          <Link to="/" className="chest-back-link">
+            &larr; Back to Game
+          </Link>
+          <div className="chest-key-balance">
+            <span className="chest-key-icon">&#x1F511;</span>
+            <span className="chest-key-count">{keyCoins}</span>
+          </div>
+        </div>
+
+        <div className="chest-area">
+          {/* Skip hint during animation */}
+          {isAnimating && (
+            <div className="chest-skip-hint">Tap to skip</div>
+          )}
+
+          {chestState === 'reveal' && revealResult && revealInfo ? (
+            <div className="chest-reveal">
               <div
-                key={p.id}
-                className="chest-particle"
+                className={`chest-reveal-scroll ${rarityTier === 'epic' ? 'epic-shimmer' : ''}`}
                 style={{
-                  background: p.color,
-                  '--px': p.px,
-                  '--py': p.py,
+                  borderColor: tierColor,
+                  '--pulse-color': tierColor,
                 } as React.CSSProperties}
-              />
-            ))}
-          </div>
+              >
+                {revealInfo.emoji}
+              </div>
+              <div className="chest-reveal-name" style={{ color: tierColor }}>
+                {revealInfo.label}
+              </div>
+              <div className="chest-reveal-count">x{revealResult.scroll_count}</div>
+              <div className="chest-reveal-congrats" style={{ color: tierColor }}>
+                {RARITY_LABELS[rarityTier]}
+              </div>
+              <button className="chest-reveal-continue" onClick={handleContinue}>
+                Continue
+              </button>
+            </div>
+          ) : (
+            !isAnimating && (
+              <>
+                <button
+                  className="chest-open-btn"
+                  onClick={handleOpen}
+                  disabled={keyCoins < KEY_COINS_PER_CHEST || chestState !== 'idle'}
+                >
+                  {chestState === 'idle'
+                    ? keyCoins >= KEY_COINS_PER_CHEST
+                      ? `Open Chest (${KEY_COINS_PER_CHEST} Keys)`
+                      : 'Not Enough Keys'
+                    : 'Opening...'}
+                </button>
+                {error && <div style={{ color: 'var(--accent-pink)', fontSize: 13 }}>{error}</div>}
+              </>
+            )
+          )}
         </div>
 
-        {chestState === 'reveal' && revealResult && revealScrollInfo ? (
-          <div className="chest-reveal">
-            <div className="chest-reveal-scroll">
-              {revealScrollInfo.emoji}
-            </div>
-            <div className="chest-reveal-name">{revealScrollInfo.label}</div>
-            <div className="chest-reveal-count">x{revealResult.scroll_count}</div>
-            <div className="chest-reveal-congrats">Congratulations!</div>
-            <button className="chest-reveal-continue" onClick={handleContinue}>
-              Continue
-            </button>
+        <div className="chest-inventory">
+          <div className="chest-inventory-title">Scroll Inventory</div>
+          <div className="chest-inventory-grid">
+            {SCROLL_INFO.map(s => {
+              const count = scrollCounts[s.key];
+              return (
+                <div key={s.key} className={`chest-scroll-card ${count > 0 ? 'has-scroll' : ''}`}>
+                  <span className="chest-scroll-card-icon">{s.emoji}</span>
+                  <span className="chest-scroll-card-name">{s.label}</span>
+                  <span className="chest-scroll-card-count">{count}</span>
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          <>
-            <button
-              className="chest-open-btn"
-              onClick={handleOpen}
-              disabled={keyCoins <= 0 || chestState !== 'idle'}
-            >
-              {chestState === 'idle'
-                ? keyCoins > 0
-                  ? 'Open Chest'
-                  : 'No Key Coins'
-                : 'Opening...'}
-            </button>
-            {error && <div style={{ color: 'var(--accent-pink)', fontSize: 13 }}>{error}</div>}
-          </>
-        )}
-      </div>
-
-      <div className="chest-inventory">
-        <div className="chest-inventory-title">Scroll Inventory</div>
-        <div className="chest-inventory-grid">
-          {SCROLL_INFO.map(s => {
-            const count = scrollCounts[s.key];
-            return (
-              <div key={s.key} className={`chest-scroll-card ${count > 0 ? 'has-scroll' : ''}`}>
-                <span className="chest-scroll-card-icon">{s.emoji}</span>
-                <span className="chest-scroll-card-name">{s.label}</span>
-                <span className="chest-scroll-card-count">{count}</span>
-              </div>
-            );
-          })}
         </div>
       </div>
     </div>

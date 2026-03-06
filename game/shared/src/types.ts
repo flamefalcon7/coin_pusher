@@ -251,7 +251,7 @@ export type IdleWarningMessage = {
 // Server → Client: Chest open result
 export type ChestOpenResultMessage = {
   op: "chest_open_result";
-  scroll_type: SkillScrollType | "megaspeaker";
+  scroll_type: SkillScrollType | "megaspeaker" | "play_coins";
   scroll_count: number;
 };
 
