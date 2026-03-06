@@ -523,6 +523,130 @@ export class SoundManager {
     });
   }
 
+  /** Chest buildup — rising filtered noise + ascending sine, pitch/intensity scales with tier. */
+  playChestBuildup(tier: string): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    const tierScale = tier === 'legendary' ? 1.0 : tier === 'epic' ? 0.75 : tier === 'rare' ? 0.5 : 0.3;
+    const duration = tier === 'legendary' ? 3.0 : tier === 'epic' ? 2.0 : tier === 'rare' ? 1.2 : 0.8;
+
+    // Rising sine tone
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(400 + tierScale * 400, t + duration);
+    oscGain.gain.setValueAtTime(0.02, t);
+    oscGain.gain.linearRampToValueAtTime(0.12 * tierScale, t + duration * 0.9);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    osc.connect(oscGain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + duration + 0.05);
+
+    // Rising filtered noise (rumble)
+    const noiseLen = ctx.sampleRate * duration;
+    const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) noiseData[i] = (Math.random() * 2 - 1);
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(100, t);
+    lp.frequency.exponentialRampToValueAtTime(800 + tierScale * 600, t + duration);
+    lp.Q.setValueAtTime(2, t);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.01, t);
+    noiseGain.gain.linearRampToValueAtTime(0.08 * tierScale, t + duration * 0.8);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+
+    noise.connect(lp).connect(noiseGain).connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + duration + 0.05);
+  }
+
+  /** Chest burst — bright impact + whoosh, scales with tier. */
+  playChestBurst(tier: string): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    const tierScale = tier === 'legendary' ? 1.0 : tier === 'epic' ? 0.75 : tier === 'rare' ? 0.5 : 0.3;
+
+    // Impact thump
+    const sub = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(60, t);
+    sub.frequency.exponentialRampToValueAtTime(20, t + 0.4);
+    subGain.gain.setValueAtTime(0.35 * tierScale, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    sub.connect(subGain).connect(ctx.destination);
+    sub.start(t);
+    sub.stop(t + 0.55);
+
+    // Bright crack
+    const crack = ctx.createOscillator();
+    const crackGain = ctx.createGain();
+    crack.type = 'sine';
+    crack.frequency.setValueAtTime(1800, t);
+    crack.frequency.exponentialRampToValueAtTime(400, t + 0.08);
+    crackGain.gain.setValueAtTime(0.25 * tierScale, t);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    crack.connect(crackGain).connect(ctx.destination);
+    crack.start(t);
+    crack.stop(t + 0.12);
+
+    // Whoosh noise
+    const noiseLen = ctx.sampleRate * 0.4;
+    const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) data[i] = (Math.random() * 2 - 1);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(1200, t);
+    bp.frequency.exponentialRampToValueAtTime(300, t + 0.3);
+    bp.Q.setValueAtTime(0.8, t);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.2 * tierScale, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    noise.connect(bp).connect(noiseGain).connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + 0.4);
+  }
+
+  /** Chest reveal — triumphant ascending arpeggio, more notes for higher tier. */
+  playChestReveal(tier: string): void {
+    if (this._muted) return;
+    const ctx = this.ensureContext();
+    const t = ctx.currentTime;
+
+    // Note count scales with tier
+    const allNotes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98]; // C5→G6
+    const count = tier === 'legendary' ? 6 : tier === 'epic' ? 5 : tier === 'rare' ? 4 : 3;
+    const notes = allNotes.slice(0, count);
+    const vol = tier === 'legendary' ? 0.22 : tier === 'epic' ? 0.18 : 0.15;
+
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t + i * 0.12);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.setValueAtTime(vol, t + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.5);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t + i * 0.12);
+      osc.stop(t + i * 0.12 + 0.5);
+    });
+  }
+
   dispose(): void {
     if (this.ctx) {
       this.ctx.close();

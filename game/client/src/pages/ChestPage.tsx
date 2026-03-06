@@ -3,45 +3,31 @@ import { Link } from 'react-router-dom';
 import { InventoryClient, type ChestOpenResponse } from '../net/InventoryClient';
 import type { ScrollCounts } from '../ui/Toolbar';
 import type { SoundManager } from '../scene/SoundManager';
-import { ChestViewer3D, type ChestViewer3DHandle } from './ChestViewer3D';
+import {
+  ChestViewer3D,
+  type ChestViewer3DHandle,
+  type RarityTier,
+  RARITY_COLORS,
+  RARITY_LABELS,
+  BUILDUP_MS,
+  BURST_MS,
+} from './ChestViewer3D';
 import './ChestPage.css';
 
-/* ── Rarity tiers ─────────────────────────────────────────────────────── */
+/* ── Rarity mapping ─────────────────────────────────────────────────── */
 
-export type RarityTier = 'common' | 'rare' | 'epic';
-
-export const RARITY_COLORS: Record<RarityTier, string> = {
-  common: '#4ECDC4',
-  rare:   '#A855F7',
-  epic:   '#FFD700',
-};
-
-export const RARITY_LABELS: Record<RarityTier, string> = {
-  common: 'Item Acquired!',
-  rare:   'Rare Item!',
-  epic:   'EPIC SCROLL!',
-};
-
-/** Buildup duration in ms per tier. Epic gets a longer buildup for more drama. */
-export const BUILDUP_MS: Record<RarityTier, number> = {
-  common: 800,
-  rare:   1000,
-  epic:   1200,
-};
-
-/** Map server scroll_type → rarity tier */
 function getRarityTier(scrollType: string): RarityTier {
-  if (scrollType === 'super_push') return 'epic';
+  if (scrollType === 'super_push') return 'legendary';
+  if (scrollType === 'tornado' || scrollType === 'explosion' || scrollType === 'lightning') return 'epic';
   if (scrollType === 'megaspeaker') return 'rare';
   return 'common';
 }
 
 const KEY_COINS_PER_CHEST = 3;
 
-/** Info for the play_coins reward (not a scroll, handled separately). */
 const PLAY_COINS_INFO = { label: 'Play Coins', emoji: '\uD83E\uDE99' };
 
-/* ── Scroll definitions ───────────────────────────────────────────────── */
+/* ── Scroll definitions ─────────────────────────────────────────────── */
 
 const SCROLL_INFO: { key: keyof ScrollCounts; label: string; emoji: string }[] = [
   { key: 'shock',       label: 'Shock',       emoji: '\u26A1' },
@@ -61,7 +47,7 @@ const SCROLL_KEY_MAP: Record<string, keyof ScrollCounts> = {
   megaspeaker: 'megaspeaker',
 };
 
-/* ── Component ────────────────────────────────────────────────────────── */
+/* ── Component ──────────────────────────────────────────────────────── */
 
 interface ChestPageProps {
   token: string;
@@ -95,20 +81,17 @@ export const ChestPage: React.FC<ChestPageProps> = ({
   const animTimersRef = useRef<number[]>([]);
   const apiResultRef = useRef<ChestOpenResponse | null>(null);
 
-  /** Clear all pending animation timers. */
   const clearTimers = useCallback(() => {
     for (const t of animTimersRef.current) clearTimeout(t);
     animTimersRef.current = [];
   }, []);
 
-  /** Schedule a timeout that can be cleared on skip. */
   const schedule = useCallback((fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
     animTimersRef.current.push(id);
     return id;
   }, []);
 
-  // Fetch fresh inventory from server and sync to parent
   const refreshInventory = useCallback(async () => {
     try {
       const inv = await inventoryClientRef.current.getInventory(token);
@@ -125,9 +108,8 @@ export const ChestPage: React.FC<ChestPageProps> = ({
     }
   }, [token, onInventoryChange]);
 
-  /** Jump straight to reveal, skipping remaining animation phases. */
   const skipToReveal = useCallback(() => {
-    if (skipRef.current) return; // already skipping
+    if (skipRef.current) return;
     skipRef.current = true;
     clearTimers();
     viewerRef.current?.skipToEnd();
@@ -139,28 +121,23 @@ export const ChestPage: React.FC<ChestPageProps> = ({
       setRevealResult(result);
       setChestState('reveal');
     }
-    // If API hasn't returned yet, the handleOpen promise will transition to reveal when it resolves.
   }, [clearTimers]);
 
-  /** Main open handler — orchestrates the 3-phase animation. */
   const handleOpen = useCallback(async () => {
     if (keyCoins < KEY_COINS_PER_CHEST || chestState !== 'idle') return;
     setError(null);
     skipRef.current = false;
     apiResultRef.current = null;
 
-    // ── Phase 1: Buildup ────────────────────────────────────
-    // Fire API + start buildup animation + minimum timer ALL at the same time
+    // Phase 1: Buildup
     setChestState('buildup');
     soundManager?.playChestBuildup('common');
 
     const apiPromise = inventoryClientRef.current.openChest(token);
-    // Minimum buildup duration (common — will be extended if tier is higher)
     const minBuildupPromise = new Promise<void>(resolve => {
       schedule(() => resolve(), BUILDUP_MS.common);
     });
 
-    // Wait for API result (might resolve before or after timer)
     let result: ChestOpenResponse;
     try {
       result = await apiPromise;
@@ -179,7 +156,6 @@ export const ChestPage: React.FC<ChestPageProps> = ({
     setRarityTier(tier);
     viewerRef.current?.setRarityTier(tier);
 
-    // If user already skipped during API wait, jump to reveal now
     if (skipRef.current) {
       setRevealResult(result);
       setChestState('reveal');
@@ -187,16 +163,14 @@ export const ChestPage: React.FC<ChestPageProps> = ({
       return;
     }
 
-    // If tier requires longer buildup (rare/epic), schedule the extra time
+    // Wait for tier-specific buildup duration
     if (BUILDUP_MS[tier] > BUILDUP_MS.common) {
       const extraMs = BUILDUP_MS[tier] - BUILDUP_MS.common;
       const extraPromise = new Promise<void>(resolve => {
         schedule(() => resolve(), extraMs);
       });
-      // Wait for both: the minimum timer AND the extra time
       await Promise.all([minBuildupPromise, extraPromise]);
     } else {
-      // Common tier — just wait for the minimum timer to finish
       await minBuildupPromise;
     }
 
@@ -207,12 +181,12 @@ export const ChestPage: React.FC<ChestPageProps> = ({
       return;
     }
 
-    // ── Phase 2: Burst ──────────────────────────────────────
+    // Phase 2: Burst
     setChestState('burst');
     soundManager?.playChestBurst(tier);
 
     await new Promise<void>(resolve => {
-      schedule(() => resolve(), 600);
+      schedule(() => resolve(), BURST_MS[tier]);
     });
 
     if (skipRef.current) {
@@ -222,16 +196,14 @@ export const ChestPage: React.FC<ChestPageProps> = ({
       return;
     }
 
-    // ── Phase 3: Reveal ─────────────────────────────────────
+    // Phase 3: Reveal
     setRevealResult(result);
     setChestState('reveal');
     soundManager?.playChestReveal(tier);
 
-    // Refresh inventory in background
     await refreshInventory();
   }, [keyCoins, chestState, token, soundManager, onBalanceChange, refreshInventory, clearTimers, schedule]);
 
-  /** Handle tap-to-skip during animation. */
   const handleSkipClick = useCallback(() => {
     if (chestState === 'buildup' || chestState === 'burst') {
       skipToReveal();
@@ -250,26 +222,24 @@ export const ChestPage: React.FC<ChestPageProps> = ({
   const revealScrollInfo = revealResult && !isPlayCoins
     ? SCROLL_INFO.find(s => SCROLL_KEY_MAP[revealResult.scroll_type] === s.key)
     : null;
-  const revealInfo = isPlayCoins
-    ? PLAY_COINS_INFO
-    : revealScrollInfo;
+  const revealInfo = isPlayCoins ? PLAY_COINS_INFO : revealScrollInfo;
 
   const isAnimating = chestState === 'buildup' || chestState === 'burst';
   const tierColor = RARITY_COLORS[rarityTier];
 
   return (
     <div className="chest-page">
-      {/* Full-screen BabylonJS canvas — background layer */}
+      {/* Full-screen BabylonJS canvas */}
       <div className="chest-canvas-layer">
         <ChestViewer3D ref={viewerRef} chestState={chestState} rarityTier={rarityTier} />
       </div>
 
-      {/* Tap-to-skip zone — covers full screen during animation */}
+      {/* Tap-to-skip zone */}
       {isAnimating && (
         <div className="chest-skip-zone" onClick={handleSkipClick} />
       )}
 
-      {/* UI overlay on top of canvas */}
+      {/* UI overlay */}
       <div className="chest-ui-overlay">
         <div className="chest-header">
           <Link to="/" className="chest-back-link">
@@ -282,7 +252,6 @@ export const ChestPage: React.FC<ChestPageProps> = ({
         </div>
 
         <div className="chest-area">
-          {/* Skip hint during animation */}
           {isAnimating && (
             <div className="chest-skip-hint">Tap to skip</div>
           )}
@@ -290,11 +259,8 @@ export const ChestPage: React.FC<ChestPageProps> = ({
           {chestState === 'reveal' && revealResult && revealInfo ? (
             <div className="chest-reveal">
               <div
-                className={`chest-reveal-scroll ${rarityTier === 'epic' ? 'epic-shimmer' : ''}`}
-                style={{
-                  borderColor: tierColor,
-                  '--pulse-color': tierColor,
-                } as React.CSSProperties}
+                className="chest-reveal-scroll"
+                style={{ borderColor: tierColor }}
               >
                 {revealInfo.emoji}
               </div>
