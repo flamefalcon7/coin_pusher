@@ -19,7 +19,7 @@ export type SlotSpinCallback = (reels: [SlotSymbol, SlotSymbol, SlotSymbol], jac
 export type SlotCounterCallback = (counter: number) => void;
 export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number, username?: string) => void;
 export type CoinSpawnCallback = (coins: { id: number; owner_id: string; is_key_coin?: boolean }[]) => void;
-export type HeatUpdateCallback = (players: { user_id: string; share: number; raw_heat: number }[]) => void;
+export type HeatUpdateCallback = (players: { user_id: string; username: string; share: number; raw_heat: number }[]) => void;
 export type QueueUpdateCallback = (userId: string, pending: number) => void;
 export type SlotStatusCallback = (counts: number[]) => void;
 export type WheelSpinCallback = (segment: number, reward: number) => void;

@@ -258,7 +258,7 @@ export type ChestOpenResultMessage = {
 // Server → Client: Heat state update (1Hz from backend via relay)
 export type HeatUpdateMessage = {
   op: "heat_update";
-  players: { user_id: string; share: number; raw_heat: number }[];
+  players: { user_id: string; username: string; share: number; raw_heat: number }[];
 };
 
 // Server → Client: Queue progress update
