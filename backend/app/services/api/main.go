@@ -314,6 +314,26 @@ func run() error {
 	// Heat broadcast goroutine (1s interval)
 	stopHeat := make(chan struct{})
 	go func() {
+		// In-memory display name cache to avoid DB queries every broadcast.
+		type cachedName struct {
+			name      string
+			fetchedAt time.Time
+		}
+		nameCache := make(map[uuid.UUID]cachedName)
+		const nameCacheTTL = 60 * time.Second
+
+		resolveName := func(uid uuid.UUID) string {
+			if cached, ok := nameCache[uid]; ok && time.Since(cached.fetchedAt) < nameCacheTTL {
+				return cached.name
+			}
+			name := uid.String()[:8] + "..."
+			if acct, err := userCore.QueryByID(context.Background(), uid); err == nil && acct.DisplayName != nil {
+				name = *acct.DisplayName
+			}
+			nameCache[uid] = cachedName{name: name, fetchedAt: time.Now()}
+			return name
+		}
+
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -328,9 +348,10 @@ func run() error {
 					continue
 				}
 				type playerHeat struct {
-					UserID  string  `msgpack:"user_id"`
-					Share   float64 `msgpack:"share"`
-					RawHeat float64 `msgpack:"raw_heat"`
+					UserID   string  `msgpack:"user_id"`
+					Username string  `msgpack:"username"`
+					Share    float64 `msgpack:"share"`
+					RawHeat  float64 `msgpack:"raw_heat"`
 				}
 				type heatMsg struct {
 					Op      string       `msgpack:"op"`
@@ -339,9 +360,10 @@ func run() error {
 				msg := heatMsg{Op: "heat_update"}
 				for _, s := range shares {
 					msg.Players = append(msg.Players, playerHeat{
-						UserID:  s.UserID.String(),
-						Share:   s.Share,
-						RawHeat: s.RawHeat,
+						UserID:   s.UserID.String(),
+						Username: resolveName(s.UserID),
+						Share:    s.Share,
+						RawHeat:  s.RawHeat,
 					})
 				}
 				data, err := msgpack.Marshal(msg)
@@ -353,8 +375,13 @@ func run() error {
 				}
 				nc.Publish(ws.TopicHeatUpdate("main"), data)
 
-				// Prune stale heat entries.
+				// Prune stale heat entries and evict stale name cache entries.
 				heatEngine.Prune()
+				for uid, cached := range nameCache {
+					if time.Since(cached.fetchedAt) > 5*nameCacheTTL {
+						delete(nameCache, uid)
+					}
+				}
 				metrics.WorkerDuration.WithLabelValues("heat_broadcast").Observe(time.Since(workerStart).Seconds())
 			case <-stopHeat:
 				return

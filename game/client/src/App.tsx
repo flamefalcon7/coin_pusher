@@ -6,7 +6,7 @@ import { CoinInsertButton } from "./ui/CoinInsertButton";
 import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { Toolbar, type ScrollCounts } from "./ui/Toolbar";
 import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
-import { HeatMeter } from "./ui/HeatMeter";
+import { Leaderboard, type LeaderboardEntry } from "./ui/Leaderboard";
 import { RewardToast } from "./ui/RewardToast";
 import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
 import { AbilityToast, type AbilityToastEntry } from "./ui/AbilityToast";
@@ -95,8 +95,8 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const [wheelCounter, setWheelCounter] = useState(0);
   const [holeTooltip, setHoleTooltip] = useState<HoleTooltipData | null>(null);
   const lastHolePickTime = useRef(0);
-  const [heatShare, setHeatShare] = useState(0);
-  const [heatRaw, setHeatRaw] = useState(0);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [myRankEntry, setMyRankEntry] = useState<LeaderboardEntry | null>(null);
   const [slotCounts, setSlotCounts] = useState<number[]>([0, 0, 0, 0, 0]);
   const [rewardToast, setRewardToast] = useState<{ amount: number; id: number } | null>(null);
   const rewardIdRef = useRef(0);
@@ -254,13 +254,21 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
     gameClient.onHeatUpdate((players) => {
       const myUserId = gameClient.getUserId();
-      const me = players.find(p => p.user_id === myUserId);
-      if (me) {
-        setHeatShare(me.share);
-        setHeatRaw(me.raw_heat);
+      const sorted = [...players].sort((a, b) => b.share - a.share);
+      const top5 = sorted.slice(0, 5).map((p, i) => ({
+        user_id: p.user_id,
+        username: p.username,
+        share: p.share,
+        rank: i + 1,
+      }));
+      setLeaderboard(top5);
+
+      const myIdx = sorted.findIndex(p => p.user_id === myUserId);
+      if (myIdx >= 0) {
+        const p = sorted[myIdx];
+        setMyRankEntry({ user_id: p.user_id, username: p.username, share: p.share, rank: myIdx + 1 });
       } else {
-        setHeatShare(0);
-        setHeatRaw(0);
+        setMyRankEntry(null);
       }
     });
 
@@ -972,10 +980,11 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         ackMessage={insertAckMsg}
       />
 
-      {heatShare > 0 && (
-        <HeatMeter
-          share={heatShare}
-          rawHeat={heatRaw}
+      {leaderboard.length > 0 && (
+        <Leaderboard
+          entries={leaderboard}
+          myEntry={myRankEntry}
+          myUserId={gameClientRef.current?.getUserId() ?? ""}
         />
       )}
 
