@@ -18,6 +18,7 @@ import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
 import { TargetingHint } from "./ui/TargetingHint";
 import { IdleWarningBanner, IdleTimeoutOverlay } from "./ui/IdleOverlay";
 import { PlayerInfo } from "./ui/PlayerInfo";
+import { TutorialOverlay, shouldShowTutorial } from "./ui/TutorialOverlay";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
@@ -112,6 +113,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const [idleWarning, setIdleWarning] = useState(false);
   const [idleTimeout, setIdleTimeout] = useState(false);
   const [megaspeakerOpen, setMegaspeakerOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
   const [megaspeakerUnread, setMegaspeakerUnread] = useState(0);
   const megaspeakerOpenRef = useRef(false);
   const [keyCoinDraw, setKeyCoinDraw] = useState<{
@@ -1070,6 +1072,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
       {idleWarning && !idleTimeout && <IdleWarningBanner />}
       {idleTimeout && <IdleTimeoutOverlay />}
+
+      {showTutorial && connectionStatus === 'connected' && (
+        <TutorialOverlay onComplete={() => setShowTutorial(false)} />
+      )}
     </div>
   );
 }

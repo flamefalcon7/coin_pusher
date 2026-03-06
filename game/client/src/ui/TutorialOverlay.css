@@ -1,0 +1,161 @@
+/* ── Tutorial Overlay ──────────────────────────────────────────────── */
+
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  pointer-events: all;
+}
+
+.tutorial-overlay.visible {
+  opacity: 1;
+}
+
+/* Dark mask — clip-path cuts out the spotlight hole */
+.tutorial-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 5, 20, 0.75);
+  transition: clip-path 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glowing ring around the spotlight */
+.tutorial-spotlight-ring {
+  position: absolute;
+  border: 2px solid var(--accent-orange);
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(232, 150, 32, 0.4), inset 0 0 20px rgba(232, 150, 32, 0.1);
+  pointer-events: none;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: tutorialPulse 2s ease-in-out infinite;
+}
+
+@keyframes tutorialPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(232, 150, 32, 0.4), inset 0 0 20px rgba(232, 150, 32, 0.1); }
+  50%      { box-shadow: 0 0 30px rgba(232, 150, 32, 0.6), inset 0 0 30px rgba(232, 150, 32, 0.15); }
+}
+
+/* Tooltip card */
+.tutorial-tooltip {
+  position: absolute;
+  z-index: 10;
+  max-width: 320px;
+  padding: 20px 24px 16px;
+  border-radius: 12px;
+  background: rgba(43, 21, 72, 0.97);
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: tutorialTooltipIn 0.3s ease-out;
+}
+
+@keyframes tutorialTooltipIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; }
+}
+
+/* Step dots */
+.tutorial-step-indicator {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.tutorial-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(245, 230, 184, 0.2);
+  transition: all 0.2s;
+}
+
+.tutorial-dot.active {
+  background: var(--accent-orange);
+  box-shadow: 0 0 6px rgba(232, 150, 32, 0.6);
+}
+
+.tutorial-dot.done {
+  background: var(--accent-teal);
+}
+
+/* Title */
+.tutorial-title {
+  margin: 0 0 8px;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-color);
+}
+
+/* Body text */
+.tutorial-body {
+  margin: 0 0 16px;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(245, 230, 184, 0.75);
+}
+
+/* Action buttons */
+.tutorial-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tutorial-skip-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(245, 230, 184, 0.4);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.tutorial-skip-btn:hover {
+  color: rgba(245, 230, 184, 0.7);
+}
+
+.tutorial-next-btn {
+  padding: 8px 24px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-orange));
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.tutorial-next-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.03);
+}
+
+.tutorial-next-btn:active {
+  transform: scale(0.97);
+}
+
+/* ── Mobile ≤ 480px ──────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .tutorial-tooltip {
+    max-width: 280px;
+    padding: 16px 18px 12px;
+  }
+
+  .tutorial-title {
+    font-size: 16px;
+  }
+
+  .tutorial-body {
+    font-size: 12px;
+  }
+}
