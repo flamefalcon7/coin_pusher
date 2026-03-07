@@ -133,6 +133,29 @@ var (
 	})
 )
 
+// RTP monitoring metrics
+var (
+	RTPRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "coinpusher_rtp_ratio",
+		Help: "Return-to-player ratio (cash rewarded / play inserted) by time window.",
+	}, []string{"window"})
+
+	RTPCoinsInserted = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "coinpusher_rtp_coins_inserted",
+		Help: "Total play coins inserted in time window.",
+	}, []string{"window"})
+
+	RTPCoinsRewarded = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "coinpusher_rtp_coins_rewarded",
+		Help: "Total cash coins rewarded in time window.",
+	}, []string{"window"})
+
+	RTPPlayerAnomalyCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_rtp_player_anomaly_count",
+		Help: "Number of players with abnormally high RTP in the analysis window.",
+	})
+)
+
 // StartDBCollector starts a goroutine that periodically collects DB pool stats.
 func StartDBCollector(db *sql.DB, interval time.Duration) {
 	go func() {

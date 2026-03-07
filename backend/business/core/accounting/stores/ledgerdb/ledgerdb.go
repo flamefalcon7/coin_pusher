@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
@@ -72,4 +74,34 @@ func (s *Store) QueryByReference(ctx context.Context, actionType, referenceID st
 	}
 
 	return log, nil
+}
+
+// SumByActionSince returns the sum of amounts for a given action type since the given time.
+func (s *Store) SumByActionSince(ctx context.Context, actionType string, since time.Time) (decimal.Decimal, error) {
+	const q = `
+		SELECT COALESCE(SUM(amount), 0) FROM accounting_logs
+		WHERE action_type = $1 AND created_at >= $2`
+
+	var total decimal.Decimal
+	if err := s.db.GetContext(ctx, &total, q, actionType, since); err != nil {
+		return decimal.Zero, fmt.Errorf("summing %s since %v: %w", actionType, since, err)
+	}
+
+	return total, nil
+}
+
+// SumByPlayerSince returns per-player sum of amounts for a given action type since the given time.
+func (s *Store) SumByPlayerSince(ctx context.Context, actionType string, since time.Time) ([]accounting.PlayerSum, error) {
+	const q = `
+		SELECT account_id, SUM(amount) AS total FROM accounting_logs
+		WHERE action_type = $1 AND created_at >= $2
+		GROUP BY account_id
+		HAVING SUM(amount) > 0`
+
+	var results []accounting.PlayerSum
+	if err := s.db.SelectContext(ctx, &results, q, actionType, since); err != nil {
+		return nil, fmt.Errorf("summing %s by player since %v: %w", actionType, since, err)
+	}
+
+	return results, nil
 }

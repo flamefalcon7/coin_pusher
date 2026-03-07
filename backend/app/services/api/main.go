@@ -667,6 +667,172 @@ func run() error {
 	}()
 
 	// -------------------------------------------------------------------------
+	// RTP monitor worker — computes global RTP every 1h, per-player anomaly every 4h
+	stopRTP := make(chan struct{})
+	go func() {
+		rtpTicker := time.NewTicker(1 * time.Hour)
+		anomalyTicker := time.NewTicker(4 * time.Hour)
+		defer rtpTicker.Stop()
+		defer anomalyTicker.Stop()
+
+		rtpStore := ledgerdb.NewStore(db)
+
+		computeRTP := func() {
+			workerStart := time.Now()
+			metrics.WorkerRuns.WithLabelValues("rtp_monitor").Inc()
+
+			windows := []struct {
+				label    string
+				duration time.Duration
+			}{
+				{"1h", 1 * time.Hour},
+				{"24h", 24 * time.Hour},
+				{"7d", 7 * 24 * time.Hour},
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			for _, w := range windows {
+				since := time.Now().UTC().Add(-w.duration)
+				inserted, err := rtpStore.SumByActionSince(ctx, accounting.ActionGameInsert, since)
+				if err != nil {
+					log.Errorw("rtp_monitor: query inserted error", "window", w.label, "error", err)
+					metrics.WorkerErrors.WithLabelValues("rtp_monitor").Inc()
+					continue
+				}
+				rewarded, err := rtpStore.SumByActionSince(ctx, accounting.ActionGameReward, since)
+				if err != nil {
+					log.Errorw("rtp_monitor: query rewarded error", "window", w.label, "error", err)
+					metrics.WorkerErrors.WithLabelValues("rtp_monitor").Inc()
+					continue
+				}
+
+				insF, _ := inserted.Float64()
+				rewF, _ := rewarded.Float64()
+				metrics.RTPCoinsInserted.WithLabelValues(w.label).Set(insF)
+				metrics.RTPCoinsRewarded.WithLabelValues(w.label).Set(rewF)
+
+				if insF > 0 {
+					metrics.RTPRatio.WithLabelValues(w.label).Set(rewF / insF)
+				} else {
+					metrics.RTPRatio.WithLabelValues(w.label).Set(0)
+				}
+
+				log.Infow("rtp_monitor", "window", w.label, "inserted", insF, "rewarded", rewF, "rtp", func() float64 {
+					if insF > 0 {
+						return rewF / insF
+					}
+					return 0
+				}())
+			}
+			metrics.WorkerDuration.WithLabelValues("rtp_monitor").Observe(time.Since(workerStart).Seconds())
+		}
+
+		computeAnomaly := func() {
+			workerStart := time.Now()
+			metrics.WorkerRuns.WithLabelValues("rtp_anomaly").Inc()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			since := time.Now().UTC().Add(-24 * time.Hour)
+
+			insertsByPlayer, err := rtpStore.SumByPlayerSince(ctx, accounting.ActionGameInsert, since)
+			if err != nil {
+				log.Errorw("rtp_anomaly: query inserts error", "error", err)
+				metrics.WorkerErrors.WithLabelValues("rtp_anomaly").Inc()
+				metrics.WorkerDuration.WithLabelValues("rtp_anomaly").Observe(time.Since(workerStart).Seconds())
+				return
+			}
+			rewardsByPlayer, err := rtpStore.SumByPlayerSince(ctx, accounting.ActionGameReward, since)
+			if err != nil {
+				log.Errorw("rtp_anomaly: query rewards error", "error", err)
+				metrics.WorkerErrors.WithLabelValues("rtp_anomaly").Inc()
+				metrics.WorkerDuration.WithLabelValues("rtp_anomaly").Observe(time.Since(workerStart).Seconds())
+				return
+			}
+
+			// Build reward lookup.
+			rewardMap := make(map[uuid.UUID]float64, len(rewardsByPlayer))
+			for _, r := range rewardsByPlayer {
+				f, _ := r.Total.Float64()
+				rewardMap[r.AccountID] = f
+			}
+
+			// Compute per-player RTP for players with meaningful activity.
+			const minInsert = 10.0 // ignore players with fewer than 10 coins inserted
+			type playerRTP struct {
+				id  uuid.UUID
+				rtp float64
+			}
+			var players []playerRTP
+			var sum, sumSq float64
+
+			for _, ins := range insertsByPlayer {
+				insF, _ := ins.Total.Float64()
+				if insF < minInsert {
+					continue
+				}
+				rewF := rewardMap[ins.AccountID]
+				rtp := rewF / insF
+				players = append(players, playerRTP{id: ins.AccountID, rtp: rtp})
+				sum += rtp
+				sumSq += rtp * rtp
+			}
+
+			if len(players) < 2 {
+				metrics.RTPPlayerAnomalyCount.Set(0)
+				metrics.WorkerDuration.WithLabelValues("rtp_anomaly").Observe(time.Since(workerStart).Seconds())
+				return
+			}
+
+			n := float64(len(players))
+			mean := sum / n
+			variance := sumSq/n - mean*mean
+			stddev := math.Sqrt(variance)
+			threshold := mean + 2*stddev
+
+			anomalyCount := 0
+			for _, p := range players {
+				if p.rtp > threshold {
+					anomalyCount++
+					log.Warnw("rtp_anomaly: high RTP player",
+						"account_id", p.id,
+						"rtp", fmt.Sprintf("%.4f", p.rtp),
+						"mean", fmt.Sprintf("%.4f", mean),
+						"threshold", fmt.Sprintf("%.4f", threshold),
+					)
+				}
+			}
+
+			metrics.RTPPlayerAnomalyCount.Set(float64(anomalyCount))
+			log.Infow("rtp_anomaly", "players_analyzed", len(players), "mean_rtp", fmt.Sprintf("%.4f", mean), "stddev", fmt.Sprintf("%.4f", stddev), "anomalies", anomalyCount)
+			metrics.WorkerDuration.WithLabelValues("rtp_anomaly").Observe(time.Since(workerStart).Seconds())
+		}
+
+		// Run once at startup after a short delay.
+		select {
+		case <-time.After(10 * time.Second):
+			computeRTP()
+			computeAnomaly()
+		case <-stopRTP:
+			return
+		}
+
+		for {
+			select {
+			case <-rtpTicker.C:
+				computeRTP()
+			case <-anomalyTicker.C:
+				computeAnomaly()
+			case <-stopRTP:
+				return
+			}
+		}
+	}()
+
+	// -------------------------------------------------------------------------
 	// Shutdown
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
@@ -683,6 +849,7 @@ func run() error {
 		close(stopNotify)
 		close(stopNoncePurge)
 		close(stopExpire)
+		close(stopRTP)
 
 		// Flush remaining accumulated rewards to DB before exit.
 		log.Infow("flushing remaining rewards")

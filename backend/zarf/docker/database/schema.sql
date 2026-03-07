@@ -186,6 +186,8 @@ CREATE INDEX IF NOT EXISTS idx_accounting_logs_account_created
     ON accounting_logs(account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_accounting_logs_reference
     ON accounting_logs(action_type, reference_id);
+CREATE INDEX IF NOT EXISTS idx_accounting_logs_action_created
+    ON accounting_logs(action_type, created_at DESC);
 
 -- ==========================================================================
 -- 7. auth_nonces (replay-protection for wallet login)
