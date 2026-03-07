@@ -128,7 +128,7 @@ func newTestHandler(t *testing.T, opts testHandlerOpts) (*Handler, *Connection) 
 		decrementMegaspeakerFn: opts.decrementMegaspeakerFn,
 		getInventoryFn:         opts.getInventoryFn,
 	}
-	invCore := inventory.NewCore(nil, invStorer, nil)
+	invCore := inventory.NewCore(nil, invStorer, nil, nil)
 
 	usrStorer := &mockUserStorer{
 		queryByIDFn: opts.queryByIDFn,
