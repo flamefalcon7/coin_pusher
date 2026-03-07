@@ -74,3 +74,70 @@ func TestGetMegaspeakerHistory_IsCopy(t *testing.T) {
 		t.Errorf("hub state was mutated: got %q, want %q", fresh[0], "original")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// DisconnectUser
+// ---------------------------------------------------------------------------
+
+func TestDisconnectUser_NoConnections(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	n := hub.DisconnectUser("user-1")
+	if n != 0 {
+		t.Errorf("expected 0 disconnected, got %d", n)
+	}
+}
+
+func TestDisconnectUser_RemovesTargetOnly(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+
+	// Create connections with nil websocket.Conn — we only test hub bookkeeping.
+	c1 := &Connection{userID: "user-1", send: make(chan []byte, 1), hub: hub}
+	c2 := &Connection{userID: "user-2", send: make(chan []byte, 1), hub: hub}
+	c3 := &Connection{userID: "user-1", send: make(chan []byte, 1), hub: hub}
+
+	hub.Add(c1)
+	hub.Add(c2)
+	hub.Add(c3)
+
+	if hub.Count() != 3 {
+		t.Fatalf("expected 3 connections, got %d", hub.Count())
+	}
+
+	n := hub.DisconnectUser("user-1")
+	if n != 2 {
+		t.Errorf("expected 2 disconnected, got %d", n)
+	}
+
+	if hub.Count() != 1 {
+		t.Errorf("expected 1 remaining connection, got %d", hub.Count())
+	}
+
+	// Remaining connection should be user-2.
+	hub.mu.RLock()
+	for c := range hub.connections {
+		if c.userID != "user-2" {
+			t.Errorf("remaining connection userID = %q, want %q", c.userID, "user-2")
+		}
+	}
+	hub.mu.RUnlock()
+}
+
+func TestDisconnectUser_OtherUserUnaffected(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	c1 := &Connection{userID: "user-1", send: make(chan []byte, 1), hub: hub}
+	hub.Add(c1)
+
+	n := hub.DisconnectUser("user-999")
+	if n != 0 {
+		t.Errorf("expected 0 disconnected, got %d", n)
+	}
+	if hub.Count() != 1 {
+		t.Errorf("expected 1 connection, got %d", hub.Count())
+	}
+}

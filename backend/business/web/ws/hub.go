@@ -44,6 +44,32 @@ func (h *Hub) Remove(c *Connection) {
 	h.mu.Unlock()
 }
 
+// DisconnectUser closes and removes all existing connections for the given userID.
+// Returns the number of connections closed.
+func (h *Hub) DisconnectUser(userID string) int {
+	h.mu.Lock()
+	var toClose []*Connection
+	for c := range h.connections {
+		if c.userID == userID {
+			toClose = append(toClose, c)
+		}
+	}
+	for _, c := range toClose {
+		delete(h.connections, c)
+		metrics.WSConnectionsActive.Dec()
+	}
+	h.mu.Unlock()
+
+	// Close outside the lock to avoid deadlocks.
+	for _, c := range toClose {
+		c.Close()
+		if c.conn != nil {
+			c.conn.Close()
+		}
+	}
+	return len(toClose)
+}
+
 // Broadcast sends raw bytes to all connections.
 func (h *Hub) Broadcast(data []byte) {
 	h.mu.RLock()

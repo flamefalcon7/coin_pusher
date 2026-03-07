@@ -282,7 +282,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
     gameClient.onBatchInsertAck((queued, error, bal) => {
       if (bal) setBalance(bal);
-      if (error === "slot_full") {
+      if (error === "table_full") {
+        setInsertAckMsg("Table is full!");
+        setTimeout(() => setInsertAckMsg(null), 2000);
+      } else if (error === "slot_full") {
         setInsertAckMsg("Slot is full!");
         setTimeout(() => setInsertAckMsg(null), 2000);
       } else if (queued < lastRequestedAmount.current && lastRequestedAmount.current > 0) {

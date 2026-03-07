@@ -32,6 +32,7 @@ const (
 	snapshotReqTTL = 2 * time.Second
 	numSlots       = 5
 	slotCap        = 500
+	maxActiveCoins = 800
 )
 
 // Handler upgrades HTTP connections to WebSocket and manages the read loop.
@@ -46,6 +47,7 @@ type Handler struct {
 	inventoryCore  *inventory.Core
 	userCore       *user.Core
 	slotCounts     [numSlots]int64 // atomic — optimistic per-slot pending count
+	coinCount      int64          // atomic — authoritative active coin count from game server
 	allowedOrigins []string
 	upgrader       websocket.Upgrader
 }
@@ -110,6 +112,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	role := claims.Role
 
 	c := NewConnection(conn, h.hub, userID, role)
+
+	// Enforce one connection per user — disconnect any existing connections.
+	if n := h.hub.DisconnectUser(userID); n > 0 {
+		h.log.Infow("replaced existing connection", "user_id", userID, "closed", n)
+	}
+
 	h.hub.Add(c)
 
 	h.log.Infow("ws client connected", "user_id", userID, "clients", h.hub.Count())
@@ -154,6 +162,7 @@ func (h *Handler) readPump(c *Connection) {
 		h.log.Infow("ws client disconnected", "user_id", c.userID, "clients", h.hub.Count())
 	}()
 
+	c.conn.SetReadLimit(4096) // 4KB max message size
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -520,6 +529,16 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		slotID = 0
 	}
 
+	// Check global coin cap.
+	if atomic.LoadInt64(&h.coinCount) >= maxActiveCoins {
+		c.SendMessage(map[string]interface{}{
+			"op":     "batch_insert_ack",
+			"queued": 0,
+			"error":  "table_full",
+		})
+		return
+	}
+
 	// Check per-slot cap (optimistic).
 	current := atomic.LoadInt64(&h.slotCounts[slotID])
 	space := int64(slotCap) - current
@@ -704,7 +723,8 @@ func (h *Handler) sendInventoryUpdate(c *Connection, userID uuid.UUID) {
 func (h *Handler) SubscribeSlotStatus() error {
 	_, err := h.nc.Subscribe(TopicSlotStatus(h.room), func(msg *nats.Msg) {
 		var status struct {
-			Counts []int `json:"counts"`
+			Counts    []int `json:"counts"`
+			CoinCount int   `json:"coin_count"`
 		}
 		if err := json.Unmarshal(msg.Data, &status); err != nil {
 			h.log.Errorw("slot_status unmarshal error", "error", err)
@@ -713,6 +733,7 @@ func (h *Handler) SubscribeSlotStatus() error {
 		for i := 0; i < numSlots && i < len(status.Counts); i++ {
 			atomic.StoreInt64(&h.slotCounts[i], int64(status.Counts[i]))
 		}
+		atomic.StoreInt64(&h.coinCount, int64(status.CoinCount))
 	})
 	return err
 }
