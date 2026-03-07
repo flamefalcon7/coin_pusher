@@ -82,6 +82,11 @@ export class WallDecorations {
     console.log("  ✓ Wall decorations created");
   }
 
+  dispose(): void {
+    for (const mat of this.celToggleMats) mat.dispose();
+    this.celToggleMats = [];
+  }
+
   getMaterials(): DecorationMaterials {
     return {
       emissiveMats: [],

@@ -192,5 +192,7 @@ export class CastleDecorations {
 
   dispose(): void {
     this.group.dispose(false, true);
+    this.decoMat.dispose();
+    this.roofMat.dispose();
   }
 }
