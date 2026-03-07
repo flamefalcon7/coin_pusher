@@ -123,7 +123,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         className="toolbar-action-btn shock"
         onClick={onShock}
         disabled={shockDisabled || shockCooldown || (scrollCounts !== undefined && scrollCounts.shock <= 0)}
-        title="Shock Pins"
+        data-tooltip="Shock (2s) — Dislodges coins stuck in the pin zone"
       >
         <img
           className="toolbar-action-bg"
@@ -145,7 +145,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className={`toolbar-action-btn toolbar-action-img superPush ${superPushCooldown ? 'cooldown' : ''}`}
           onClick={onSuperPush}
           disabled={superPushDisabled || superPushCooldown || (scrollCounts !== undefined && scrollCounts.superPush <= 0)}
-          title="Super Push"
+          data-tooltip="Super Push (12s) — Pusher slams forward with maximum force"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/superPush.png" alt="Super Push" draggable={false} />
           {scrollCounts !== undefined && scrollCounts.superPush > 0 && (
@@ -157,7 +157,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className={`toolbar-action-btn toolbar-action-img tornado ${tornadoTargeting ? 'targeting' : ''} ${tornadoCooldown ? 'cooldown' : ''}`}
           onClick={onTornado}
           disabled={tornadoDisabled || tornadoCooldown || (scrollCounts !== undefined && scrollCounts.tornado <= 0)}
-          title="Tornado — click platform to place"
+          data-tooltip="Tornado (10s) — Click platform to place a vortex that gathers coins"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/tornado.png" alt="Tornado" draggable={false} />
           {scrollCounts !== undefined && scrollCounts.tornado > 0 && (
@@ -169,7 +169,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className={`toolbar-action-btn toolbar-action-img explosion ${explosionTargeting ? 'targeting' : ''} ${explosionCooldown ? 'cooldown' : ''}`}
           onClick={onExplosion}
           disabled={explosionDisabled || explosionCooldown || (scrollCounts !== undefined && scrollCounts.explosion <= 0)}
-          title="Explosion — click platform to place"
+          data-tooltip="Explosion (8s) — Click platform to blast coins outward"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/blast.png" alt="Explosion" draggable={false} />
           {scrollCounts !== undefined && scrollCounts.explosion > 0 && (
@@ -181,7 +181,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className={`toolbar-action-btn toolbar-action-img lightning ${lightningCooldown ? 'cooldown' : ''}`}
           onClick={onLightning}
           disabled={lightningDisabled || lightningCooldown || (scrollCounts !== undefined && scrollCounts.lightning <= 0)}
-          title="Lightning — random bolts rain down"
+          data-tooltip="Lightning (6s) — Random bolts strike across the entire platform"
         >
           <img className="toolbar-action-icon" src="/ui/abilities/thunder.png" alt="Lightning" draggable={false} />
           {scrollCounts !== undefined && scrollCounts.lightning > 0 && (

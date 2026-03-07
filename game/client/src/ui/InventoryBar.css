@@ -1,8 +1,14 @@
-.inventory-bar {
+.inventory-bar-wrap {
   position: absolute;
   bottom: calc(clamp(8px, 2vw, 14px) + env(safe-area-inset-bottom, 0px));
   left: calc(clamp(8px, 2vw, 14px) + env(safe-area-inset-left, 0px));
   z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inventory-bar {
   display: flex;
   align-items: center;
   gap: 8px;

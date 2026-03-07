@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './MegaspeakerPanel.css';
+import { InfoTip } from './InfoTip';
 
 export interface MegaspeakerMsg {
   speakerName: string;
@@ -81,7 +82,7 @@ export const MegaspeakerPanel: React.FC<MegaspeakerPanelProps> = ({
   return (
     <div className="megaspeaker-panel">
       <div className="megaspeaker-header">
-        <span className="megaspeaker-title">📢 Megaspeaker</span>
+        <span className="megaspeaker-title">📢 Megaspeaker <InfoTip text="Broadcast a message to all players. Costs 1 charge per message (from chests)." position="bottom" /></span>
         <button className="megaspeaker-close" onClick={onToggle}>✕</button>
       </div>
       <div className="megaspeaker-messages" ref={listRef}>

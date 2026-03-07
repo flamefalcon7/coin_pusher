@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { SLOT_CONFIG, DROP_SCHEDULER_CONFIG } from '@coin-pusher/shared';
 import './CoinInsertButton.css';
+import { InfoTip } from './InfoTip';
 
 interface CoinInsertButtonProps {
   onClick: (slotIndex: number, count: number) => void;
@@ -91,6 +92,8 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
 
   return (
     <div className="coin-panel">
+      {/* Slot strategy hint */}
+      <InfoTip text="Left slots feed the slot machine. Center slots maximize front-edge drops for direct rewards." position="bottom" />
       {/* Batch + Slot selectors on one row */}
       <div className="coin-panel-top-row">
         <div className="coin-batch-selector">

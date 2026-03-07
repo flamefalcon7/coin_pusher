@@ -1,0 +1,56 @@
+/* ── InfoTip ? icon ────────────────────────────────────────────────── */
+
+.infotip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(245, 230, 184, 0.3);
+  background: rgba(245, 230, 184, 0.08);
+  color: rgba(245, 230, 184, 0.45);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  text-transform: none;
+  pointer-events: auto;
+}
+
+.infotip-icon:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+  background: rgba(232, 150, 32, 0.15);
+}
+
+/* ── Tooltip popup ────────────────────────────────────────────────── */
+
+.infotip-popup {
+  position: fixed;
+  z-index: 10000;
+  max-width: 240px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(30, 15, 55, 0.97);
+  border: 1px solid rgba(232, 150, 32, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  color: rgba(245, 230, 184, 0.85);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  animation: infotip-fade-in 0.15s ease-out;
+}
+
+@keyframes infotip-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

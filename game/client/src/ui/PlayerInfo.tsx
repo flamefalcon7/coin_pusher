@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { InfoTip } from './InfoTip';
 
 interface PlayerInfoProps {
   balancePlay: string;
@@ -27,10 +28,10 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, onL
       <div className="player-info-name">{displayName ?? truncAddr(address)}</div>
       <div className="player-info-balances">
         <span className="player-info-balance">
-          <span className="player-info-label">Play</span> {fmt(balancePlay)}
+          <span className="player-info-label">Play <InfoTip text="Chips for inserting coins. Deposit USDC to get more." position="bottom" /></span> {fmt(balancePlay)}
         </span>
         <span className="player-info-balance player-info-cash">
-          <span className="player-info-label">Cash</span> {fmt(balanceCash)}
+          <span className="player-info-label">Cash <InfoTip text="Withdrawable rewards. Earned when coins fall off the front edge." position="bottom" /></span> {fmt(balanceCash)}
         </span>
       </div>
       <div className="player-info-actions">

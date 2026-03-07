@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import './Leaderboard.css';
+import { InfoTip } from './InfoTip';
 
 export interface LeaderboardEntry {
   user_id: string;
@@ -69,7 +70,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
 
   return (
     <div className="leaderboard-panel">
-      <div className="leaderboard-title">HEAT RANKING</div>
+      <div className="leaderboard-title">HEAT RANKING <InfoTip text="Insert more coins = higher Heat = bigger share of rewards. Heat decays over time — keep inserting to maintain your rank." position="right" /></div>
       <div className="leaderboard-list" style={{ height: entries.length * ROW_HEIGHT }}>
         {rows}
       </div>
