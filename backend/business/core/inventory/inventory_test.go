@@ -6,6 +6,7 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -109,6 +110,14 @@ func (m *mockAcctStorer) QueryByAccountID(_ context.Context, _ uuid.UUID, _, _ i
 
 func (m *mockAcctStorer) QueryByReference(_ context.Context, _, _ string) (accounting.AccountingLog, error) {
 	return accounting.AccountingLog{}, nil
+}
+
+func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
+	return decimal.Zero, nil
+}
+
+func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Time) ([]accounting.PlayerSum, error) {
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------

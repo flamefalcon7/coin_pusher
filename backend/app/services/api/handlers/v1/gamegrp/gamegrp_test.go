@@ -134,6 +134,14 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 	return accounting.AccountingLog{}, nil
 }
 
+func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
+	return decimal.Zero, nil
+}
+
+func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Time) ([]accounting.PlayerSum, error) {
+	return nil, nil
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
