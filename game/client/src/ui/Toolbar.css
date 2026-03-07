@@ -286,6 +286,48 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
+/* ── Ability hover tooltips ──────────────────────────────────────────── */
+
+.toolbar-action-btn[data-tooltip] {
+  position: relative;
+}
+
+.toolbar-action-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(30, 15, 55, 0.97);
+  border: 1px solid rgba(232, 150, 32, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  color: rgba(245, 230, 184, 0.85);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 100;
+}
+
+.toolbar-action-btn[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+/* Shock button is outside .toolbar-abilities, tooltip goes left */
+.toolbar-action-btn.shock[data-tooltip]::after {
+  right: auto;
+  left: calc(100% + 8px);
+  top: 50%;
+}
+
 /* ── Mobile ≤ 480px ────────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {

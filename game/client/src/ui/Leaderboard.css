@@ -18,6 +18,10 @@
   font-weight: bold;
   letter-spacing: 1px;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
 }
 
 .leaderboard-list {
