@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import './Leaderboard.css';
 import { InfoTip } from './InfoTip';
 
@@ -17,11 +17,49 @@ interface LeaderboardProps {
 
 const ROW_HEIGHT = 28;
 
+type ShareDelta = { direction: 'up' | 'down'; key: number };
+
 export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUserId }) => {
   // Track previous index per user_id so we can animate from old position.
   const prevOrderRef = useRef<Map<string, number>>(new Map());
   // Bump counter per user_id when their index changes, to re-trigger CSS animation.
   const animKeyRef = useRef<Map<string, number>>(new Map());
+
+  // Heat change tracking for my entry
+  const prevShareRef = useRef<number | null>(null);
+  const prevRankRef = useRef<number | null>(null);
+  const [shareDelta, setShareDelta] = useState<ShareDelta | null>(null);
+  const [rankUp, setRankUp] = useState(0);
+  const deltaKeyRef = useRef(0);
+
+  // Detect share and rank changes for current user
+  useEffect(() => {
+    const myShare = myEntry?.share ?? entries.find(e => e.user_id === myUserId)?.share;
+    const myRank = myEntry?.rank ?? entries.find(e => e.user_id === myUserId)?.rank;
+
+    if (myShare !== undefined && prevShareRef.current !== null) {
+      const diff = myShare - prevShareRef.current;
+      // Only show if change is meaningful (> 0.1%)
+      if (Math.abs(diff) > 0.001) {
+        deltaKeyRef.current++;
+        setShareDelta({ direction: diff > 0 ? 'up' : 'down', key: deltaKeyRef.current });
+      }
+    }
+
+    if (myRank !== undefined && prevRankRef.current !== null && myRank < prevRankRef.current) {
+      setRankUp(r => r + 1);
+    }
+
+    if (myShare !== undefined) prevShareRef.current = myShare;
+    if (myRank !== undefined) prevRankRef.current = myRank;
+  }, [entries, myEntry, myUserId]);
+
+  // Clear share delta after animation
+  useEffect(() => {
+    if (!shareDelta) return;
+    const t = setTimeout(() => setShareDelta(null), 1500);
+    return () => clearTimeout(t);
+  }, [shareDelta]);
 
   const prevOrder = prevOrderRef.current;
   const animKeys = animKeyRef.current;
@@ -50,7 +88,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
     return (
       <div
         key={`${entry.user_id}-${ak}`}
-        className={`lb-row${isTop1 ? ' on-fire' : ''}${isMe ? ' is-me' : ''}`}
+        className={`lb-row${isTop1 ? ' on-fire' : ''}${isMe ? ' is-me' : ''}${isMe && rankUp > 0 ? ' rank-up' : ''}`}
         style={{
           transform: `translateY(${toY}px)`,
           '--from-y': `${fromY}px`,
@@ -59,8 +97,18 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
       >
         <span className="lb-rank">{entry.rank}.</span>
         {isTop1 && <span className="fire-icon">&#x1F525;</span>}
-        <span className="lb-name">{entry.username}</span>
-        <span className="lb-share">{(entry.share * 100).toFixed(1)}%</span>
+        <span className="lb-name">{isMe ? 'You' : entry.username}</span>
+        <span className="lb-share">
+          {(entry.share * 100).toFixed(1)}%
+          {isMe && shareDelta && (
+            <span
+              key={shareDelta.key}
+              className={`lb-share-delta ${shareDelta.direction}`}
+            >
+              {shareDelta.direction === 'up' ? '\u25B2' : '\u25BC'}
+            </span>
+          )}
+        </span>
       </div>
     );
   });
@@ -77,10 +125,20 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
       {myEntry && !myInTop5 && (
         <>
           <div className="leaderboard-divider" />
-          <div className="lb-my-rank">
+          <div className={`lb-my-rank ${rankUp > 0 ? 'rank-up' : ''}`}>
             <span className="lb-rank">#{myEntry.rank}</span>
-            <span className="lb-name">{myEntry.username}</span>
-            <span className="lb-share">{(myEntry.share * 100).toFixed(1)}%</span>
+            <span className="lb-name">You</span>
+            <span className="lb-share">
+              {(myEntry.share * 100).toFixed(1)}%
+              {shareDelta && (
+                <span
+                  key={shareDelta.key}
+                  className={`lb-share-delta ${shareDelta.direction}`}
+                >
+                  {shareDelta.direction === 'up' ? '\u25B2' : '\u25BC'}
+                </span>
+              )}
+            </span>
           </div>
         </>
       )}
