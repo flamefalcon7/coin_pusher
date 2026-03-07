@@ -52,12 +52,11 @@ export class WallDecorations {
     const dx = fhw - hw;
     const frontLen = Math.sqrt(dx * dx + flareDepth * flareDepth);
 
-    // Accent materials — toon shaded, themed by accent color
-    const bumperRailMat = createToonMat("bumperRailMat", new Color3(0.8, 0.8, 0.9), this.scene);
-    this.celToggleMats.push(bumperRailMat);
-
-    const panelDividerMat = createToonMat("panelDividerMat", new Color3(0.8, 0.8, 0.9), this.scene);
-    this.celToggleMats.push(panelDividerMat);
+    // Accent material — toon shaded, themed by accent color (shared for rails + dividers)
+    const accentMat = createToonMat("wallAccentMat", new Color3(0.8, 0.8, 0.9), this.scene);
+    this.celToggleMats.push(accentMat);
+    const bumperRailMat = accentMat;
+    const panelDividerMat = accentMat;
 
     const segments: WallSegment[] = [
       { wall: walls.leftBack, depth: backDepth, outwardSign: -1 },

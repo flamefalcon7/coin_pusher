@@ -6,6 +6,8 @@ const MAX_RADIUS = 5;
 
 export class CameraSetup {
   private camera: ArcRotateCamera;
+  private resizeObserver: ReturnType<typeof Engine.prototype.onResizeObservable.add> | null = null;
+  private engine: Engine;
 
   constructor(scene: Scene, canvas: HTMLCanvasElement) {
     this.camera = new ArcRotateCamera(
@@ -30,9 +32,9 @@ export class CameraSetup {
     this.camera.panningSensibility = 0;
 
     // Adjust radius for narrow (portrait) screens
-    const engine = scene.getEngine();
-    this.adjustRadiusForAspect(engine);
-    engine.onResizeObservable.add(() => this.adjustRadiusForAspect(engine));
+    this.engine = scene.getEngine();
+    this.adjustRadiusForAspect(this.engine);
+    this.resizeObserver = this.engine.onResizeObservable.add(() => this.adjustRadiusForAspect(this.engine));
 
     console.log("Camera initialized");
   }
@@ -53,5 +55,12 @@ export class CameraSetup {
 
   getCamera(): ArcRotateCamera {
     return this.camera;
+  }
+
+  dispose(): void {
+    if (this.resizeObserver) {
+      this.engine.onResizeObservable.remove(this.resizeObserver);
+      this.resizeObserver = null;
+    }
   }
 }

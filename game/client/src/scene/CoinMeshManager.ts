@@ -735,6 +735,16 @@ export class CoinMeshManager {
     return null;
   }
 
+  dispose(): void {
+    this.clear();
+    this.prototypeMesh.material?.dispose();
+    this.prototypeMesh.dispose();
+    this.keyCoinPrototype.material?.dispose();
+    this.keyCoinPrototype.dispose();
+    this.highlightMesh.material?.dispose();
+    this.highlightMesh.dispose();
+  }
+
   clear(): void {
     this.idToIndex.clear();
     this.spawnAnims.clear();

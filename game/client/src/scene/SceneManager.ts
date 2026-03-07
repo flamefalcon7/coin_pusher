@@ -48,6 +48,9 @@ export class SceneManager {
   // Pin flash: cache original color for fade-back
   private pinOrigColor: Color3 = new Color3(0.7, 0.7, 0.85);
 
+  // Reusable scratch Color3 for per-tick lerp (avoids allocation)
+  private static _scratchColor = new Color3();
+
   // Observable + timer tracking for cleanup
   private toonObserver: ReturnType<Scene["onBeforeRenderObservable"]["add"]> | null = null;
   private activeTimers: ReturnType<typeof setInterval>[] = [];
@@ -363,7 +366,8 @@ export class SceneManager {
           return;
         }
         const t = fadeElapsed / fadeDuration;
-        pinMat.setColor3("baseColor", Color3.Lerp(flashColor, origColor, t));
+        Color3.LerpToRef(flashColor, origColor, t, SceneManager._scratchColor);
+        pinMat.setColor3("baseColor", SceneManager._scratchColor);
       }, fadeInterval);
       this.activeTimers.push(fadeTimer);
     }
@@ -555,7 +559,8 @@ export class SceneManager {
             return;
           }
           const t = fadeElapsed / fadeDuration;
-          pusherMat.setColor3("baseColor", Color3.Lerp(glowColor, origColor, t));
+          Color3.LerpToRef(glowColor, origColor, t, SceneManager._scratchColor);
+          pusherMat.setColor3("baseColor", SceneManager._scratchColor);
         }, fadeInterval);
         this.activeTimers.push(fadeTimer);
       }, PULLBACK_DURATION);
