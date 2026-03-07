@@ -565,8 +565,8 @@ export const SLOT_MACHINE_CONFIG = {
 // Jackpot wheel configuration
 export const JACKPOT_WHEEL_CONFIG = {
   TRIGGER_COUNT: 10, // coins through right wall to trigger spin
-  SEGMENTS: 8,
-  SEGMENT_REWARDS: [1, 1, 1, 2, 1, 1, 1, 3] as const,
+  SEGMENTS: 6,
+  SEGMENT_REWARDS: [3, 3, 3, 6, 6, 9] as const,
   SPIN_DURATION: 4000, // ms total spin animation time
   WIDTH: 0.30, // meters — wheel diameter reference
   HEIGHT: 0.40, // meters — backplate height

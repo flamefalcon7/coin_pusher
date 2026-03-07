@@ -12,7 +12,7 @@ import {
 import { JACKPOT_WHEEL_CONFIG } from "@coin-pusher/shared";
 import { createToonMat } from "./ToonMaterial";
 
-// ── Segment Colors (8 distinct toon-shaded colors) ──────────────────────────
+// ── Segment Colors (6 distinct toon-shaded colors) ──────────────────────────
 const SEGMENT_COLORS: Color3[] = [
   new Color3(0.85, 0.15, 0.15), // Red
   new Color3(0.15, 0.35, 0.85), // Blue
@@ -20,8 +20,6 @@ const SEGMENT_COLORS: Color3[] = [
   new Color3(0.15, 0.70, 0.25), // Green
   new Color3(0.90, 0.45, 0.10), // Orange
   new Color3(0.55, 0.20, 0.75), // Purple
-  new Color3(0.90, 0.40, 0.60), // Pink
-  new Color3(0.10, 0.75, 0.75), // Cyan
 ];
 
 const PANEL_COLOR = new Color3(0.10, 0.10, 0.14);

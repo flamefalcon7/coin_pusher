@@ -956,7 +956,7 @@ export class GameLoop {
     this.wheelSpinning = true;
     this.wheelCounter = 0;
 
-    // Pick random segment 0-7
+    // Pick random segment 0-5
     const segment = Math.floor(Math.random() * JACKPOT_WHEEL_CONFIG.SEGMENTS);
     const reward = JACKPOT_WHEEL_CONFIG.SEGMENT_REWARDS[segment];
 
@@ -985,7 +985,7 @@ export class GameLoop {
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
         // Random X across platform width, high Y for rain effect
-        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
+        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH * 0.4;
         const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
         const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
 
