@@ -214,14 +214,6 @@ func toProgressResponse(p progress.Progress) progressResponse {
 
 // CreateProgress creates a new progress definition. Admin only.
 func (g *Group) CreateProgress(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	claims, ok := mid.GetClaims(ctx)
-	if !ok {
-		return v1.NewAuthError()
-	}
-	if claims.Role != "admin" {
-		return v1.NewForbiddenError()
-	}
-
 	var req createProgressRequest
 	if err := v1.Decode(r, &req); err != nil {
 		return err
@@ -299,14 +291,6 @@ type updateProgressRequest struct {
 
 // UpdateProgress updates an existing progress definition. Admin only.
 func (g *Group) UpdateProgress(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	claims, ok := mid.GetClaims(ctx)
-	if !ok {
-		return v1.NewAuthError()
-	}
-	if claims.Role != "admin" {
-		return v1.NewForbiddenError()
-	}
-
 	progressID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		return v1.NewRequestError(fmt.Errorf("invalid progress id"), http.StatusBadRequest)
@@ -379,14 +363,6 @@ type adminProgressListResponse struct {
 
 // ListAllProgress returns all progress definitions. Admin only.
 func (g *Group) ListAllProgress(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	claims, ok := mid.GetClaims(ctx)
-	if !ok {
-		return v1.NewAuthError()
-	}
-	if claims.Role != "admin" {
-		return v1.NewForbiddenError()
-	}
-
 	all, err := g.progress.QueryAllProgress(ctx)
 	if err != nil {
 		return err
@@ -418,14 +394,6 @@ type accountProgressListResponse struct {
 
 // ListUserProgressByProgressID returns user progress for a specific progress definition. Admin only.
 func (g *Group) ListUserProgressByProgressID(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	claims, ok := mid.GetClaims(ctx)
-	if !ok {
-		return v1.NewAuthError()
-	}
-	if claims.Role != "admin" {
-		return v1.NewForbiddenError()
-	}
-
 	progressID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		return v1.NewRequestError(fmt.Errorf("invalid progress id"), http.StatusBadRequest)

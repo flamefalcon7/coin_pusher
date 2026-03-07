@@ -302,6 +302,7 @@ export type WelcomeMessage = {
 export type SlotStatusMessage = {
   op: "slot_status";
   counts: number[];
+  coin_count: number;
   tick: number;
 };
 
@@ -432,6 +433,7 @@ export const RATE_LIMIT_CONFIG = {
   LIGHTNING_COOLDOWN: 6000, // ms between lightning activations per connection
   SUPER_PUSH_COOLDOWN: 12000, // ms between super push activations per connection
   MAX_X_POSITION: 0.5, // Valid x range: [-0.5, 0.5]
+  MAX_ACTIVE_COINS: 800, // Hard cap on active physics bodies
 } as const;
 
 // Coin spawn slot configuration

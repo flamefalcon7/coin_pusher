@@ -1,4 +1,5 @@
 import { SLOT_MACHINE_CONFIG, COIN_CONFIG, SCENE_CONFIG } from "@coin-pusher/shared";
+import { randomInt } from "node:crypto";
 import type { SlotSymbol } from "@coin-pusher/shared";
 
 /** Pending bonus coin spawn (scheduled by tick). */
@@ -84,9 +85,9 @@ export class SlotMachine {
     // Roll 3 random symbols
     const symbols = SLOT_MACHINE_CONFIG.SYMBOLS;
     const reels: [SlotSymbol, SlotSymbol, SlotSymbol] = [
-      symbols[Math.floor(Math.random() * symbols.length)],
-      symbols[Math.floor(Math.random() * symbols.length)],
-      symbols[Math.floor(Math.random() * symbols.length)],
+      symbols[randomInt(symbols.length)],
+      symbols[randomInt(symbols.length)],
+      symbols[randomInt(symbols.length)],
     ];
     const jackpot = reels[0] === reels[1] && reels[1] === reels[2];
 

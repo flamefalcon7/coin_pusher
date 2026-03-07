@@ -423,3 +423,63 @@ func TestLogger(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusCreated)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RequireAdmin middleware
+// ---------------------------------------------------------------------------
+
+func TestRequireAdmin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		claims     *Claims
+		wantStatus int
+	}{
+		{
+			name:       "no claims in context",
+			claims:     nil,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "user role blocked",
+			claims:     &Claims{AccountID: "a1", Role: "user"},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "empty role blocked",
+			claims:     &Claims{AccountID: "a1", Role: ""},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "admin role allowed",
+			claims:     &Claims{AccountID: "a1", Role: "admin"},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			handler := RequireAdmin()(inner)
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tc.claims != nil {
+				ctx := SetClaims(r.Context(), *tc.claims)
+				r = r.WithContext(ctx)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, r)
+
+			if w.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tc.wantStatus)
+			}
+		})
+	}
+}

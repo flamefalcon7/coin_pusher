@@ -54,5 +54,9 @@ COPY --from=game-builder /app/game/server/dist ./game/server/dist
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
+# Run as non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
 # Start game server (NATS worker, no exposed ports)
 CMD ["node", "game/server/dist/index.js"]

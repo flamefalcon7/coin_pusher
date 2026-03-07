@@ -10,6 +10,10 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: process.env.NODE_ENV !== 'production',
+    minify: 'esbuild',
+  },
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
   },
   optimizeDeps: {
     exclude: ['@coin-pusher/shared'],

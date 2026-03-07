@@ -796,19 +796,12 @@ func buildAPIMux(
 		r.Put("/v1/user/display-name", mid.Errors(log, userGrp.SetDisplayName))
 		r.Put("/v1/user/referral-code", mid.Errors(log, userGrp.SetReferralCode))
 		r.Get("/v1/user/referral", mid.Errors(log, userGrp.ReferralInfo))
-		r.Post("/v1/game/batch-insert", mid.Errors(log, gameGrp.BatchInsert))
 		r.Get("/v1/inventory", mid.Errors(log, invGrp.GetInventory))
 		r.Post("/v1/chest/open", mid.Errors(log, invGrp.OpenChest))
 
 		// Progress routes (user).
 		r.Get("/v1/progress", mid.Errors(log, progGrp.ListUserProgress))
 		r.Post("/v1/progress/{id}/claim", mid.Errors(log, progGrp.ClaimProgress))
-
-		// Progress admin routes (role check inside handler).
-		r.Post("/v1/admin/progress", mid.Errors(log, progGrp.CreateProgress))
-		r.Put("/v1/admin/progress/{id}", mid.Errors(log, progGrp.UpdateProgress))
-		r.Get("/v1/admin/progress", mid.Errors(log, progGrp.ListAllProgress))
-		r.Get("/v1/admin/progress/{id}/users", mid.Errors(log, progGrp.ListUserProgressByProgressID))
 
 		// Deposit/withdrawal routes (only if wallet is configured).
 		if depositCore != nil {
@@ -819,6 +812,16 @@ func buildAPIMux(
 			r.Post("/v1/withdraw", mid.Errors(log, depGrp.RequestWithdrawal))
 			r.Get("/v1/withdrawals", mid.Errors(log, depGrp.ListWithdrawals))
 		}
+	})
+
+	// Admin routes — JWT + admin role required.
+	mux.Group(func(r chi.Router) {
+		r.Use(mid.Authenticate(a))
+		r.Use(mid.RequireAdmin())
+		r.Post("/v1/admin/progress", mid.Errors(log, progGrp.CreateProgress))
+		r.Put("/v1/admin/progress/{id}", mid.Errors(log, progGrp.UpdateProgress))
+		r.Get("/v1/admin/progress", mid.Errors(log, progGrp.ListAllProgress))
+		r.Get("/v1/admin/progress/{id}/users", mid.Errors(log, progGrp.ListUserProgressByProgressID))
 	})
 
 	// Game-secret-protected

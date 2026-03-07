@@ -15,6 +15,7 @@ import type {
 } from "@coin-pusher/shared";
 import { PHYSICS_CONFIG, SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG, RATE_LIMIT_CONFIG, SLOT_MACHINE_CONFIG, JACKPOT_WHEEL_CONFIG, DespawnZone } from "@coin-pusher/shared";
 import { PHYSICS_PARAMS } from "../physics/config.js";
+import { randomInt } from "node:crypto";
 
 export class GameLoop {
   private physicsWorld: PhysicsWorld;
@@ -195,6 +196,10 @@ export class GameLoop {
     // 1b. Check drop scheduler for coins to drop (one per slot per tick)
     const drops = this.dropScheduler.tick();
     for (const drop of drops) {
+      // Skip user coin spawns if at hard cap
+      if (this.coins.size >= RATE_LIMIT_CONFIG.MAX_ACTIVE_COINS) {
+        break;
+      }
       const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
       const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
       if (coinId !== null) {
@@ -214,6 +219,7 @@ export class GameLoop {
       this.natsClient.publishSlotStatus({
         op: "slot_status",
         counts: this.dropScheduler.getSlotCounts(),
+        coin_count: this.coins.size,
         tick: this.gameState.getTick(),
       });
     }
@@ -899,9 +905,9 @@ export class GameLoop {
     // Pick 3 random symbols
     const symbols = SLOT_MACHINE_CONFIG.SYMBOLS;
     const reels: [SlotSymbol, SlotSymbol, SlotSymbol] = [
-      symbols[Math.floor(Math.random() * symbols.length)],
-      symbols[Math.floor(Math.random() * symbols.length)],
-      symbols[Math.floor(Math.random() * symbols.length)],
+      symbols[randomInt(symbols.length)],
+      symbols[randomInt(symbols.length)],
+      symbols[randomInt(symbols.length)],
     ];
     const jackpot = reels[0] === reels[1] && reels[1] === reels[2];
 
@@ -982,7 +988,7 @@ export class GameLoop {
     this.wheelCounter = 0;
 
     // Pick random segment 0-5
-    const segment = Math.floor(Math.random() * JACKPOT_WHEEL_CONFIG.SEGMENTS);
+    const segment = randomInt(JACKPOT_WHEEL_CONFIG.SEGMENTS);
     const reward = JACKPOT_WHEEL_CONFIG.SEGMENT_REWARDS[segment];
 
     // Publish counter reset + spin result
