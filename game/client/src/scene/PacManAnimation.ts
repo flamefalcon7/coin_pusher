@@ -54,7 +54,12 @@ export class PacManAnimation {
   private dotSpawnTimers: number[] = []; // elapsed time since each dot started spawning (-ve = waiting)
   private dotMat: ReturnType<typeof createToonMat>;
 
+  private activeDotCount: number = 0;
   private observer: Observer<Scene> | null = null;
+
+  // Reusable scratch vectors to avoid per-frame allocation
+  private static _scratchPos = new Vector3();
+  private static _scratchDir = new Vector3();
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -147,73 +152,82 @@ export class PacManAnimation {
     ];
   }
 
-  /** Get position at a given distance along the path. */
-  private posAtDist(dist: number): Vector3 {
-    if (dist <= 0) return this.waypoints[0].clone();
-    if (dist >= this.totalLength) return this.waypoints[this.waypoints.length - 1].clone();
+  /** Get position at a given distance along the path (writes to out). */
+  private posAtDistRef(dist: number, out: Vector3): void {
+    if (dist <= 0) { out.copyFrom(this.waypoints[0]); return; }
+    if (dist >= this.totalLength) { out.copyFrom(this.waypoints[this.waypoints.length - 1]); return; }
 
-    // Find which segment we're on
     for (let i = 1; i < this.cumulativeDist.length; i++) {
       if (dist <= this.cumulativeDist[i]) {
         const segStart = this.cumulativeDist[i - 1];
         const segLen = this.cumulativeDist[i] - segStart;
         const t = (dist - segStart) / segLen;
-        return Vector3.Lerp(this.waypoints[i - 1], this.waypoints[i], t);
+        Vector3.LerpToRef(this.waypoints[i - 1], this.waypoints[i], t, out);
+        return;
       }
     }
-    return this.waypoints[this.waypoints.length - 1].clone();
+    out.copyFrom(this.waypoints[this.waypoints.length - 1]);
   }
 
-  /** Get the direction vector at a given distance along the path. */
-  private dirAtDist(dist: number): Vector3 {
-    // Find which segment
+  /** Get the direction vector at a given distance along the path (writes to out). */
+  private dirAtDistRef(dist: number, out: Vector3): void {
     for (let i = 1; i < this.cumulativeDist.length; i++) {
       if (dist <= this.cumulativeDist[i]) {
-        return this.waypoints[i].subtract(this.waypoints[i - 1]).normalize();
+        this.waypoints[i].subtractToRef(this.waypoints[i - 1], out);
+        out.normalize();
+        return;
       }
     }
     const n = this.waypoints.length;
-    return this.waypoints[n - 1].subtract(this.waypoints[n - 2]).normalize();
+    this.waypoints[n - 1].subtractToRef(this.waypoints[n - 2], out);
+    out.normalize();
   }
 
   /** Face Pac-Man along the current travel direction. */
   private faceDirection(dist: number): void {
-    const dir = this.dirAtDist(dist);
-    const sign = this.direction; // flip when going backwards
-    this.group.rotation.y = Math.atan2(dir.x * sign, dir.z * sign);
+    this.dirAtDistRef(dist, PacManAnimation._scratchDir);
+    const sign = this.direction;
+    this.group.rotation.y = Math.atan2(PacManAnimation._scratchDir.x * sign, PacManAnimation._scratchDir.z * sign);
   }
 
-  /** Create dots along the entire path with staggered scale-in animation. */
+  /** Create or reset dots along the entire path with staggered scale-in animation. */
   private spawnDots(): void {
-    for (const dot of this.dots) {
-      if (!dot.isDisposed()) dot.dispose();
-    }
-    this.dots = [];
-    this.dotDistances = [];
-    this.dotSpawnTimers = [];
-
     const count = Math.floor(this.totalLength / DOT_SPACING);
     const startOffset = (this.totalLength - (count - 1) * DOT_SPACING) / 2;
 
-    for (let i = 0; i < count; i++) {
-      const d = startOffset + i * DOT_SPACING;
-      const pos = this.posAtDist(d);
-
-      const dot = MeshBuilder.CreateSphere(`pacDot${i}`, {
+    // Grow pool if needed, reuse existing meshes
+    while (this.dots.length < count) {
+      const dot = MeshBuilder.CreateSphere(`pacDot${this.dots.length}`, {
         diameter: DOT_RADIUS * 2,
         segments: 6,
       }, this.scene);
-      dot.position = pos;
       dot.material = this.dotMat;
       dot.isPickable = false;
-      // Start invisible, will scale up via animation
-      dot.scaling.setAll(0);
-
       this.dots.push(dot);
+    }
+
+    this.dotDistances = [];
+    this.dotSpawnTimers = [];
+
+    for (let i = 0; i < count; i++) {
+      const d = startOffset + i * DOT_SPACING;
+      this.posAtDistRef(d, PacManAnimation._scratchPos);
+
+      const dot = this.dots[i];
+      dot.position.copyFrom(PacManAnimation._scratchPos);
+      dot.scaling.setAll(0);
+      dot.setEnabled(true);
+
       this.dotDistances.push(d);
-      // Negative timer = stagger delay before animation begins
       this.dotSpawnTimers.push(-i * DOT_SPAWN_STAGGER);
     }
+
+    // Hide excess pooled dots
+    for (let i = count; i < this.dots.length; i++) {
+      this.dots[i].setEnabled(false);
+    }
+
+    this.activeDotCount = count;
   }
 
   private update(dt: number): void {
@@ -234,27 +248,31 @@ export class PacManAnimation {
 
     // ── Position ─────────────────────────────────────────────────────
     const currentDist = this.progress * this.totalLength;
-    const pos = this.posAtDist(currentDist);
-    this.group.position.copyFrom(pos);
+    this.posAtDistRef(currentDist, PacManAnimation._scratchPos);
+    this.group.position.copyFrom(PacManAnimation._scratchPos);
 
     // ── Face direction of travel ─────────────────────────────────────
     this.faceDirection(currentDist);
 
     // ── Eat dots (only when going forward) ───────────────────────────
     if (this.direction === 1) {
-      for (let i = this.dots.length - 1; i >= 0; i--) {
-        const dot = this.dots[i];
-        if (!dot.isDisposed() && this.dotDistances[i] <= currentDist + EAT_DISTANCE) {
-          dot.setEnabled(false);
-          dot.dispose();
-          this.dots.splice(i, 1);
-          this.dotDistances.splice(i, 1);
+      for (let i = this.activeDotCount - 1; i >= 0; i--) {
+        if (this.dotDistances[i] <= currentDist + EAT_DISTANCE) {
+          this.dots[i].setEnabled(false);
+          // Swap with last active dot to keep active range contiguous
+          this.activeDotCount--;
+          if (i < this.activeDotCount) {
+            // Swap entries
+            const tmpDot = this.dots[i]; this.dots[i] = this.dots[this.activeDotCount]; this.dots[this.activeDotCount] = tmpDot;
+            const tmpDist = this.dotDistances[i]; this.dotDistances[i] = this.dotDistances[this.activeDotCount]; this.dotDistances[this.activeDotCount] = tmpDist;
+            const tmpTimer = this.dotSpawnTimers[i]; this.dotSpawnTimers[i] = this.dotSpawnTimers[this.activeDotCount]; this.dotSpawnTimers[this.activeDotCount] = tmpTimer;
+          }
         }
       }
     }
 
     // ── Dot spawn animation (scale up with ease-out) ─────────────────
-    for (let i = 0; i < this.dots.length; i++) {
+    for (let i = 0; i < this.activeDotCount; i++) {
       const timer = this.dotSpawnTimers[i];
       if (timer < DOT_SPAWN_DURATION) {
         this.dotSpawnTimers[i] = timer + dt;

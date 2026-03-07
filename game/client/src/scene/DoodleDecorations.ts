@@ -368,5 +368,9 @@ export class DoodleDecorations {
 
   dispose(): void {
     this.group.dispose(false, true);
+    this.outlineMat.dispose();
+    for (const m of this.scallopMats) m.dispose();
+    this.starMat.dispose();
+    this.burstMat.dispose();
   }
 }
