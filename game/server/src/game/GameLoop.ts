@@ -61,6 +61,10 @@ export class GameLoop {
   private wheelCounter: number = 0;
   private wheelSpinning: boolean = false;
 
+  // Key coin front despawn debounce (batch into single lucky draw)
+  private keyCoinFrontBuffer: number = 0;
+  private keyCoinFrontFlushTimer?: NodeJS.Timeout;
+
   // Tick timing stats
   private tickTimings: number[] = [];
   private static readonly TIMING_WINDOW = 300; // samples (~10s at 30Hz)
@@ -117,6 +121,17 @@ export class GameLoop {
     }
     if (this.statsIntervalId) {
       clearInterval(this.statsIntervalId);
+    }
+    // Flush any buffered key coin despawns before stopping
+    if (this.keyCoinFrontFlushTimer) {
+      clearTimeout(this.keyCoinFrontFlushTimer);
+    }
+    if (this.keyCoinFrontBuffer > 0) {
+      this.natsClient.publishKeyCoinFrontDespawn({
+        count: this.keyCoinFrontBuffer,
+        tick: this.gameState.getTick(),
+      });
+      this.keyCoinFrontBuffer = 0;
     }
     console.log("🛑 Game loop stopped");
   }
@@ -337,12 +352,22 @@ export class GameLoop {
       });
     }
 
-    // 5c. Publish key coin front despawn events to NATS for backend lucky draw
+    // 5c. Buffer key coin front despawns (debounce 2s → single lucky draw)
     if (keyCoinFrontCount > 0) {
-      this.natsClient.publishKeyCoinFrontDespawn({
-        count: keyCoinFrontCount,
-        tick: this.gameState.getTick(),
-      });
+      this.keyCoinFrontBuffer += keyCoinFrontCount;
+      if (this.keyCoinFrontFlushTimer) {
+        clearTimeout(this.keyCoinFrontFlushTimer);
+      }
+      this.keyCoinFrontFlushTimer = setTimeout(() => {
+        if (this.keyCoinFrontBuffer > 0) {
+          this.natsClient.publishKeyCoinFrontDespawn({
+            count: this.keyCoinFrontBuffer,
+            tick: this.gameState.getTick(),
+          });
+          this.keyCoinFrontBuffer = 0;
+        }
+        this.keyCoinFrontFlushTimer = undefined;
+      }, 1000);
     }
     const tAfterDespawn = performance.now();
 

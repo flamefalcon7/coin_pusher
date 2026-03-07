@@ -601,8 +601,8 @@ func run() error {
 		}
 		metrics.KeyCoinDrawTotal.Inc()
 
-		// Look up winner display name.
-		winnerName := ""
+		// Look up winner display name (fallback to truncated UUID like heat broadcast).
+		winnerName := winnerID.String()[:8] + "..."
 		acct, err := userCore.QueryByID(context.Background(), winnerID)
 		if err == nil && acct.DisplayName != nil {
 			winnerName = *acct.DisplayName

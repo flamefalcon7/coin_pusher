@@ -12,21 +12,50 @@ import { StateBuffer } from "./StateBuffer";
 import { Interpolator, type InterpolatedState } from "./Interpolator";
 
 export type ConnectionStatusCallback = (
-  status: "connecting" | "connected" | "disconnected"
+  status: "connecting" | "connected" | "disconnected",
 ) => void;
 export type PingCallback = (ping: number) => void;
-export type SlotSpinCallback = (reels: [SlotSymbol, SlotSymbol, SlotSymbol], jackpot: boolean) => void;
+export type SlotSpinCallback = (
+  reels: [SlotSymbol, SlotSymbol, SlotSymbol],
+  jackpot: boolean,
+) => void;
 export type SlotCounterCallback = (counter: number) => void;
-export type AbilityEventCallback = (ability: AbilityType, x?: number, z?: number, username?: string) => void;
-export type CoinSpawnCallback = (coins: { id: number; owner_id: string; is_key_coin?: boolean }[]) => void;
-export type HeatUpdateCallback = (players: { user_id: string; username: string; share: number; raw_heat: number }[]) => void;
+export type AbilityEventCallback = (
+  ability: AbilityType,
+  x?: number,
+  z?: number,
+  username?: string,
+) => void;
+export type CoinSpawnCallback = (
+  coins: { id: number; owner_id: string; is_key_coin?: boolean }[],
+) => void;
+export type HeatUpdateCallback = (
+  players: {
+    user_id: string;
+    username: string;
+    share: number;
+    raw_heat: number;
+  }[],
+) => void;
 export type QueueUpdateCallback = (userId: string, pending: number) => void;
 export type SlotStatusCallback = (counts: number[]) => void;
 export type WheelSpinCallback = (segment: number, reward: number) => void;
 export type WheelCounterCallback = (counter: number) => void;
-export type BatchInsertAckCallback = (queued: number, error?: string, balance?: string) => void;
-export type RewardCallback = (userId: string, amount: number, balance: string) => void;
-export type KeyCoinDrawCallback = (winnerId: string, winnerName: string, count: number) => void;
+export type BatchInsertAckCallback = (
+  queued: number,
+  error?: string,
+  balance?: string,
+) => void;
+export type RewardCallback = (
+  userId: string,
+  amount: number,
+  balance: string,
+) => void;
+export type KeyCoinDrawCallback = (
+  winnerId: string,
+  winnerName: string,
+  count: number,
+) => void;
 export type InventoryUpdateCallback = (inventory: {
   key_coins: number;
   scroll_shock: number;
@@ -36,7 +65,11 @@ export type InventoryUpdateCallback = (inventory: {
   scroll_super_push: number;
   megaspeaker: number;
 }) => void;
-export type MegaspeakerCallback = (speakerName: string, message: string, timestamp: number) => void;
+export type MegaspeakerCallback = (
+  speakerName: string,
+  message: string,
+  timestamp: number,
+) => void;
 export type MegaspeakerErrorCallback = (error: string) => void;
 export type IdleWarningCallback = () => void;
 export type IdleTimeoutCallback = () => void;
@@ -125,7 +158,7 @@ export class GameClient {
         console.log(
           "World snapshot received:",
           message.bodies.length,
-          "bodies"
+          "bodies",
         );
         // Reset interpolator known coins on new snapshot
         this.interpolator.clear();
@@ -134,7 +167,10 @@ export class GameClient {
         // Track key coin IDs from snapshot for rendering
         this._snapshotKeyCoinIds = new Set<number>();
         const snapshotCoins = message.bodies
-          .filter((b) => (b.type === "coin" || b.type === "key_coin") && b.pos && b.rot)
+          .filter(
+            (b) =>
+              (b.type === "coin" || b.type === "key_coin") && b.pos && b.rot,
+          )
           .map((b) => {
             if (b.type === "key_coin") {
               this._snapshotKeyCoinIds!.add(b.id);
@@ -199,7 +235,12 @@ export class GameClient {
 
       case "ability":
         if (this.abilityEventCallback) {
-          this.abilityEventCallback(message.ability, message.x, message.z, message.username);
+          this.abilityEventCallback(
+            message.ability,
+            message.x,
+            message.z,
+            message.username,
+          );
         }
         break;
 
@@ -241,7 +282,11 @@ export class GameClient {
 
       case "batch_insert_ack":
         if (this.batchInsertAckCallback) {
-          this.batchInsertAckCallback(message.queued, message.error, message.balance);
+          this.batchInsertAckCallback(
+            message.queued,
+            message.error,
+            message.balance,
+          );
         }
         break;
 
@@ -253,7 +298,11 @@ export class GameClient {
 
       case "key_coin_draw":
         if (this.keyCoinDrawCallback) {
-          this.keyCoinDrawCallback(message.winner_id, message.winner_name, message.count);
+          this.keyCoinDrawCallback(
+            message.winner_id,
+            message.winner_name,
+            message.count,
+          );
         }
         break;
 
@@ -273,7 +322,11 @@ export class GameClient {
 
       case "megaspeaker":
         if (this.megaspeakerCallback) {
-          this.megaspeakerCallback(message.speaker_name, message.message, message.timestamp);
+          this.megaspeakerCallback(
+            message.speaker_name,
+            message.message,
+            message.timestamp,
+          );
         }
         break;
 
@@ -383,7 +436,10 @@ export class GameClient {
   }
 
   updateSceneObjects(objects: EditorObjectNet[]): void {
-    this.wsClient.send({ op: "update_scene_objects", objects } as ClientMessage);
+    this.wsClient.send({
+      op: "update_scene_objects",
+      objects,
+    } as ClientMessage);
   }
 
   getInterpolatedState(): InterpolatedState | null {
