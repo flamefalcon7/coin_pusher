@@ -8,7 +8,7 @@ import { Toolbar, type ScrollCounts } from "./ui/Toolbar";
 import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 import { Leaderboard, type LeaderboardEntry } from "./ui/Leaderboard";
 import { ComboCounter } from "./ui/ComboCounter";
-import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
+import { KeyCoinDrawOverlay } from "./ui/KeyCoinDrawOverlay";
 import { AbilityToast, type AbilityToastEntry } from "./ui/AbilityToast";
 import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
@@ -117,7 +117,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const [megaspeakerUnread, setMegaspeakerUnread] = useState(0);
   const megaspeakerOpenRef = useRef(false);
   const [keyCoinDraw, setKeyCoinDraw] = useState<{
-    winnerName: string; count: number; isMe: boolean; id: number;
+    winnerName: string; winnerId: string; count: number; isMe: boolean; id: number;
   } | null>(null);
   const keyCoinDrawIdRef = useRef(0);
   const [abilityToasts, setAbilityToasts] = useState<AbilityToastEntry[]>([]);
@@ -308,6 +308,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
       keyCoinDrawIdRef.current++;
       setKeyCoinDraw({
         winnerName,
+        winnerId,
         count,
         isMe: winnerId === myUserId,
         id: keyCoinDrawIdRef.current,
@@ -1001,14 +1002,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
       <InventoryBar keyCoins={keyCoins} />
 
-      {keyCoinDraw && (
-        <KeyCoinDrawToast
-          winnerName={keyCoinDraw.winnerName}
-          count={keyCoinDraw.count}
-          isMe={keyCoinDraw.isMe}
-          id={keyCoinDraw.id}
-        />
-      )}
+      <KeyCoinDrawOverlay
+        draw={keyCoinDraw}
+        players={leaderboard.map(e => ({ user_id: e.user_id, username: e.username }))}
+      />
 
       <AbilityToast
         entries={abilityToasts}
