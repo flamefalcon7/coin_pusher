@@ -7,7 +7,7 @@ import { ConnectionStatus } from "./ui/ConnectionStatus";
 import { Toolbar, type ScrollCounts } from "./ui/Toolbar";
 import { HoleTooltip, HoleTooltipData } from "./ui/HoleTooltip";
 import { Leaderboard, type LeaderboardEntry } from "./ui/Leaderboard";
-import { RewardToast } from "./ui/RewardToast";
+import { ComboCounter } from "./ui/ComboCounter";
 import { KeyCoinDrawToast } from "./ui/KeyCoinDrawToast";
 import { AbilityToast, type AbilityToastEntry } from "./ui/AbilityToast";
 import { InventoryBar } from "./ui/InventoryBar";
@@ -990,9 +990,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         />
       )}
 
-      {rewardToast && (
-        <RewardToast amount={rewardToast.amount} id={rewardToast.id} />
-      )}
+      <ComboCounter
+        rewardId={rewardToast?.id ?? 0}
+        rewardAmount={rewardToast?.amount ?? 0}
+      />
 
       {holeTooltip && (
         <HoleTooltip data={holeTooltip} slotCounter={slotCounter} wheelCounter={wheelCounter} />

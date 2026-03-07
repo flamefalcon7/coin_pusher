@@ -1,0 +1,96 @@
+.combo-counter {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 90;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  transition: opacity 0.4s ease-out;
+}
+
+.combo-counter.visible {
+  opacity: 1;
+}
+
+.combo-counter.fade-out {
+  opacity: 0;
+}
+
+/* ── Amount text ──────────────────────────────────────────── */
+
+.combo-total {
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  animation: combo-pop 0.3s cubic-bezier(0.17, 0.67, 0.24, 1.4);
+}
+
+@keyframes combo-pop {
+  0% { transform: scale(0.6); opacity: 0.3; }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Tier 0: single hit — small white ─────────────────────── */
+
+.combo-counter.tier-0 .combo-total {
+  font-size: clamp(18px, 4vw, 24px);
+  color: #ffffff;
+}
+
+/* ── Tier 1: 2-4 hits — gold, larger ──────────────────────── */
+
+.combo-counter.tier-1 .combo-total {
+  font-size: clamp(24px, 5.5vw, 32px);
+  color: #FFD700;
+  text-shadow:
+    0 0 8px rgba(255, 215, 0, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Tier 2: 5-9 hits — orange, glow, shake on hit ────────── */
+
+.combo-counter.tier-2 .combo-total {
+  font-size: clamp(30px, 7vw, 40px);
+  color: #FF8800;
+  text-shadow:
+    0 0 14px rgba(255, 136, 0, 0.6),
+    0 0 28px rgba(255, 100, 0, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.6);
+  animation:
+    combo-pop 0.3s cubic-bezier(0.17, 0.67, 0.24, 1.4),
+    combo-shake 0.15s ease-in-out 2;
+}
+
+/* ── Tier 3: 10+ hits — red, intense glow, heavy shake ────── */
+
+.combo-counter.tier-3 .combo-total {
+  font-size: clamp(36px, 8vw, 48px);
+  color: #FF3300;
+  text-shadow:
+    0 0 18px rgba(255, 50, 0, 0.7),
+    0 0 36px rgba(255, 100, 0, 0.4),
+    0 0 56px rgba(255, 60, 0, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.6);
+  animation:
+    combo-pop 0.3s cubic-bezier(0.17, 0.67, 0.24, 1.4),
+    combo-shake 0.12s ease-in-out 3;
+}
+
+@keyframes combo-shake {
+  0%   { translate: 0 0; }
+  25%  { translate: -2px -1px; }
+  50%  { translate: 2px 1px; }
+  75%  { translate: -1px 2px; }
+  100% { translate: 0 0; }
+}
+
+/* ── Mobile ≤ 480px ───────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .combo-counter {
+    top: 35%;
+  }
+}
