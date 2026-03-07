@@ -54,6 +54,10 @@ export class Interpolator {
   removeCoin(id: number): void {
     this.knownCoins.delete(id);
     this.despawnedIds.add(id);
+    // Cap to prevent unbounded growth in long sessions
+    if (this.despawnedIds.size > 2000) {
+      this.despawnedIds.clear();
+    }
   }
 
   /** Clear all known coins (called on reconnect / world_snapshot). */

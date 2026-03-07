@@ -90,7 +90,7 @@ export class DropZoneVFX {
         const base = DropZoneVFX.BASE_EMISSIVE;
         const flash = DropZoneVFX.FLASH_EMISSIVE;
         const fi = slot.flashIntensity;
-        slot.material.emissiveColor = new Color3(
+        slot.material.emissiveColor.set(
           (base.r * intensity) * (1 - fi) + flash.r * fi,
           (base.g * intensity) * (1 - fi) + flash.g * fi,
           (base.b * intensity) * (1 - fi) + flash.b * fi,
@@ -98,7 +98,7 @@ export class DropZoneVFX {
         // Alpha brightens during flash
         slot.material.alpha = 0.25 + fi * 0.55;
       } else {
-        slot.material.emissiveColor = new Color3(
+        slot.material.emissiveColor.set(
           DropZoneVFX.BASE_EMISSIVE.r * intensity,
           DropZoneVFX.BASE_EMISSIVE.g * intensity,
           DropZoneVFX.BASE_EMISSIVE.b * intensity,

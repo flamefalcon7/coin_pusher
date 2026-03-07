@@ -35,6 +35,7 @@ export class HolePortalVFX {
   // Color constants
   private static TEAL = new Color3(0.3, 0.9, 0.85);
   private static GOLD = new Color3(1.0, 0.8, 0.2);
+  private static _scratchColor = new Color3();
 
   constructor(
     scene: Scene,
@@ -266,15 +267,15 @@ export class HolePortalVFX {
       const pulse = (Math.sin(this.elapsed * pulseHz * Math.PI * 2) + 1) * 0.5;
 
       // Frame color: teal at low progress -> gold at high progress
-      const frameColor = Color3.Lerp(HolePortalVFX.TEAL, HolePortalVFX.GOLD, progress);
+      Color3.LerpToRef(HolePortalVFX.TEAL, HolePortalVFX.GOLD, progress, HolePortalVFX._scratchColor);
 
       // Frame emissive intensity pulsing
       const intensity = 0.6 + pulse * 0.8;
       const frameMat = portal.frame.material as StandardMaterial;
-      frameMat.emissiveColor = new Color3(
-        frameColor.r * intensity,
-        frameColor.g * intensity,
-        frameColor.b * intensity,
+      frameMat.emissiveColor.set(
+        HolePortalVFX._scratchColor.r * intensity,
+        HolePortalVFX._scratchColor.g * intensity,
+        HolePortalVFX._scratchColor.b * intensity,
       );
 
       // Corner gem scale pulse (amplified by progress)
@@ -294,7 +295,7 @@ export class HolePortalVFX {
         gem.material?.dispose();
         gem.dispose();
       }
-      portal.particles.dispose();
+      portal.particles.dispose(false);
       portal.hitbox.material?.dispose();
       portal.hitbox.dispose();
     }

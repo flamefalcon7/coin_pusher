@@ -84,6 +84,7 @@ export class VFXManager {
 
   // Max pooled rings — excess rings are disposed instead of pooled
   private static MAX_RING_POOL = 16;
+  private static _scratchColor = new Color3();
 
   // Render observer
   private renderObserver: ReturnType<Scene["onBeforeRenderObservable"]["add"]> | null = null;
@@ -1131,12 +1132,12 @@ export class VFXManager {
     const intensity = pulse * this.config.wallPulseIntensity;
 
     // Brighten toward teal-white (magic shimmer)
-    const pulsedColor = new Color3(
+    VFXManager._scratchColor.set(
       this.wallBaseColor.r + intensity * 0.15,
       this.wallBaseColor.g + intensity * 0.35,
       this.wallBaseColor.b + intensity * 0.35,
     );
-    this.wallMat.setColor3("baseColor", pulsedColor);
+    this.wallMat.setColor3("baseColor", VFXManager._scratchColor);
   }
 
   private updateRings(dt: number): void {
@@ -1245,11 +1246,10 @@ export class VFXManager {
   private trackBurst(ps: ParticleSystem): void {
     this.burstSystems.push(ps);
 
-    // Enforce pool limit: dispose oldest if over limit
+    // Enforce pool limit: stop oldest and let disposeOnStop clean up gracefully
     while (this.burstSystems.length > this.config.maxBurstSystems) {
       const oldest = this.burstSystems.shift();
       oldest?.stop();
-      oldest?.dispose();
     }
   }
 

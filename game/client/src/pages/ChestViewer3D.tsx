@@ -389,10 +389,10 @@ class ChestAnimationEngine {
     }
     this.particles = [];
 
-    for (const m of this.tempMeshes) m.dispose();
+    for (const m of this.tempMeshes) m.dispose(false, true);
     this.tempMeshes = [];
 
-    if (this.rewardMesh) { this.rewardMesh.dispose(); this.rewardMesh = null; }
+    if (this.rewardMesh) { this.rewardMesh.dispose(false, true); this.rewardMesh = null; }
 
     for (const a of this.animatables) { try { a.stop(); } catch { /* */ } }
     this.animatables = [];
@@ -854,7 +854,7 @@ class ChestAnimationEngine {
     ]);
     const animatable = this.scene.beginDirectAnimation(torus, [aAlpha], 0, frames, false);
     animatable.onAnimationEnd = () => {
-      torus.dispose();
+      torus.dispose(false, true);
       const idx = this.tempMeshes.indexOf(torus);
       if (idx >= 0) this.tempMeshes.splice(idx, 1);
     };

@@ -493,6 +493,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     // Cleanup on unmount
     return () => {
       cancelAnimationFrame(animationFrameId);
+      if (testIntervalRef.current) {
+        clearInterval(testIntervalRef.current);
+        testIntervalRef.current = null;
+      }
       toonGuiRef.current?.dispose();
       toonGuiRef.current = null;
       editorManager.dispose();
@@ -773,6 +777,8 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     }
   };
 
+  const testIntervalRef = useRef<number | null>(null);
+
   const handleTestLoop = () => {
     if (isTesting || !gameClientRef.current?.isConnected()) return;
 
@@ -781,9 +787,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     const maxCoins = 200;
     const intervalTime = 60; // ms — must be above COIN_INSERT_COOLDOWN (50ms)
 
-    const interval = setInterval(() => {
+    const interval = window.setInterval(() => {
       if (count >= maxCoins) {
         clearInterval(interval);
+        testIntervalRef.current = null;
         setIsTesting(false);
         return;
       }
@@ -796,6 +803,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
 
       count++;
     }, intervalTime);
+    testIntervalRef.current = interval;
   };
 
   const handleToggleToonDebug = useCallback(() => {
