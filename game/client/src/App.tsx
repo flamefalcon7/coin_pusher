@@ -34,9 +34,11 @@ import { EditorManager, GizmoMode } from "./editor/EditorManager";
 import { EditorPanel } from "./editor/EditorPanel";
 import { EditorObjectData } from "./editor/EditorObject";
 
-// Auto-detect WS host from browser location so mobile on same WiFi works
-const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:4000/ws`;
-const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+// Auto-detect WS/API host from browser location so mobile on same WiFi works.
+// Use secure protocols (wss/https) when served over HTTPS, plain for local dev.
+const isSecure = window.location.protocol === "https:";
+const WS_URL = import.meta.env.VITE_WS_URL || `${isSecure ? "wss" : "ws"}://${window.location.hostname}:4000/ws`;
+const API_URL = import.meta.env.VITE_API_URL || `${isSecure ? "https" : "http"}://${window.location.hostname}:4000`;
 
 function App() {
   const [auth, setAuth] = useState(() => getSavedAuth());
@@ -530,50 +532,44 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         return;
       }
 
-      // Editor toggle
-      if (event.key === "e" || event.key === "E") {
+      // Editor toggle — admin only
+      if ((event.key === "e" || event.key === "E") && account?.role === "admin") {
         toggleEditor();
         return;
       }
 
-      // Delete selected editor object
+      // Delete selected editor object — admin only (editor requires admin)
       if ((event.key === "Delete" || event.key === "Backspace") && editorManagerRef.current?.isActive()) {
         editorManagerRef.current.removeSelected();
         return;
       }
 
-      if (!gameClientRef.current || !gameClientRef.current.isConnected())
+      // Dev/test keyboard shortcuts — admin only
+      if (!gameClientRef.current || !gameClientRef.current.isConnected() || account?.role !== "admin")
         return;
 
       const x = 0; // Center spawn for stacks
 
       switch (event.key) {
         case "1":
-          console.log("Spawning wall");
           gameClientRef.current.spawnStack("wall", x);
           break;
         case "2":
-          console.log("Spawning tower");
           gameClientRef.current.spawnStack("tower", x);
           break;
         case "3":
-          console.log("Spawning pyramid");
           gameClientRef.current.spawnStack("pyramid", x);
           break;
         case "4":
-          console.log("Spawning pyramid3bleLayer");
           gameClientRef.current.spawnStack("pyramid3bleLayer", x);
           break;
         case "5":
-          console.log("Spawning cylinder");
           gameClientRef.current.spawnStack("cylinder", x);
           break;
         case "0":
-          console.log("Clearing all coins");
           gameClientRef.current.clearAll();
           break;
         case "9":
-          console.log("Filling platform");
           gameClientRef.current.fillPlatform();
           break;
       }
@@ -583,7 +579,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [toggleEditor, tornadoTargeting, explosionTargeting]);
+  }, [toggleEditor, tornadoTargeting, explosionTargeting, account?.role]);
 
   const handleInsertCoin = (slotIndex: number, count: number = 1) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
@@ -885,13 +881,15 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         scrollCounts={scrollCounts}
       />
 
-      <button
-        className={`editor-toggle-btn ${editorActive ? "active" : ""}`}
-        onClick={toggleEditor}
-      >
-        Editor [E]
-      </button>
-      {editorActive && editorManagerRef.current && (
+      {account?.role === "admin" && (
+        <button
+          className={`editor-toggle-btn ${editorActive ? "active" : ""}`}
+          onClick={toggleEditor}
+        >
+          Editor [E]
+        </button>
+      )}
+      {account?.role === "admin" && editorActive && editorManagerRef.current && (
         <EditorPanel
           manager={editorManagerRef.current}
           objects={editorObjects}
@@ -930,58 +928,60 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         abilityName={tornadoTargeting ? 'Tornado' : 'Explosion'}
       />
 
-      {/* Dev tools (collapsed by default) */}
-      <div className="dev-tools-corner">
-        <button
-          className="dev-tools-toggle"
-          onClick={() => setDevToolsOpen(!devToolsOpen)}
-        >
-          Dev {devToolsOpen ? "▲" : "▼"}
-        </button>
-        {devToolsOpen && (
-          <div className="dev-tools-panel">
-            <button
-              onClick={handleTestLoop}
-              disabled={isTesting || connectionStatus !== "connected"}
-              className="dev-button"
-            >
-              {isTesting ? "Testing..." : "Insert 200 Coins"}
-            </button>
-            <button
-              onClick={() => gameClientRef.current?.clearAll()}
-              disabled={connectionStatus !== "connected"}
-              className="dev-button"
-            >
-              Clear All [0]
-            </button>
-            <button
-              onClick={() => gameClientRef.current?.fillPlatform()}
-              disabled={connectionStatus !== "connected"}
-              className="dev-button"
-            >
-              Fill Platform [9]
-            </button>
-            <button
-              onClick={() => sceneManagerRef.current?.playRewardCoinRain()}
-              className="dev-button"
-            >
-              Coin Rain
-            </button>
-            <button
-              onClick={() => sceneManagerRef.current?.playRewardTicketRain()}
-              className="dev-button"
-            >
-              Ticket Rain
-            </button>
-            <button
-              onClick={handleToggleToonDebug}
-              className="dev-button"
-            >
-              Toon Debug
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Dev tools — admin only */}
+      {account?.role === "admin" && (
+        <div className="dev-tools-corner">
+          <button
+            className="dev-tools-toggle"
+            onClick={() => setDevToolsOpen(!devToolsOpen)}
+          >
+            Dev {devToolsOpen ? "▲" : "▼"}
+          </button>
+          {devToolsOpen && (
+            <div className="dev-tools-panel">
+              <button
+                onClick={handleTestLoop}
+                disabled={isTesting || connectionStatus !== "connected"}
+                className="dev-button"
+              >
+                {isTesting ? "Testing..." : "Insert 200 Coins"}
+              </button>
+              <button
+                onClick={() => gameClientRef.current?.clearAll()}
+                disabled={connectionStatus !== "connected"}
+                className="dev-button"
+              >
+                Clear All [0]
+              </button>
+              <button
+                onClick={() => gameClientRef.current?.fillPlatform()}
+                disabled={connectionStatus !== "connected"}
+                className="dev-button"
+              >
+                Fill Platform [9]
+              </button>
+              <button
+                onClick={() => sceneManagerRef.current?.playRewardCoinRain()}
+                className="dev-button"
+              >
+                Coin Rain
+              </button>
+              <button
+                onClick={() => sceneManagerRef.current?.playRewardTicketRain()}
+                className="dev-button"
+              >
+                Ticket Rain
+              </button>
+              <button
+                onClick={handleToggleToonDebug}
+                className="dev-button"
+              >
+                Toon Debug
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
 
       <CoinInsertButton

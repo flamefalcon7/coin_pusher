@@ -26,7 +26,7 @@ export class WebSocketClient {
     }
 
     const wsUrl = this.token ? `${this.url}?token=${this.token}` : this.url;
-    console.log(`📡 Connecting to ${wsUrl}...`);
+    console.log(`📡 Connecting to ${this.url}...`);
     this.ws = new WebSocket(wsUrl);
 
     // Set binary type to arraybuffer for binary protocols

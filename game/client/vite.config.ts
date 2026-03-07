@@ -9,7 +9,7 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    sourcemap: true,
+    sourcemap: process.env.NODE_ENV !== 'production',
   },
   optimizeDeps: {
     exclude: ['@coin-pusher/shared'],
