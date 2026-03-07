@@ -6,6 +6,7 @@ import {
   Quaternion,
   Mesh,
   Matrix,
+  DynamicTexture,
 } from "@babylonjs/core";
 import { COIN_CONFIG, KEY_COIN_CONFIG } from "@coin-pusher/shared";
 import { createToonMaterial } from "./ToonMaterial";
@@ -128,6 +129,8 @@ export class CoinMeshManager {
       this.scene
     );
 
+    const keyCoinTex = this.createKeyCoinTexture();
+
     const material = createToonMaterial(this.scene, {
       name: "keyCoinMat",
       baseColor: new Color3(0.85, 0.88, 0.92), // silver
@@ -137,10 +140,52 @@ export class CoinMeshManager {
       rimPower: 2.0,
       specPower: 64.0,
       thinInstances: true,
+      diffuseTexture: keyCoinTex,
     });
     material.setColor3("emissiveColor", new Color3(0.3, 0.4, 0.6));
     this.keyCoinPrototype.material = material;
     this.keyCoinPrototype.thinInstanceEnablePicking = false;
+  }
+
+  /** Create a DynamicTexture with a key icon for the key coin face. */
+  private createKeyCoinTexture(): DynamicTexture {
+    const size = 256;
+    const dt = new DynamicTexture("keyCoinTex", size, this.scene, false);
+    const ctx = dt.getContext();
+
+    // White background — multiplies as identity with silver base color
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+
+    // Key silhouette in darker blue-grey for engraved look
+    const color = "#586890";
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+
+    const cx = size / 2;
+    const cy = size / 2;
+
+    // ── Bow (ring handle) ──
+    const bowR = 30;
+    const bowY = cy - 22;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(cx, bowY, bowR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // ── Shaft ──
+    const sw = 10;
+    const shaftTop = bowY + bowR;
+    const shaftEnd = cy + 62;
+    ctx.fillRect(cx - sw / 2, shaftTop, sw, shaftEnd - shaftTop);
+
+    // ── Teeth (notches on the right) ──
+    const th = 8;
+    ctx.fillRect(cx + sw / 2, shaftEnd - th * 1.5, 16, th);
+    ctx.fillRect(cx + sw / 2, shaftEnd - th * 4, 12, th);
+
+    dt.update();
+    return dt;
   }
 
   private createHighlightPrototype(): void {
