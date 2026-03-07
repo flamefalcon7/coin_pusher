@@ -175,6 +175,7 @@ func run() error {
 		db,
 		inventorydb.NewStore(db),
 		func(dbtx database.DBTX) inventory.Storer { return inventorydb.NewStore(dbtx) },
+		func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
 	)
 	if cfg.Auth.DevMode {
 		inventoryCore.SetDevDefaults(inventory.DevDefaults{

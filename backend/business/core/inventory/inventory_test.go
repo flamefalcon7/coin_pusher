@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 )
 
 // ---------------------------------------------------------------------------
@@ -79,8 +83,32 @@ func (m *mockStorer) CreateChestOpen(ctx context.Context, co ChestOpen) error {
 	}
 	return nil
 }
-func (m *mockStorer) CreditPlayBalance(_ context.Context, _ uuid.UUID, _ int) (string, error) {
-	return "100", nil
+func (m *mockStorer) CreditPlayBalance(_ context.Context, _ uuid.UUID, amount int) (string, error) {
+	return fmt.Sprintf("%d", 100+amount), nil
+}
+
+// ---------------------------------------------------------------------------
+// Mock accounting storer
+// ---------------------------------------------------------------------------
+
+type mockAcctStorer struct {
+	mu      sync.Mutex
+	created []accounting.AccountingLog
+}
+
+func (m *mockAcctStorer) Create(_ context.Context, log accounting.AccountingLog) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.created = append(m.created, log)
+	return nil
+}
+
+func (m *mockAcctStorer) QueryByAccountID(_ context.Context, _ uuid.UUID, _, _ int) ([]accounting.AccountingLog, error) {
+	return nil, nil
+}
+
+func (m *mockAcctStorer) QueryByReference(_ context.Context, _, _ string) (accounting.AccountingLog, error) {
+	return accounting.AccountingLog{}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +119,7 @@ func TestConsumeMegaspeaker_Success(t *testing.T) {
 	t.Parallel()
 
 	ms := &mockStorer{}
-	core := NewCore(nil, ms, nil)
+	core := NewCore(nil, ms, nil, nil)
 
 	err := core.ConsumeMegaspeaker(context.Background(), uuid.New())
 	if err != nil {
@@ -107,7 +135,7 @@ func TestConsumeMegaspeaker_NoCharge(t *testing.T) {
 			return fmt.Errorf("no megaspeaker charges")
 		},
 	}
-	core := NewCore(nil, ms, nil)
+	core := NewCore(nil, ms, nil, nil)
 
 	err := core.ConsumeMegaspeaker(context.Background(), uuid.New())
 	if err == nil {
@@ -254,5 +282,188 @@ func TestRollPlayCoinsAmount_Distribution(t *testing.T) {
 		if math.Abs(pct-exp.expected) > exp.tol {
 			t.Errorf("tier %s: got %.2f%%, expected ~%.1f%% (±%.1f%%)", exp.name, pct, exp.expected, exp.tol)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// OpenChest
+// ---------------------------------------------------------------------------
+
+func TestOpenChest_PlayCoins_WritesAccountingLog(t *testing.T) {
+	t.Parallel()
+
+	// Run OpenChest many times until we hit a play_coins result.
+	// play_coins has 20/150 ≈ 13.3% chance, so we'll almost certainly hit it.
+	ms := &mockStorer{}
+	acctMs := &mockAcctStorer{}
+	core := NewCore(nil, ms, nil, nil)
+	core.SetAcctStorer(acctMs)
+
+	accountID := uuid.New()
+	var gotPlayCoins bool
+
+	for i := 0; i < 200; i++ {
+		result, err := core.OpenChest(context.Background(), accountID)
+		if err != nil {
+			t.Fatalf("OpenChest error on iteration %d: %v", i, err)
+		}
+		if result.ScrollType == ItemPlayCoins {
+			gotPlayCoins = true
+			break
+		}
+	}
+
+	if !gotPlayCoins {
+		t.Fatal("never rolled play_coins in 200 attempts")
+	}
+
+	acctMs.mu.Lock()
+	defer acctMs.mu.Unlock()
+
+	if len(acctMs.created) != 1 {
+		t.Fatalf("expected 1 accounting log, got %d", len(acctMs.created))
+	}
+
+	log := acctMs.created[0]
+	if log.ActionType != accounting.ActionChestReward {
+		t.Errorf("action_type = %q, want %q", log.ActionType, accounting.ActionChestReward)
+	}
+	if log.Currency != accounting.CurrencyPlay {
+		t.Errorf("currency = %q, want %q", log.Currency, accounting.CurrencyPlay)
+	}
+	if log.AccountID != accountID {
+		t.Errorf("account_id = %s, want %s", log.AccountID, accountID)
+	}
+	if log.Amount.LessThanOrEqual(decimal.Zero) {
+		t.Errorf("amount = %s, want > 0", log.Amount)
+	}
+	if log.ReferenceID == "" {
+		t.Error("reference_id is empty, want chest open_id")
+	}
+}
+
+func TestOpenChest_NonPlayCoins_NoAccountingLog(t *testing.T) {
+	t.Parallel()
+
+	ms := &mockStorer{}
+	acctMs := &mockAcctStorer{}
+	core := NewCore(nil, ms, nil, nil)
+	core.SetAcctStorer(acctMs)
+
+	accountID := uuid.New()
+	var gotNonPlayCoins bool
+
+	for i := 0; i < 200; i++ {
+		// Snapshot count before this call.
+		acctMs.mu.Lock()
+		countBefore := len(acctMs.created)
+		acctMs.mu.Unlock()
+
+		result, err := core.OpenChest(context.Background(), accountID)
+		if err != nil {
+			t.Fatalf("OpenChest error on iteration %d: %v", i, err)
+		}
+		if result.ScrollType != ItemPlayCoins {
+			gotNonPlayCoins = true
+
+			// No new accounting log should have been created for this call.
+			acctMs.mu.Lock()
+			countAfter := len(acctMs.created)
+			acctMs.mu.Unlock()
+
+			if countAfter != countBefore {
+				t.Errorf("non-play_coins open created %d accounting logs, want 0", countAfter-countBefore)
+			}
+			break
+		}
+	}
+
+	if !gotNonPlayCoins {
+		t.Fatal("never rolled a non-play_coins type in 200 attempts")
+	}
+}
+
+func TestOpenChest_PlayCoins_AmountInRange(t *testing.T) {
+	t.Parallel()
+
+	ms := &mockStorer{}
+	acctMs := &mockAcctStorer{}
+	core := NewCore(nil, ms, nil, nil)
+	core.SetAcctStorer(acctMs)
+
+	accountID := uuid.New()
+
+	for i := 0; i < 500; i++ {
+		result, err := core.OpenChest(context.Background(), accountID)
+		if err != nil {
+			t.Fatalf("OpenChest error on iteration %d: %v", i, err)
+		}
+		if result.ScrollType == ItemPlayCoins {
+			if result.ScrollCount < 10 || result.ScrollCount > 100 {
+				t.Fatalf("play_coins scroll_count = %d, want [10, 100]", result.ScrollCount)
+			}
+		}
+	}
+
+	// Verify all accounting logs have amounts in valid range.
+	acctMs.mu.Lock()
+	defer acctMs.mu.Unlock()
+
+	for _, log := range acctMs.created {
+		amt := log.Amount.IntPart()
+		if amt < 10 || amt > 100 {
+			t.Errorf("accounting log amount = %d, want [10, 100]", amt)
+		}
+	}
+}
+
+func TestOpenChest_ChestOpenLog_MatchesAccountingRef(t *testing.T) {
+	t.Parallel()
+
+	var chestOpens []ChestOpen
+	ms := &mockStorer{
+		createChestOpenFn: func(_ context.Context, co ChestOpen) error {
+			chestOpens = append(chestOpens, co)
+			return nil
+		},
+	}
+	acctMs := &mockAcctStorer{}
+	core := NewCore(nil, ms, nil, nil)
+	core.SetAcctStorer(acctMs)
+
+	accountID := uuid.New()
+
+	for i := 0; i < 200; i++ {
+		result, err := core.OpenChest(context.Background(), accountID)
+		if err != nil {
+			t.Fatalf("OpenChest error on iteration %d: %v", i, err)
+		}
+		if result.ScrollType == ItemPlayCoins {
+			break
+		}
+	}
+
+	acctMs.mu.Lock()
+	defer acctMs.mu.Unlock()
+
+	if len(acctMs.created) == 0 {
+		t.Fatal("no accounting logs created; never hit play_coins")
+	}
+
+	// Find the chest_open whose scroll_type is play_coins.
+	var matchingOpen *ChestOpen
+	for i := range chestOpens {
+		if chestOpens[i].ScrollType == ItemPlayCoins {
+			matchingOpen = &chestOpens[i]
+			break
+		}
+	}
+	if matchingOpen == nil {
+		t.Fatal("no chest_open with play_coins found")
+	}
+
+	log := acctMs.created[0]
+	if log.ReferenceID != matchingOpen.OpenID.String() {
+		t.Errorf("accounting reference_id = %q, want chest open_id = %q", log.ReferenceID, matchingOpen.OpenID.String())
 	}
 }

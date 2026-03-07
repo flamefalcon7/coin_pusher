@@ -16,6 +16,7 @@ const (
 	ActionGameInsert       = "GAME_INSERT"
 	ActionGameInsertRefund = "GAME_INSERT_REFUND"
 	ActionGameReward       = "GAME_REWARD"
+	ActionChestReward      = "CHEST_REWARD"
 	ActionWithdraw          = "WITHDRAW"
 	ActionWithdrawRefund    = "WITHDRAW_REFUND"
 	ActionWithdrawFee       = "WITHDRAW_FEE"
