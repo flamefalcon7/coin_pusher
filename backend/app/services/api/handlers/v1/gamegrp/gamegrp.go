@@ -15,6 +15,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // Group holds the handler dependencies.
@@ -111,6 +112,7 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
 		refundKey := uuid.NewString()
 		if _, refundErr := g.game.RefundBatchInsert(ctx, accountID, req.Count, refundKey); refundErr != nil {
+			metrics.BatchInsertRefundFailures.Inc()
 			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
 		}
 		return fmt.Errorf("nats publish failed (balance refunded): %w", err)

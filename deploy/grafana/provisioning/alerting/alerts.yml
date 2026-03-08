@@ -150,6 +150,176 @@ groups:
         annotations:
           summary: "Executor has >5 failed withdrawals in 10min"
 
+      # --- NEW P0 rules ---
+
+      - uid: p0-batch-insert-refund-fail
+        title: "P0: Batch insert refund failure (funds lost)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_batch_insert_refund_failures_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "NATS publish failed AND refund failed — player coins permanently lost"
+
+      - uid: p0-withdrawal-refund-fail
+        title: "P0: Withdrawal refund failure (funds stuck)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_withdrawal_refund_errors_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Failed to refund a failed withdrawal — user funds stuck in limbo"
+
+      - uid: p0-indexer-down
+        title: "P0: Indexer stopped processing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="indexer"} == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer process is down — deposits will not be credited"
+
+      - uid: p0-executor-down
+        title: "P0: Executor stopped processing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="executor"} == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Executor process is down — withdrawals will not be processed"
+
+      - uid: p0-indexer-no-blocks
+        title: "P0: Indexer zero blocks processed in 10m"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="indexer"} == 1 and increase(coinpusher_indexer_blocks_processed_total[10m]) == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer is running but not processing any blocks — possible RPC or DB issue"
+
+      - uid: p0-reward-flush-sustained
+        title: "P0: Reward flush errors sustained >5m"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_reward_flush_errors_total[5m]) > 3
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Reward flush failing repeatedly — in-memory rewards accumulating and at risk of total loss on crash"
+
+      - uid: p0-rtp-global-anomaly
+        title: "P0: Global RTP anomaly (>120% or <30%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_rtp_ratio{window="1h"} > 1.2 or coinpusher_rtp_ratio{window="1h"} < 0.3
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Global RTP ratio outside safe range — possible exploit or physics bug"
+
   - orgId: 1
     name: P1 - Urgent
     folder: Alerts
@@ -275,6 +445,225 @@ groups:
         annotations:
           summary: "Reward flush encountered errors"
 
+      # --- NEW P1 rules ---
+
+      - uid: p1-indexer-deposit-errors
+        title: "P1: Deposit processing errors"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_indexer_deposit_errors_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Deposit on-chain event detected but failed to credit user balance"
+
+      - uid: p1-executor-gas-high
+        title: "P1: Gas price too high for >30m"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_executor_gas_price_gwei > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 30m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Gas price exceeds max threshold for >30m — all withdrawals/sweeps blocked"
+
+      - uid: p1-ws-snapshot-timeout
+        title: "P1: WS snapshot timeouts"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_ws_snapshot_timeout_total[5m]) > 3
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Multiple WS snapshot timeouts — new players joining see empty game state"
+
+      - uid: p1-auth-brute-force
+        title: "P1: Auth failure spike (brute force)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_auth_failures_total[5m]) > 50
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Auth failures >50 in 5min — possible credential stuffing or brute force attack"
+
+      - uid: p1-executor-rpc-latency
+        title: "P1: Executor RPC latency >5s"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(coinpusher_executor_rpc_latency_seconds_bucket[5m])) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Executor RPC latency p99 >5s — Base chain RPC degraded"
+
+      - uid: p1-indexer-rpc-latency
+        title: "P1: Indexer RPC latency >5s"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(coinpusher_indexer_rpc_latency_seconds_bucket[5m])) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Indexer RPC latency p99 >5s — Base chain RPC degraded"
+
+      - uid: p1-rtp-player-anomalies
+        title: "P1: Multiple players with anomalous RTP"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_rtp_player_anomaly_count > 3
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: ">3 players with anomalous RTP detected — possible coordinated exploit"
+
+      - uid: p1-heat-zero-players
+        title: "P1: Heat engine shows 0 active players during game activity"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_batch_insert_coins_total[5m]) > 0 and coinpusher_heat_active_players == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Players inserting coins but heat engine shows 0 active — rewards not distributing"
+
+      - uid: p1-indexer-poll-errors-sustained
+        title: "P1: Indexer poll errors sustained"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_indexer_poll_errors_total[5m]) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Indexer poll errors sustained — deposits may be delayed"
+
+
   - orgId: 1
     name: P2 - Important
     folder: Alerts
@@ -351,3 +740,197 @@ groups:
           severity: P2
         annotations:
           summary: "Worker errors exceeding threshold (>5/hour)"
+
+      # --- NEW P2 rules ---
+
+      - uid: p2-progress-metric-errors
+        title: "P2: Progress metric recording failures"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_progress_metric_errors_total[1h]) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Achievement/progress metric recording failing — player progress not tracking"
+
+      - uid: p2-ws-rate-limiting
+        title: "P2: WS ability rate limiting active"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_ws_rate_limit_total[5m]) > 20
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "High rate of ability rate limiting — possible abuse or client bug"
+
+      - uid: p2-game-memory-high
+        title: "P2: Game server memory high"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: process_resident_memory_bytes{job="game"} > 2e9
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 15m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Game server RSS memory exceeds 2GB — possible physics object leak"
+
+      - uid: p2-db-pool-wait
+        title: "P2: DB pool wait count increasing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_db_pool_wait_count[15m]) > 10
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Frequent DB connection pool waits — consider increasing pool size"
+
+      - uid: p2-executor-sweeps-failing
+        title: "P2: Executor sweep failures"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_executor_gas_price_gwei < 5 and increase(coinpusher_executor_sweeps_total[2h]) == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "No sweeps completed in 2h despite normal gas — deposit addresses may be accumulating"
+
+      - uid: p2-nats-reconnects
+        title: "P2: Frequent NATS reconnections"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_nats_reconnects_total[1h]) > 5
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "NATS reconnecting frequently — possible network instability"
+
+      - uid: p2-no-withdrawals-processed
+        title: "P2: No withdrawals processed in 30m"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="executor"} == 1 and increase(coinpusher_executor_withdrawals_processed_total[30m]) == 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 30m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Executor running but no withdrawals processed in 30min — possible stuck state or no pending withdrawals"
+
+      - uid: p2-auth-failures-trending
+        title: "P2: Auth failures trending up"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_auth_failures_total{reason="invalid_token"}[1h]) > 20
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Invalid token auth failures trending — possible key rotation issue or client bug"

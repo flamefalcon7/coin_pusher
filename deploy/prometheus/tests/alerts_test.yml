@@ -1,0 +1,478 @@
+# promtool test rules — validates PromQL expressions for alert rules.
+# Run: promtool test rules tests/alerts_test.yml
+#
+# Covers:
+#   - All P0 rules (financial integrity)
+#   - and-operator regression tests (operand order matters in Grafana)
+#   - Key negative cases (no false positives during normal operation)
+
+rule_files:
+  - ../rules/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ===================================================================
+  # P0: Service down alerts
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'up{job="backend", instance="backend:4010"}'
+        values: "1 1 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: P0_APIDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: P0_APIDown
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "API server is DOWN"
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="indexer", instance="indexer:9091"}'
+        values: "1 1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_IndexerDown
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: indexer
+              instance: "indexer:9091"
+            exp_annotations:
+              summary: "Indexer process is down — deposits will not be credited"
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="executor", instance="executor:9092"}'
+        values: "1 1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_ExecutorDown
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: executor
+              instance: "executor:9092"
+            exp_annotations:
+              summary: "Executor process is down — withdrawals will not be processed"
+
+  # Negative: services UP — no alerts
+  - interval: 1m
+    input_series:
+      - series: 'up{job="backend", instance="backend:4010"}'
+        values: "1 1 1 1 1 1"
+      - series: 'up{job="indexer", instance="indexer:9091"}'
+        values: "1 1 1 1 1 1"
+      - series: 'up{job="executor", instance="executor:9092"}'
+        values: "1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P0_APIDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: P0_IndexerDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: P0_ExecutorDown
+        exp_alerts: []
+
+  # ===================================================================
+  # P0: Financial integrity — batch insert refund failure
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_batch_insert_refund_failures_total{job="backend", instance="backend:4010"}'
+        values: "0 0 0 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P0_BatchInsertRefundFail
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "NATS publish failed AND refund failed — player coins permanently lost"
+
+  # Negative: counter unchanged — no alert
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_batch_insert_refund_failures_total{job="backend", instance="backend:4010"}'
+        values: "0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P0_BatchInsertRefundFail
+        exp_alerts: []
+
+  # ===================================================================
+  # P0: Financial integrity — withdrawal refund failure
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_withdrawal_refund_errors_total{job="executor", instance="executor:9092"}'
+        values: "0 0 0 1 2 2 2"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P0_WithdrawalRefundFail
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: executor
+              instance: "executor:9092"
+            exp_annotations:
+              summary: "Failed to refund a failed withdrawal — user funds stuck in limbo"
+
+  # ===================================================================
+  # P0: DB pool exhausted
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_db_pool_in_use{job="backend", instance="backend:4010"}'
+        values: "5 5 19 19 19 19 19"
+      - series: 'coinpusher_db_pool_max_open{job="backend", instance="backend:4010"}'
+        values: "20 20 20 20 20 20 20"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_DBPoolExhausted
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "DB connection pool >90% utilized"
+
+  # Negative: pool at 50% — no alert
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_db_pool_in_use{job="backend", instance="backend:4010"}'
+        values: "10 10 10 10 10"
+      - series: 'coinpusher_db_pool_max_open{job="backend", instance="backend:4010"}'
+        values: "20 20 20 20 20"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_DBPoolExhausted
+        exp_alerts: []
+
+  # ===================================================================
+  # P0: NATS disconnect
+  # increase() over [2m] needs samples spanning the range.
+  # Use 15s interval to provide enough data points within the 2m window.
+  # ===================================================================
+  - interval: 15s
+    input_series:
+      - series: 'coinpusher_nats_disconnects_total{job="backend", instance="backend:4010"}'
+        values: "0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_NATSDisconnect
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "NATS connection lost"
+
+  # ===================================================================
+  # P0: Indexer block lag
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_indexer_block_lag{job="indexer", instance="indexer:9091"}'
+        values: "10 10 150 150 150 150 150 150 150 150"
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: P0_IndexerLag
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: indexer
+              instance: "indexer:9091"
+            exp_annotations:
+              summary: "Indexer is >100 blocks behind chain tip"
+
+  # ===================================================================
+  # P0: RTP global anomaly — high
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_rtp_ratio{window="1h", job="backend", instance="backend:4010"}'
+        values: "0.8 0.8 1.5 1.5 1.5"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P0_RTPGlobalAnomaly
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              window: "1h"
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Global RTP ratio outside safe range"
+
+  # P0: RTP global anomaly — low
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_rtp_ratio{window="1h", job="backend", instance="backend:4010"}'
+        values: "0.8 0.8 0.1 0.1 0.1"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P0_RTPGlobalAnomaly
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              window: "1h"
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Global RTP ratio outside safe range"
+
+  # Negative: RTP in normal range — no alert
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_rtp_ratio{window="1h", job="backend", instance="backend:4010"}'
+        values: "0.7 0.7 0.8 0.9 0.7"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_RTPGlobalAnomaly
+        exp_alerts: []
+
+  # ===================================================================
+  # REGRESSION: P0_IndexerNoBlocks — and-operand order
+  # The left side (up==1, value=1) must be positive so the alert fires.
+  # This test would FAIL if the operands were swapped (left side value=0).
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'up{job="indexer", instance="indexer:9091"}'
+        values: "1+0x20"
+      - series: 'coinpusher_indexer_blocks_processed_total{job="indexer", instance="indexer:9091"}'
+        values: "100+0x20"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: P0_IndexerNoBlocks
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: indexer
+              instance: "indexer:9091"
+            exp_annotations:
+              summary: "Indexer is running but not processing any blocks"
+
+  # Negative: indexer DOWN — should NOT fire IndexerNoBlocks
+  - interval: 1m
+    input_series:
+      - series: 'up{job="indexer", instance="indexer:9091"}'
+        values: "0+0x20"
+      - series: 'coinpusher_indexer_blocks_processed_total{job="indexer", instance="indexer:9091"}'
+        values: "100+0x20"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: P0_IndexerNoBlocks
+        exp_alerts: []
+
+  # Negative: indexer processing normally — no alert
+  - interval: 1m
+    input_series:
+      - series: 'up{job="indexer", instance="indexer:9091"}'
+        values: "1+0x20"
+      - series: 'coinpusher_indexer_blocks_processed_total{job="indexer", instance="indexer:9091"}'
+        values: "100+10x20"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: P0_IndexerNoBlocks
+        exp_alerts: []
+
+  # ===================================================================
+  # REGRESSION: P1_HeatZeroPlayers — and-operand order
+  # Left side must be increase(batch_insert) > 0 (positive value).
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_batch_insert_coins_total{job="backend", instance="backend:4010"}'
+        values: "0+10x12"
+      - series: 'coinpusher_heat_active_players{job="backend", instance="backend:4010"}'
+        values: "0+0x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: P1_HeatZeroPlayers
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Heat engine shows 0 active players during game activity"
+
+  # Negative: no inserts, heat=0 — no alert (nobody playing)
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_batch_insert_coins_total{job="backend", instance="backend:4010"}'
+        values: "0+0x12"
+      - series: 'coinpusher_heat_active_players{job="backend", instance="backend:4010"}'
+        values: "0+0x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: P1_HeatZeroPlayers
+        exp_alerts: []
+
+  # Negative: inserts happening, heat > 0 — no alert (normal)
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_batch_insert_coins_total{job="backend", instance="backend:4010"}'
+        values: "0+10x12"
+      - series: 'coinpusher_heat_active_players{job="backend", instance="backend:4010"}'
+        values: "3+0x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: P1_HeatZeroPlayers
+        exp_alerts: []
+
+  # ===================================================================
+  # REGRESSION: P2_SweepsFailing — and-operand order
+  # Left side = gas_price_gwei < 5 (positive value like 2).
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_executor_gas_price_gwei{job="executor", instance="executor:9092"}'
+        values: "2+0x10"
+      - series: 'coinpusher_executor_sweeps_total{job="executor", instance="executor:9092"}'
+        values: "5+0x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P2_SweepsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: P2
+              job: executor
+              instance: "executor:9092"
+            exp_annotations:
+              summary: "No sweeps despite normal gas"
+
+  # Negative: gas too high — sweeps skipped is expected, no alert
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_executor_gas_price_gwei{job="executor", instance="executor:9092"}'
+        values: "10+0x10"
+      - series: 'coinpusher_executor_sweeps_total{job="executor", instance="executor:9092"}'
+        values: "5+0x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P2_SweepsFailing
+        exp_alerts: []
+
+  # ===================================================================
+  # REGRESSION: P2_NoWithdrawalsProcessed — and-operand order
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'up{job="executor", instance="executor:9092"}'
+        values: "1+0x40"
+      - series: 'coinpusher_executor_withdrawals_processed_total{job="executor", instance="executor:9092"}'
+        values: "10+0x40"
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: P2_NoWithdrawalsProcessed
+        exp_alerts:
+          - exp_labels:
+              severity: P2
+              job: executor
+              instance: "executor:9092"
+            exp_annotations:
+              summary: "No withdrawals processed in 30min"
+
+  # Negative: executor processing — no alert
+  - interval: 1m
+    input_series:
+      - series: 'up{job="executor", instance="executor:9092"}'
+        values: "1+0x40"
+      - series: 'coinpusher_executor_withdrawals_processed_total{job="executor", instance="executor:9092"}'
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: P2_NoWithdrawalsProcessed
+        exp_alerts: []
+
+  # ===================================================================
+  # P1: Deposit processing errors
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_indexer_deposit_errors_total{job="indexer", instance="indexer:9091"}'
+        values: "0 0 1 2 2 2 2"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P1_DepositErrors
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              job: indexer
+              instance: "indexer:9091"
+            exp_annotations:
+              summary: "Deposit processing failed"
+
+  # ===================================================================
+  # P1: Auth brute force
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      # Use total across all reasons — PromQL sums all label values
+      - series: 'coinpusher_auth_failures_total{reason="invalid_token", job="backend", instance="backend:4010"}'
+        values: "0 0 0 60 60 60 60"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P1_AuthBruteForce
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              reason: invalid_token
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Auth failure spike"
+
+  # Negative: few auth failures — no alert
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_auth_failures_total{reason="invalid_token", job="backend", instance="backend:4010"}'
+        values: "0 0 0 3 5 5 5"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P1_AuthBruteForce
+        exp_alerts: []
+
+  # ===================================================================
+  # P1: RTP player anomalies
+  # ===================================================================
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_rtp_player_anomaly_count{job="backend", instance="backend:4010"}'
+        values: "0 0 5 5 5"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P1_RTPPlayerAnomalies
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: ">3 players with anomalous RTP"
+
+  # Negative: anomaly count <= 3 — no alert
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_rtp_player_anomaly_count{job="backend", instance="backend:4010"}'
+        values: "0 0 2 3 3"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P1_RTPPlayerAnomalies
+        exp_alerts: []

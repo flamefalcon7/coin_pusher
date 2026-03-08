@@ -344,6 +344,7 @@ func run() error {
 				metrics.WorkerRuns.WithLabelValues("heat_broadcast").Inc()
 
 				shares := heatEngine.GetShares()
+				metrics.HeatActivePlayers.Set(float64(len(shares)))
 				if len(shares) == 0 {
 					metrics.WorkerDuration.WithLabelValues("heat_broadcast").Observe(time.Since(workerStart).Seconds())
 					continue

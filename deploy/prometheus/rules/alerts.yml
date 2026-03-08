@@ -1,0 +1,304 @@
+# Prometheus alerting rules — mirrors Grafana provisioned alerts.
+# This file is NOT loaded by Prometheus in production (Grafana unified alerting
+# is the source of truth). It exists solely so `promtool test rules` can
+# validate the PromQL expressions in CI.
+#
+# Keep in sync with: deploy/grafana/provisioning/alerting/alerts.yml
+
+groups:
+  - name: P0 - Critical
+    interval: 1m
+    rules:
+      - alert: P0_APIDown
+        expr: up{job="backend"} == 0
+        for: 1m
+        labels:
+          severity: P0
+        annotations:
+          summary: "API server is DOWN"
+
+      - alert: P0_GameDown
+        expr: up{job="game"} == 0
+        for: 1m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Game server is DOWN"
+
+      - alert: P0_DBPoolExhausted
+        expr: coinpusher_db_pool_in_use / coinpusher_db_pool_max_open > 0.9
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "DB connection pool >90% utilized"
+
+      - alert: P0_NATSDisconnect
+        expr: increase(coinpusher_nats_disconnects_total[2m]) > 0
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "NATS connection lost"
+
+      - alert: P0_IndexerLag
+        expr: coinpusher_indexer_block_lag > 100
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer is >100 blocks behind chain tip"
+
+      - alert: P0_ExecutorFailures
+        expr: increase(coinpusher_executor_withdrawals_failed_total[10m]) > 5
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Executor has >5 failed withdrawals in 10min"
+
+      - alert: P0_BatchInsertRefundFail
+        expr: increase(coinpusher_batch_insert_refund_failures_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "NATS publish failed AND refund failed — player coins permanently lost"
+
+      - alert: P0_WithdrawalRefundFail
+        expr: increase(coinpusher_withdrawal_refund_errors_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Failed to refund a failed withdrawal — user funds stuck in limbo"
+
+      - alert: P0_IndexerDown
+        expr: up{job="indexer"} == 0
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer process is down — deposits will not be credited"
+
+      - alert: P0_ExecutorDown
+        expr: up{job="executor"} == 0
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Executor process is down — withdrawals will not be processed"
+
+      - alert: P0_IndexerNoBlocks
+        expr: up{job="indexer"} == 1 and increase(coinpusher_indexer_blocks_processed_total[10m]) == 0
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer is running but not processing any blocks"
+
+      - alert: P0_RewardFlushSustained
+        expr: increase(coinpusher_reward_flush_errors_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Reward flush failing repeatedly"
+
+      - alert: P0_RTPGlobalAnomaly
+        expr: coinpusher_rtp_ratio{window="1h"} > 1.2 or coinpusher_rtp_ratio{window="1h"} < 0.3
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Global RTP ratio outside safe range"
+
+  - name: P1 - Urgent
+    interval: 1m
+    rules:
+      - alert: P1_5xxRate
+        expr: rate(coinpusher_http_requests_total{status=~"5.."}[5m]) / rate(coinpusher_http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "HTTP 5xx error rate exceeds 5%"
+
+      - alert: P1_Latency
+        expr: histogram_quantile(0.99, rate(coinpusher_http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "API p99 latency exceeds 2 seconds"
+
+      - alert: P1_WSMassDisconnect
+        expr: coinpusher_ws_connections_active < (coinpusher_ws_connections_active offset 5m) * 0.5
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "WebSocket connections dropped >50% in 5 minutes"
+
+      - alert: P1_TickOverrun
+        expr: histogram_quantile(0.99, rate(coinpusher_game_tick_duration_seconds_bucket[5m])) > 0.033
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Game tick p99 exceeds 33ms budget"
+
+      - alert: P1_RewardFlushErrors
+        expr: increase(coinpusher_reward_flush_errors_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Reward flush encountered errors"
+
+      - alert: P1_DepositErrors
+        expr: increase(coinpusher_indexer_deposit_errors_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Deposit processing failed"
+
+      - alert: P1_GasHigh
+        expr: coinpusher_executor_gas_price_gwei > 5
+        for: 30m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Gas price too high for >30m"
+
+      - alert: P1_WSSnapshotTimeout
+        expr: increase(coinpusher_ws_snapshot_timeout_total[5m]) > 3
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Multiple WS snapshot timeouts"
+
+      - alert: P1_AuthBruteForce
+        expr: increase(coinpusher_auth_failures_total[5m]) > 50
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Auth failure spike"
+
+      - alert: P1_RTPPlayerAnomalies
+        expr: coinpusher_rtp_player_anomaly_count > 3
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: ">3 players with anomalous RTP"
+
+      - alert: P1_HeatZeroPlayers
+        expr: increase(coinpusher_batch_insert_coins_total[5m]) > 0 and coinpusher_heat_active_players == 0
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Heat engine shows 0 active players during game activity"
+
+      - alert: P1_IndexerPollErrors
+        expr: increase(coinpusher_indexer_poll_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Indexer poll errors sustained"
+
+  - name: P2 - Important
+    interval: 1m
+    rules:
+      - alert: P2_MemoryHigh
+        expr: process_resident_memory_bytes{job="backend"} > 1.5e9
+        for: 15m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Backend RSS memory exceeds 1.5GB"
+
+      - alert: P2_WSBufferOverflow
+        expr: increase(coinpusher_ws_send_buffer_overflow_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "WebSocket send buffer overflows detected"
+
+      - alert: P2_WorkerErrors
+        expr: increase(coinpusher_worker_errors_total[1h]) > 5
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Worker errors exceeding threshold"
+
+      - alert: P2_ProgressMetricErrors
+        expr: increase(coinpusher_progress_metric_errors_total[1h]) > 5
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Progress metric recording failing"
+
+      - alert: P2_WSRateLimiting
+        expr: increase(coinpusher_ws_rate_limit_total[5m]) > 20
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "High rate of ability rate limiting"
+
+      - alert: P2_GameMemoryHigh
+        expr: process_resident_memory_bytes{job="game"} > 2e9
+        for: 15m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Game server RSS memory exceeds 2GB"
+
+      - alert: P2_DBPoolWait
+        expr: increase(coinpusher_db_pool_wait_count[15m]) > 10
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Frequent DB connection pool waits"
+
+      - alert: P2_SweepsFailing
+        expr: coinpusher_executor_gas_price_gwei < 5 and increase(coinpusher_executor_sweeps_total[2h]) == 0
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "No sweeps despite normal gas"
+
+      - alert: P2_NATSReconnects
+        expr: increase(coinpusher_nats_reconnects_total[1h]) > 5
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Frequent NATS reconnections"
+
+      - alert: P2_NoWithdrawalsProcessed
+        expr: up{job="executor"} == 1 and increase(coinpusher_executor_withdrawals_processed_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: P2
+        annotations:
+          summary: "No withdrawals processed in 30min"
+
+      - alert: P2_AuthFailuresTrending
+        expr: increase(coinpusher_auth_failures_total{reason="invalid_token"}[1h]) > 20
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "Auth failures trending up"
