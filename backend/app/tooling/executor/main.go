@@ -33,6 +33,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 	ethutil "github.com/flamefalcon/coin-pusher/backend/foundation/ethereum"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/logger"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/wallet"
 )
 
@@ -303,6 +304,7 @@ func recoverSubmittedWithdrawals(
 				"request_id", wr.RequestID,
 			)
 			if err := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, "no tx_hash recorded — likely crashed before broadcast"); err != nil {
+				metrics.WithdrawalRefundErrors.Inc()
 				log.Errorw("recovery refund failed", "request_id", wr.RequestID, "error", err)
 			}
 			continue
@@ -331,6 +333,7 @@ func recoverSubmittedWithdrawals(
 			}
 		} else {
 			if err := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, "on-chain tx reverted (recovered)"); err != nil {
+				metrics.WithdrawalRefundErrors.Inc()
 				log.Errorw("recovery refund failed", "request_id", wr.RequestID, "error", err)
 			} else {
 				log.Infow("recovery: refunded reverted withdrawal", "request_id", wr.RequestID, "tx_hash", *wr.TxHash)
@@ -522,20 +525,32 @@ func executeWithdrawal(
 	})
 	if err != nil {
 		errMsg := fmt.Sprintf("gas estimate failed: %v", err)
-		return false, depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg)
+		if refundErr := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg); refundErr != nil {
+			metrics.WithdrawalRefundErrors.Inc()
+			return false, refundErr
+		}
+		return false, nil
 	}
 
 	// EIP-1559 fee parameters. Failure here is transient — safe to refund (no nonce consumed).
 	gasTipCap, err := client.SuggestGasTipCap(ctx)
 	if err != nil {
 		errMsg := fmt.Sprintf("getting gas tip cap: %v", err)
-		return false, depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg)
+		if refundErr := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg); refundErr != nil {
+			metrics.WithdrawalRefundErrors.Inc()
+			return false, refundErr
+		}
+		return false, nil
 	}
 
 	head, err := client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		errMsg := fmt.Sprintf("getting latest header: %v", err)
-		return false, depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg)
+		if refundErr := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg); refundErr != nil {
+			metrics.WithdrawalRefundErrors.Inc()
+			return false, refundErr
+		}
+		return false, nil
 	}
 	gasFeeCap := new(big.Int).Add(
 		new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
@@ -558,7 +573,11 @@ func executeWithdrawal(
 	if err != nil {
 		// Signing failed — nonce not consumed (tx never created). Safe to refund.
 		errMsg := fmt.Sprintf("sign tx failed: %v", err)
-		return false, depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg)
+		if refundErr := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg); refundErr != nil {
+			metrics.WithdrawalRefundErrors.Inc()
+			return false, refundErr
+		}
+		return false, nil
 	}
 
 	// Save tx_hash BEFORE broadcasting so recovery can find it after a crash.
@@ -568,6 +587,7 @@ func executeWithdrawal(
 		refundErr := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, fmt.Sprintf("save tx_hash failed: %v", err))
 		if refundErr != nil {
 			// Both failed — recovery loop will handle on next restart.
+			metrics.WithdrawalRefundErrors.Inc()
 			return false, fmt.Errorf("save tx_hash failed: %v; refund also failed: %w", err, refundErr)
 		}
 		return false, fmt.Errorf("save tx_hash before broadcast: %w", err)
@@ -609,7 +629,11 @@ func executeWithdrawal(
 	if receipt.Status == types.ReceiptStatusFailed {
 		errMsg := "on-chain tx reverted"
 		executorWithdrawalsFailed.Inc()
-		return true, depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg)
+		if refundErr := depositCore.RefundFailedWithdrawal(ctx, wr.RequestID, errMsg); refundErr != nil {
+			metrics.WithdrawalRefundErrors.Inc()
+			return true, refundErr
+		}
+		return true, nil
 	}
 
 	// Success — confirmed.

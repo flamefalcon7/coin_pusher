@@ -133,6 +133,39 @@ var (
 	})
 )
 
+// Alerting metrics — financial integrity and business logic breakpoints.
+var (
+	BatchInsertRefundFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_batch_insert_refund_failures_total",
+		Help: "Batch insert NATS publish failed AND refund also failed — coins lost.",
+	})
+
+	WithdrawalRefundErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_withdrawal_refund_errors_total",
+		Help: "Failed attempts to refund a failed on-chain withdrawal.",
+	})
+
+	AuthFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "coinpusher_auth_failures_total",
+		Help: "Authentication failures by reason.",
+	}, []string{"reason"})
+
+	WSSnapshotTimeout = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_ws_snapshot_timeout_total",
+		Help: "Snapshot requests that timed out (new client sees empty game).",
+	})
+
+	HeatActivePlayers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_heat_active_players",
+		Help: "Number of active players in heat engine (heat > threshold).",
+	})
+
+	ProgressMetricErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_progress_metric_errors_total",
+		Help: "Failed progress metric recordings (achievement tracking broken).",
+	})
+)
+
 // RTP monitoring metrics
 var (
 	RTPRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{

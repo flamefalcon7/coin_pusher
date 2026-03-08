@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // Authenticate returns middleware that validates a JWT Bearer token.
@@ -14,18 +15,21 @@ func Authenticate(a *auth.Auth) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
+				metrics.AuthFailures.WithLabelValues("missing_header").Inc()
 				http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
 				return
 			}
 
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+				metrics.AuthFailures.WithLabelValues("invalid_format").Inc()
 				http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
 				return
 			}
 
 			claims, err := a.ValidateToken(parts[1])
 			if err != nil {
+				metrics.AuthFailures.WithLabelValues("invalid_token").Inc()
 				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 				return
 			}

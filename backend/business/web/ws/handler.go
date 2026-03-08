@@ -138,6 +138,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			c.SendRaw(msg.Data)
 		} else {
 			h.log.Warnw("snapshot request failed", "error", err)
+			metrics.WSSnapshotTimeout.Inc()
 		}
 	}
 
@@ -597,6 +598,7 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		refundKey := uuid.NewString()
 		if _, refundErr := h.gameCore.RefundBatchInsert(context.Background(), userID, int(accepted), refundKey); refundErr != nil {
 			h.log.Errorw("refund after nats failure also failed", "error", refundErr, "user_id", c.userID)
+			metrics.BatchInsertRefundFailures.Inc()
 		}
 		return
 	}

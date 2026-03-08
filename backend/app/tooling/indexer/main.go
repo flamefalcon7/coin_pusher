@@ -85,6 +85,14 @@ var (
 		Help:    "RPC call latency.",
 		Buckets: prometheus.DefBuckets,
 	})
+	indexerBlocksProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_indexer_blocks_processed_total",
+		Help: "Total blocks successfully scanned by indexer.",
+	})
+	indexerDepositErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_indexer_deposit_errors_total",
+		Help: "Deposits that failed to process (balance not credited).",
+	})
 )
 
 func main() {
@@ -344,12 +352,14 @@ func pollOnce(
 		if err := depositCore.ProcessDeposit(ctx, depAddr.AccountID, amount, txHash, blockNum, fromAddr.Hex()); err != nil {
 			// P1-17: Do NOT advance cursor past failed deposits.
 			// Return error so the block range is retried next poll.
+			indexerDepositErrors.Inc()
 			return fmt.Errorf("process deposit tx %s: %w", txHash, err)
 		}
 		indexerDepositsProcessed.Inc()
 	}
 
 	// Update cursor — only reached when ALL deposits in range succeeded.
+	indexerBlocksProcessed.Add(float64(toBlock - fromBlock + 1))
 	*lastBlock = toBlock
 	saveBlockCursor(ctx, db, toBlock)
 	indexerBlockCursor.Set(float64(toBlock))

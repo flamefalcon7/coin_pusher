@@ -13,6 +13,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // StorerFactory builds a Storer bound to the given DBTX (db or tx).
@@ -159,7 +160,7 @@ func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinC
 	// Record game insert metric for progress system (after tx succeeds).
 	if c.metricRecorder != nil {
 		if mrErr := c.metricRecorder(ctx, accountID, "game_insert_count", amount); mrErr != nil {
-			_ = mrErr
+			metrics.ProgressMetricErrors.Inc()
 		}
 	}
 
