@@ -28,4 +28,5 @@ admin-seed:
 generate-key:
 	@mkdir -p zarf/keys
 	openssl genrsa -traditional -out zarf/keys/default.pem 2048
+	chmod 600 zarf/keys/default.pem
 	@echo "Key generated at zarf/keys/default.pem"
