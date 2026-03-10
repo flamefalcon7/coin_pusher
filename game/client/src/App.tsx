@@ -12,6 +12,7 @@ import { KeyCoinDrawOverlay } from "./ui/KeyCoinDrawOverlay";
 import { AbilityToast, type AbilityToastEntry } from "./ui/AbilityToast";
 import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
+import { SpectatorBanner } from "./ui/SpectatorBanner";
 import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
 import { InventoryClient } from "./net/InventoryClient";
 import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
@@ -43,10 +44,12 @@ const API_URL = import.meta.env.VITE_API_URL || `${isSecure ? "https" : "http"}:
 function App() {
   const [auth, setAuth] = useState(() => getSavedAuth());
   const [address, setAddress] = useState(() => getSavedAddress() ?? '');
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   const handleLoginSuccess = useCallback((result: AuthResult) => {
     setAuth({ token: result.token, account: result.account });
     setAddress(getSavedAddress() ?? '');
+    setShowLoginModal(false);
   }, []);
 
   const handleAuthFailure = useCallback(() => {
@@ -54,21 +57,40 @@ function App() {
     setAuth(null);
   }, []);
 
-  if (!auth) {
-    return <WalletLogin apiBase={API_URL} onSuccess={handleLoginSuccess} />;
-  }
+  const handleRequestLogin = useCallback(() => {
+    setShowLoginModal(true);
+  }, []);
 
-  return <Game token={auth.token} account={auth.account} address={address} onAuthFailure={handleAuthFailure} />;
+  return (
+    <>
+      <Game
+        token={auth?.token ?? null}
+        account={auth?.account ?? null}
+        address={address}
+        onAuthFailure={handleAuthFailure}
+        onRequestLogin={handleRequestLogin}
+      />
+      {showLoginModal && (
+        <WalletLogin
+          apiBase={API_URL}
+          onSuccess={handleLoginSuccess}
+          onClose={() => setShowLoginModal(false)}
+        />
+      )}
+    </>
+  );
 }
 
 interface GameProps {
-  token: string;
+  token: string | null;
   account: Account | null;
   address: string;
   onAuthFailure: () => void;
+  onRequestLogin: () => void;
 }
 
-function Game({ token, account, address, onAuthFailure }: GameProps) {
+function Game({ token, account, address, onAuthFailure, onRequestLogin }: GameProps) {
+  const isSpectator = !token;
   const location = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
@@ -161,8 +183,8 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     const sceneManager = new SceneManager(canvasRef.current, account?.role === "admin");
     sceneManagerRef.current = sceneManager;
 
-    // Initialize game client
-    const gameClient = new GameClient(WS_URL, token);
+    // Initialize game client (token may be null for spectators)
+    const gameClient = new GameClient(WS_URL, token ?? undefined);
     gameClientRef.current = gameClient;
 
     // Handle auth failure (WS closed with 4401/4403)
@@ -360,22 +382,24 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     // Connect to server
     gameClient.connect();
 
-    // Fetch initial inventory
-    const inventoryClient = new InventoryClient(API_URL);
-    inventoryClient.getInventory(token).then((inv) => {
-      setKeyCoins(inv.key_coins);
-      setMegaspeakerCount(inv.megaspeaker);
-      setScrollCounts({
-        shock: inv.scroll_shock,
-        tornado: inv.scroll_tornado,
-        explosion: inv.scroll_explosion,
-        lightning: inv.scroll_lightning,
-        superPush: inv.scroll_super_push,
-        megaspeaker: inv.megaspeaker,
+    // Fetch initial inventory (only when authenticated)
+    if (token) {
+      const inventoryClient = new InventoryClient(API_URL);
+      inventoryClient.getInventory(token).then((inv) => {
+        setKeyCoins(inv.key_coins);
+        setMegaspeakerCount(inv.megaspeaker);
+        setScrollCounts({
+          shock: inv.scroll_shock,
+          tornado: inv.scroll_tornado,
+          explosion: inv.scroll_explosion,
+          lightning: inv.scroll_lightning,
+          superPush: inv.scroll_super_push,
+          megaspeaker: inv.megaspeaker,
+        });
+      }).catch((err) => {
+        console.warn("Failed to fetch inventory:", err);
       });
-    }).catch((err) => {
-      console.warn("Failed to fetch inventory:", err);
-    });
+    }
 
     // Start render loop with interpolation
     sceneManager.startRenderLoop();
@@ -513,6 +537,41 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
       sceneManager.dispose();
     };
   }, []);
+
+  // Handle token transitions:
+  //   null→string: spectator→authenticated (reconnect with token, fetch inventory)
+  //   string→null: auth failure/logout (fall back to spectator)
+  const prevTokenRef = useRef(token);
+  useEffect(() => {
+    if (!gameClientRef.current) return;
+
+    if (token && !prevTokenRef.current) {
+      // Spectator → Authenticated
+      gameClientRef.current.reconnectWithToken(token);
+
+      // Fetch inventory now that we're authenticated
+      const inventoryClient = new InventoryClient(API_URL);
+      inventoryClient.getInventory(token).then((inv) => {
+        setKeyCoins(inv.key_coins);
+        setMegaspeakerCount(inv.megaspeaker);
+        setScrollCounts({
+          shock: inv.scroll_shock,
+          tornado: inv.scroll_tornado,
+          explosion: inv.scroll_explosion,
+          lightning: inv.scroll_lightning,
+          superPush: inv.scroll_super_push,
+          megaspeaker: inv.megaspeaker,
+        });
+      }).catch((err) => {
+        console.warn("Failed to fetch inventory:", err);
+      });
+    } else if (!token && prevTokenRef.current) {
+      // Authenticated → Spectator (auth failure / logout)
+      gameClientRef.current.reconnectAsSpectator();
+    }
+
+    prevTokenRef.current = token;
+  }, [token]);
 
   // Toggle editor mode
   const toggleEditor = useCallback(() => {
@@ -865,35 +924,45 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   return (
     <div id="app-container">
       <ConnectionStatus status={connectionStatus} />
-      <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} onLogout={onAuthFailure} />
+
+      {/* PlayerInfo (authenticated) or SpectatorBanner */}
+      {isSpectator ? (
+        <SpectatorBanner onConnectWallet={onRequestLogin} />
+      ) : (
+        <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} onLogout={onAuthFailure} />
+      )}
+
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
 
-      <Toolbar
-        muted={muted}
-        onToggleMute={handleToggleMute}
-        celShading={celShading}
-        onToggleCel={handleToggleCel}
-        themeName={themeName}
-        onCycleTheme={handleCycleTheme}
-        onShock={handleShock}
-        shockDisabled={connectionStatus !== "connected"}
-        shockCooldown={shockCooldown}
-        onTornado={handleTornadoClick}
-        tornadoDisabled={connectionStatus !== "connected"}
-        tornadoCooldown={tornadoCooldown}
-        tornadoTargeting={tornadoTargeting}
-        onExplosion={handleExplosionClick}
-        explosionDisabled={connectionStatus !== "connected"}
-        explosionCooldown={explosionCooldown}
-        explosionTargeting={explosionTargeting}
-        onLightning={handleLightning}
-        lightningDisabled={connectionStatus !== "connected"}
-        lightningCooldown={lightningCooldown}
-        onSuperPush={handleSuperPush}
-        superPushDisabled={connectionStatus !== "connected"}
-        superPushCooldown={superPushCooldown}
-        scrollCounts={scrollCounts}
-      />
+      {/* Toolbar — hidden for spectators */}
+      {!isSpectator && (
+        <Toolbar
+          muted={muted}
+          onToggleMute={handleToggleMute}
+          celShading={celShading}
+          onToggleCel={handleToggleCel}
+          themeName={themeName}
+          onCycleTheme={handleCycleTheme}
+          onShock={handleShock}
+          shockDisabled={connectionStatus !== "connected"}
+          shockCooldown={shockCooldown}
+          onTornado={handleTornadoClick}
+          tornadoDisabled={connectionStatus !== "connected"}
+          tornadoCooldown={tornadoCooldown}
+          tornadoTargeting={tornadoTargeting}
+          onExplosion={handleExplosionClick}
+          explosionDisabled={connectionStatus !== "connected"}
+          explosionCooldown={explosionCooldown}
+          explosionTargeting={explosionTargeting}
+          onLightning={handleLightning}
+          lightningDisabled={connectionStatus !== "connected"}
+          lightningCooldown={lightningCooldown}
+          onSuperPush={handleSuperPush}
+          superPushDisabled={connectionStatus !== "connected"}
+          superPushCooldown={superPushCooldown}
+          scrollCounts={scrollCounts}
+        />
+      )}
 
       {account?.role === "admin" && (
         <button
@@ -997,15 +1066,24 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         </div>
       )}
 
+      {/* CoinInsertButton — spectators see "Connect Wallet to Play" */}
+      {isSpectator ? (
+        <div className="spectator-insert-cta">
+          <button className="spectator-insert-btn" onClick={onRequestLogin}>
+            PUSH!
+          </button>
+        </div>
+      ) : (
+        <CoinInsertButton
+          onClick={handleInsertCoin}
+          disabled={buttonDisabled || connectionStatus !== "connected"}
+          slotCounts={slotCounts}
+          ackMessage={insertAckMsg}
+          rejected={insertRejected}
+        />
+      )}
 
-      <CoinInsertButton
-        onClick={handleInsertCoin}
-        disabled={buttonDisabled || connectionStatus !== "connected"}
-        slotCounts={slotCounts}
-        ackMessage={insertAckMsg}
-        rejected={insertRejected}
-      />
-
+      {/* Read-only broadcast components — always visible */}
       {leaderboard.length > 0 && (
         <Leaderboard
           entries={leaderboard}
@@ -1023,7 +1101,8 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         <HoleTooltip data={holeTooltip} slotCounter={slotCounter} wheelCounter={wheelCounter} />
       )}
 
-      <InventoryBar keyCoins={keyCoins} />
+      {/* InventoryBar — hidden for spectators */}
+      {!isSpectator && <InventoryBar keyCoins={keyCoins} />}
 
       <KeyCoinDrawOverlay
         draw={keyCoinDraw}
@@ -1035,9 +1114,10 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         onRemove={(id) => setAbilityToasts((prev) => prev.filter((e) => e.id !== id))}
       />
 
-      {showChestPage && (
+      {/* Sub-pages — gated behind auth */}
+      {!isSpectator && showChestPage && (
         <ChestPage
-          token={token}
+          token={token!}
           apiUrl={API_URL}
           keyCoins={keyCoins}
           scrollCounts={scrollCounts}
@@ -1047,25 +1127,25 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         />
       )}
 
-      {showDepositPage && (
+      {!isSpectator && showDepositPage && (
         <DepositPage
-          token={token}
+          token={token!}
           apiUrl={API_URL}
         />
       )}
 
-      {showWithdrawPage && (
+      {!isSpectator && showWithdrawPage && (
         <WithdrawPage
-          token={token}
+          token={token!}
           apiUrl={API_URL}
           balanceCash={balanceCash}
           onBalanceChange={handleCashBalanceChange}
         />
       )}
 
-      {showProgressPage && (
+      {!isSpectator && showProgressPage && (
         <ProgressPage
-          token={token}
+          token={token!}
           apiUrl={API_URL}
           onBalanceChange={(play, cash) => {
             setBalance(play);
@@ -1074,27 +1154,43 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         />
       )}
 
-      {showProfilePage && (
+      {!isSpectator && showProfilePage && (
         <ProfilePage
-          token={token}
+          token={token!}
           apiUrl={API_URL}
           address={address}
         />
       )}
 
+      {/* MegaspeakerPanel — read-only for spectators (disable send) */}
       <MegaspeakerPanel
         messages={megaspeakerMessages}
-        megaspeakerCount={megaspeakerCount}
+        megaspeakerCount={isSpectator ? 0 : megaspeakerCount}
         onSend={handleMegaspeakerSend}
         unreadCount={megaspeakerUnread}
         onToggle={handleMegaspeakerToggle}
         isOpen={megaspeakerOpen}
       />
 
-      {idleWarning && !idleTimeout && <IdleWarningBanner />}
-      {idleTimeout && <IdleTimeoutOverlay />}
+      {/* Idle / spectator timeout overlays */}
+      {!isSpectator && idleWarning && !idleTimeout && <IdleWarningBanner />}
+      {!isSpectator && idleTimeout && <IdleTimeoutOverlay />}
+      {isSpectator && idleTimeout && (
+        <div className="spectator-timeout-overlay">
+          <div className="spectator-timeout-card">
+            <p className="spectator-timeout-text">Spectator session ended</p>
+            <button className="spectator-timeout-btn" onClick={onRequestLogin}>
+              Connect Wallet to Keep Playing
+            </button>
+            <button className="spectator-timeout-reload" onClick={() => window.location.reload()}>
+              Continue Watching
+            </button>
+          </div>
+        </div>
+      )}
 
-      {showTutorial && connectionStatus === 'connected' && (
+      {/* Tutorial — hidden for spectators */}
+      {!isSpectator && showTutorial && connectionStatus === 'connected' && (
         <TutorialOverlay onComplete={() => setShowTutorial(false)} />
       )}
     </div>

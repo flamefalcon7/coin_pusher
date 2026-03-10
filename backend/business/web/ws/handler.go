@@ -95,38 +95,57 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Auth check: get token from ?token= query param.
 	tokenStr := r.URL.Query().Get("token")
+
+	var c *Connection
+
 	if tokenStr == "" {
-		conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(4401, "missing token"))
-		conn.Close()
-		return
+		// Spectator path — no auth required.
+		const maxSpectators = 200
+		if h.hub.SpectatorCount() >= maxSpectators {
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4429, "spectator limit reached"))
+			conn.Close()
+			return
+		}
+
+		c = NewSpectatorConnection(conn, h.hub)
+		h.hub.Add(c)
+
+		h.log.Infow("spectator connected", "clients", h.hub.Count(), "spectators", h.hub.SpectatorCount())
+
+		c.SendMessage(map[string]interface{}{
+			"op":        "welcome",
+			"user_id":   "",
+			"spectator": true,
+		})
+	} else {
+		// Authenticated path.
+		claims, err := h.auth.ValidateToken(tokenStr)
+		if err != nil {
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4401, "invalid token"))
+			conn.Close()
+			return
+		}
+		userID := claims.AccountID
+		role := claims.Role
+
+		c = NewConnection(conn, h.hub, userID, role)
+
+		// Enforce one connection per user — disconnect any existing connections.
+		if n := h.hub.DisconnectUser(userID); n > 0 {
+			h.log.Infow("replaced existing connection", "user_id", userID, "closed", n)
+		}
+
+		h.hub.Add(c)
+
+		h.log.Infow("ws client connected", "user_id", userID, "clients", h.hub.Count())
+
+		c.SendMessage(map[string]interface{}{
+			"op":      "welcome",
+			"user_id": userID,
+		})
 	}
-	claims, err := h.auth.ValidateToken(tokenStr)
-	if err != nil {
-		conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(4401, "invalid token"))
-		conn.Close()
-		return
-	}
-	userID := claims.AccountID
-	role := claims.Role
-
-	c := NewConnection(conn, h.hub, userID, role)
-
-	// Enforce one connection per user — disconnect any existing connections.
-	if n := h.hub.DisconnectUser(userID); n > 0 {
-		h.log.Infow("replaced existing connection", "user_id", userID, "closed", n)
-	}
-
-	h.hub.Add(c)
-
-	h.log.Infow("ws client connected", "user_id", userID, "clients", h.hub.Count())
-
-	// Send welcome message with assigned user ID.
-	c.SendMessage(map[string]interface{}{
-		"op":      "welcome",
-		"user_id": userID,
-	})
 
 	// Send cached snapshot if available.
 	if snap := h.hub.GetSnapshot(); snap != nil {
@@ -182,6 +201,11 @@ func (h *Handler) readPump(c *Connection) {
 		var msg ClientMessage
 		if err := msgpack.Unmarshal(data, &msg); err != nil {
 			h.log.Warnw("msgpack decode error", "error", err)
+			continue
+		}
+
+		// Spectators can only send pings — silently drop everything else.
+		if c.IsSpectator() && msg.Op != "ping" {
 			continue
 		}
 

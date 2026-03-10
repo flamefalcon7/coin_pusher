@@ -13,12 +13,13 @@ import (
 
 // Hub manages the set of active WebSocket connections and caches the latest snapshot.
 type Hub struct {
-	connections map[*Connection]bool
-	mu          sync.RWMutex
-	snapshot    []byte
-	snapshotMu  sync.RWMutex
-	megaMsgs    [][]byte
-	megaMu      sync.RWMutex
+	connections    map[*Connection]bool
+	mu             sync.RWMutex
+	spectatorCount int
+	snapshot       []byte
+	snapshotMu     sync.RWMutex
+	megaMsgs       [][]byte
+	megaMu         sync.RWMutex
 }
 
 // NewHub constructs a Hub.
@@ -32,6 +33,9 @@ func NewHub() *Hub {
 func (h *Hub) Add(c *Connection) {
 	h.mu.Lock()
 	h.connections[c] = true
+	if c.IsSpectator() {
+		h.spectatorCount++
+	}
 	metrics.WSConnectionsActive.Inc()
 	h.mu.Unlock()
 }
@@ -39,9 +43,21 @@ func (h *Hub) Add(c *Connection) {
 // Remove unregisters a connection.
 func (h *Hub) Remove(c *Connection) {
 	h.mu.Lock()
-	delete(h.connections, c)
-	metrics.WSConnectionsActive.Dec()
+	if _, ok := h.connections[c]; ok {
+		delete(h.connections, c)
+		if c.IsSpectator() {
+			h.spectatorCount--
+		}
+		metrics.WSConnectionsActive.Dec()
+	}
 	h.mu.Unlock()
+}
+
+// SpectatorCount returns the number of active spectator connections.
+func (h *Hub) SpectatorCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.spectatorCount
 }
 
 // DisconnectUser closes and removes all existing connections for the given userID.
@@ -135,8 +151,11 @@ func (h *Hub) SendToUser(userID string, data []byte) {
 }
 
 const (
-	idleCloseCode = 4408
-	idleCloseText = "idle timeout"
+	idleCloseCode      = 4408
+	idleCloseText      = "idle timeout"
+	spectatorTimeout   = 5 * time.Minute
+	spectatorCloseCode = 4410
+	spectatorCloseText = "spectator timeout"
 )
 
 // StartIdleChecker starts a goroutine that periodically checks for idle
@@ -157,6 +176,16 @@ func (h *Hub) StartIdleChecker(log *zap.SugaredLogger, checkInterval, warningDur
 			h.mu.RUnlock()
 
 			for _, c := range conns {
+				if c.IsSpectator() {
+					// Spectators get a hard timeout — no warning.
+					if c.IdleDuration() >= spectatorTimeout {
+						log.Infow("spectator timeout, closing connection", "connected_for", c.IdleDuration())
+						msg := websocket.FormatCloseMessage(spectatorCloseCode, spectatorCloseText)
+						c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(writeWait))
+						c.conn.Close()
+					}
+					continue
+				}
 				idle := c.IdleDuration()
 
 				if idle >= timeoutDur {

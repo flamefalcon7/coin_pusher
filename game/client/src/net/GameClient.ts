@@ -75,6 +75,7 @@ export type IdleWarningCallback = () => void;
 export type IdleTimeoutCallback = () => void;
 
 export class GameClient {
+  private url: string;
   private wsClient: WebSocketClient;
   private clockSync: ClockSync;
   private stateBuffer: StateBuffer;
@@ -102,10 +103,12 @@ export class GameClient {
   private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
+  private _isSpectator: boolean = false;
   private _snapshotJustLoaded: boolean = false;
   private _snapshotKeyCoinIds: Set<number> | null = null;
 
   constructor(url: string, token?: string) {
+    this.url = url;
     this.wsClient = new WebSocketClient(url, token);
     this.clockSync = new ClockSync();
     this.stateBuffer = new StateBuffer();
@@ -130,7 +133,7 @@ export class GameClient {
         this.authFailureCallback();
         return;
       }
-      if (code === 4408) {
+      if (code === 4408 || code === 4410) {
         if (this.idleTimeoutCallback) {
           this.idleTimeoutCallback();
         }
@@ -344,7 +347,12 @@ export class GameClient {
 
       case "welcome":
         this.userId = message.user_id;
-        console.log("Assigned user ID:", this.userId);
+        this._isSpectator = message.user_id === "";
+        console.log(
+          this._isSpectator
+            ? "Connected as spectator"
+            : `Assigned user ID: ${this.userId}`,
+        );
         break;
     }
   }
@@ -358,6 +366,42 @@ export class GameClient {
 
   disconnect(): void {
     this.wsClient.disconnect();
+  }
+
+  /** Returns true if connected as an unauthenticated spectator. */
+  isSpectator(): boolean {
+    return this._isSpectator;
+  }
+
+  /**
+   * Disconnect the current (spectator) WS and reconnect with an auth token.
+   * Re-wires all message handlers on the new WebSocketClient.
+   */
+  /**
+   * Disconnect the current (authenticated) WS and reconnect as a spectator.
+   */
+  reconnectAsSpectator(): void {
+    this.wsClient.disconnect();
+    this._isSpectator = true;
+    this.userId = "";
+    this.clockSync = new ClockSync();
+    this.stateBuffer = new StateBuffer();
+    this.interpolator = new Interpolator(this.stateBuffer, this.clockSync);
+    this.wsClient = new WebSocketClient(this.url);
+    this.setupHandlers();
+    this.connect();
+  }
+
+  reconnectWithToken(token: string): void {
+    this.wsClient.disconnect();
+    this._isSpectator = false;
+    this.userId = "";
+    this.clockSync = new ClockSync();
+    this.stateBuffer = new StateBuffer();
+    this.interpolator = new Interpolator(this.stateBuffer, this.clockSync);
+    this.wsClient = new WebSocketClient(this.url, token);
+    this.setupHandlers();
+    this.connect();
   }
 
   update(): void {

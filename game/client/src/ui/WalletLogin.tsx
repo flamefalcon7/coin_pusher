@@ -6,9 +6,10 @@ type LoginState = "idle" | "connecting" | "signing" | "error";
 interface WalletLoginProps {
   apiBase: string;
   onSuccess: (result: AuthResult) => void;
+  onClose?: () => void;
 }
 
-export function WalletLogin({ apiBase, onSuccess }: WalletLoginProps) {
+export function WalletLogin({ apiBase, onSuccess, onClose }: WalletLoginProps) {
   const [state, setState] = useState<LoginState>("idle");
   const [error, setError] = useState<string>("");
   const [referralCode, setReferralCode] = useState("");
@@ -33,6 +34,11 @@ export function WalletLogin({ apiBase, onSuccess }: WalletLoginProps) {
   return (
     <div className="wallet-login-overlay">
       <div className="wallet-login-card">
+        {onClose && (
+          <button className="wallet-login-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        )}
         <h1 className="wallet-login-title">Coin Pusher</h1>
         <p className="wallet-login-subtitle">Connect your wallet to play</p>
 

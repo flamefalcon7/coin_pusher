@@ -24,6 +24,7 @@ type Connection struct {
 	hub            *Hub
 	userID         string
 	role           string
+	spectator      bool
 	lastBatchInsert time.Time
 	lastShock       time.Time
 	lastTornado    time.Time
@@ -48,9 +49,25 @@ func NewConnection(conn *websocket.Conn, hub *Hub, userID, role string) *Connect
 	}
 }
 
+// NewSpectatorConnection creates a spectator Connection (no userID or role).
+func NewSpectatorConnection(conn *websocket.Conn, hub *Hub) *Connection {
+	return &Connection{
+		conn:         conn,
+		send:         make(chan []byte, sendBufLen),
+		hub:          hub,
+		spectator:    true,
+		lastActivity: time.Now(), // used as connectedAt for spectator timeout
+	}
+}
+
 // IsAdmin returns true if the connection belongs to an admin user.
 func (c *Connection) IsAdmin() bool {
 	return c.role == "admin"
+}
+
+// IsSpectator returns true if the connection is an unauthenticated spectator.
+func (c *Connection) IsSpectator() bool {
+	return c.spectator
 }
 
 // writePump drains the send channel to the WebSocket.
