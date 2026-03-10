@@ -157,7 +157,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
     if (!canvasRef.current) return;
 
     // Initialize scene
-    const sceneManager = new SceneManager(canvasRef.current);
+    const sceneManager = new SceneManager(canvasRef.current, account?.role === "admin");
     sceneManagerRef.current = sceneManager;
 
     // Initialize game client

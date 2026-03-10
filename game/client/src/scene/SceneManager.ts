@@ -56,7 +56,7 @@ export class SceneManager {
   private activeTimers: ReturnType<typeof setInterval>[] = [];
   private resizeHandler = () => this.engine.resize();
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, isAdmin = false) {
     console.log("Initializing BabylonJS scene...");
 
     this.engine = new Engine(canvas, true, {
@@ -69,7 +69,7 @@ export class SceneManager {
     this.scene.useRightHandedSystem = true;
     this.scene.clearColor = new Color4(0.02, 0.02, 0.06, 1.0);
 
-    new CameraSetup(this.scene, canvas);
+    new CameraSetup(this.scene, canvas, isAdmin);
     new Lighting(this.scene);
     this.staticMeshes = new StaticMeshes(this.scene);
     this.pusherMesh = new PusherMesh(this.scene);
