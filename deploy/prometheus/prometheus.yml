@@ -21,7 +21,10 @@ scrape_configs:
       - targets: ["executor:9092"]
     metrics_path: /metrics
 
+  # IMPORTANT: Prometheus does NOT support env var substitution.
+  # Replace the IP below with the game machine's VPC private IP.
+  # On the game droplet, run: ip addr show eth1
   - job_name: "game"
     static_configs:
-      - targets: ["${GAME_VPC_IP}:9100"]
+      - targets: ["REPLACE_WITH_GAME_VPC_IP:9100"]
     metrics_path: /metrics
