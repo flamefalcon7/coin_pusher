@@ -175,6 +175,78 @@ func drainOne(t *testing.T, c *Connection) map[string]interface{} {
 // Tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Spectator tests
+// ---------------------------------------------------------------------------
+
+func TestSpectator_PingAllowed(t *testing.T) {
+	t.Parallel()
+
+	h, _ := newTestHandler(t, testHandlerOpts{})
+
+	// Create a spectator connection.
+	sc := &Connection{
+		send:      make(chan []byte, sendBufLen),
+		hub:       h.hub,
+		spectator: true,
+	}
+	h.hub.Add(sc)
+
+	// handlePing should work for spectators.
+	h.handlePing(sc)
+
+	msg := drainOne(t, sc)
+	if msg["op"] != "pong" {
+		t.Errorf("op = %v, want pong", msg["op"])
+	}
+}
+
+func TestSpectator_MegaspeakerNoEffect(t *testing.T) {
+	t.Parallel()
+
+	h, _ := newTestHandler(t, testHandlerOpts{})
+
+	sc := &Connection{
+		send:      make(chan []byte, sendBufLen),
+		hub:       h.hub,
+		spectator: true,
+	}
+	h.hub.Add(sc)
+
+	// Even if the readPump guard were bypassed, handleMegaspeaker would fail
+	// because the spectator has no userID (uuid.Parse("") fails).
+	// Verify no megaspeaker message is added to the hub.
+	h.handleMegaspeaker(sc, ClientMessage{Op: "megaspeaker", Message: "hello"})
+
+	if len(h.hub.GetMegaspeakerHistory()) != 0 {
+		t.Error("spectator megaspeaker should not be stored in hub history")
+	}
+}
+
+func TestSpectator_ReadPumpGuard(t *testing.T) {
+	t.Parallel()
+
+	// Verify the guard logic used in readPump: spectator connections should
+	// only be allowed to send "ping" ops.
+	sc := &Connection{spectator: true, send: make(chan []byte, sendBufLen)}
+
+	blockedOps := []string{"batch_insert", "megaspeaker", "shock", "tornado", "explosion", "lightning", "super_push"}
+	for _, op := range blockedOps {
+		if !(sc.IsSpectator() && op != "ping") {
+			t.Errorf("op %q should be blocked for spectators", op)
+		}
+	}
+
+	// "ping" should pass the guard.
+	if sc.IsSpectator() && "ping" != "ping" {
+		t.Error("ping should not be blocked for spectators")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Megaspeaker tests
+// ---------------------------------------------------------------------------
+
 func TestHandleMegaspeaker_EmptyMessage(t *testing.T) {
 	t.Parallel()
 

@@ -60,6 +60,49 @@ func TestIsAdmin(t *testing.T) {
 	}
 }
 
+func TestIsSpectator(t *testing.T) {
+	t.Parallel()
+
+	t.Run("spectator connection", func(t *testing.T) {
+		t.Parallel()
+		c := &Connection{send: make(chan []byte, sendBufLen), spectator: true}
+		if !c.IsSpectator() {
+			t.Error("expected IsSpectator() = true")
+		}
+	})
+
+	t.Run("regular connection", func(t *testing.T) {
+		t.Parallel()
+		c := &Connection{send: make(chan []byte, sendBufLen), userID: "user-1", role: "user"}
+		if c.IsSpectator() {
+			t.Error("expected IsSpectator() = false")
+		}
+	})
+}
+
+func TestNewSpectatorConnection(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	c := NewSpectatorConnection(nil, hub)
+
+	if !c.IsSpectator() {
+		t.Error("expected spectator = true")
+	}
+	if c.userID != "" {
+		t.Errorf("expected empty userID, got %q", c.userID)
+	}
+	if c.role != "" {
+		t.Errorf("expected empty role, got %q", c.role)
+	}
+	if c.hub != hub {
+		t.Error("expected hub reference to match")
+	}
+	if c.lastActivity.IsZero() {
+		t.Error("expected lastActivity to be set")
+	}
+}
+
 func TestCanBatchInsert_Concurrent(t *testing.T) {
 	t.Parallel()
 

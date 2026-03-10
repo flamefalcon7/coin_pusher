@@ -76,6 +76,59 @@ func TestGetMegaspeakerHistory_IsCopy(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// SpectatorCount
+// ---------------------------------------------------------------------------
+
+func TestSpectatorCount_AddRemove(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+
+	s1 := &Connection{send: make(chan []byte, 1), hub: hub, spectator: true}
+	s2 := &Connection{send: make(chan []byte, 1), hub: hub, spectator: true}
+	u1 := &Connection{send: make(chan []byte, 1), hub: hub, userID: "user-1"}
+
+	hub.Add(s1)
+	hub.Add(s2)
+	hub.Add(u1)
+
+	if hub.Count() != 3 {
+		t.Fatalf("expected 3 total connections, got %d", hub.Count())
+	}
+	if hub.SpectatorCount() != 2 {
+		t.Fatalf("expected 2 spectators, got %d", hub.SpectatorCount())
+	}
+
+	hub.Remove(s1)
+	if hub.SpectatorCount() != 1 {
+		t.Errorf("expected 1 spectator after remove, got %d", hub.SpectatorCount())
+	}
+	if hub.Count() != 2 {
+		t.Errorf("expected 2 total after remove, got %d", hub.Count())
+	}
+
+	// Removing non-spectator should not change spectator count.
+	hub.Remove(u1)
+	if hub.SpectatorCount() != 1 {
+		t.Errorf("expected 1 spectator after removing user, got %d", hub.SpectatorCount())
+	}
+}
+
+func TestSpectatorCount_DoubleRemove(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	s := &Connection{send: make(chan []byte, 1), hub: hub, spectator: true}
+	hub.Add(s)
+	hub.Remove(s)
+	hub.Remove(s) // should not decrement below 0
+
+	if hub.SpectatorCount() != 0 {
+		t.Errorf("expected 0 spectators, got %d", hub.SpectatorCount())
+	}
+}
+
+// ---------------------------------------------------------------------------
 // DisconnectUser
 // ---------------------------------------------------------------------------
 
