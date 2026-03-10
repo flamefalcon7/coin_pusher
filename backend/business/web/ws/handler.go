@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -173,6 +174,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.readPump(c)
 }
 
+// isFinite returns false if f is NaN or +/-Inf.
+func isFinite(f float64) bool {
+	return !math.IsNaN(f) && !math.IsInf(f, 0)
+}
+
 // readPump reads messages from the WS and dispatches them.
 func (h *Handler) readPump(c *Connection) {
 	defer func() {
@@ -189,12 +195,30 @@ func (h *Handler) readPump(c *Connection) {
 		return nil
 	})
 
+	// Global per-connection rate limit: max 30 messages per second.
+	const maxMsgPerSec = 30
+	msgCount := 0
+	windowStart := time.Now()
+
 	for {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
 				h.log.Warnw("ws read error", "error", err, "user_id", c.userID)
 			}
+			return
+		}
+
+		// Global rate limit: reset window each second, disconnect if exceeded.
+		now := time.Now()
+		if now.Sub(windowStart) >= time.Second {
+			msgCount = 0
+			windowStart = now
+		}
+		msgCount++
+		if msgCount > maxMsgPerSec {
+			h.log.Warnw("ws global rate limit exceeded, disconnecting", "user_id", c.userID)
+			metrics.WSRateLimit.WithLabelValues("global").Inc()
 			return
 		}
 
@@ -269,6 +293,9 @@ func (h *Handler) handleSpawnStack(c *Connection, msg ClientMessage) {
 
 	// Clamp x to valid range.
 	x := msg.X
+	if !isFinite(x) {
+		return
+	}
 	if x < -maxXPosition {
 		x = -maxXPosition
 	}
@@ -338,6 +365,13 @@ func (h *Handler) handleShock(c *Connection) {
 func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 	c.TouchActivity()
 
+	// Reject non-finite floats before consuming scroll (NaN/Inf bypass comparison operators).
+	x := msg.X
+	z := msg.Z
+	if !isFinite(x) || !isFinite(z) {
+		return
+	}
+
 	if !c.CanTornado() {
 		metrics.WSRateLimit.WithLabelValues("tornado").Inc()
 		return
@@ -349,7 +383,6 @@ func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 	metrics.AbilityUsageTotal.WithLabelValues("tornado").Inc()
 
 	// Clamp x to valid range.
-	x := msg.X
 	if x < -maxXPosition {
 		x = -maxXPosition
 	}
@@ -358,7 +391,6 @@ func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 	}
 
 	// Clamp z to platform range.
-	z := msg.Z
 	platformFrontZ := 0.7
 	platformBackZ := -0.5
 	if z < platformBackZ {
@@ -387,6 +419,13 @@ func (h *Handler) handleTornado(c *Connection, msg ClientMessage) {
 func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 	c.TouchActivity()
 
+	// Reject non-finite floats before consuming scroll (NaN/Inf bypass comparison operators).
+	x := msg.X
+	z := msg.Z
+	if !isFinite(x) || !isFinite(z) {
+		return
+	}
+
 	if !c.CanExplosion() {
 		metrics.WSRateLimit.WithLabelValues("explosion").Inc()
 		return
@@ -398,7 +437,6 @@ func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 	metrics.AbilityUsageTotal.WithLabelValues("explosion").Inc()
 
 	// Clamp x to valid range.
-	x := msg.X
 	if x < -maxXPosition {
 		x = -maxXPosition
 	}
@@ -407,7 +445,6 @@ func (h *Handler) handleExplosion(c *Connection, msg ClientMessage) {
 	}
 
 	// Clamp z to platform range.
-	z := msg.Z
 	platformFrontZ := 0.7
 	platformBackZ := -0.5
 	if z < platformBackZ {
