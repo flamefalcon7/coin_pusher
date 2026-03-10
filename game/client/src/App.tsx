@@ -104,6 +104,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const [rewardToast, setRewardToast] = useState<{ amount: number; id: number } | null>(null);
   const rewardIdRef = useRef(0);
   const [insertAckMsg, setInsertAckMsg] = useState<string | null>(null);
+  const [insertRejected, setInsertRejected] = useState(false);
 
   // Inventory state
   const [keyCoins, setKeyCoins] = useState(0);
@@ -287,6 +288,9 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         setTimeout(() => setInsertAckMsg(null), 2000);
       } else if (error === "slot_full") {
         setInsertAckMsg("Slot is full!");
+        setTimeout(() => setInsertAckMsg(null), 2000);
+      } else if (error) {
+        setInsertAckMsg(error);
         setTimeout(() => setInsertAckMsg(null), 2000);
       } else if (queued < lastRequestedAmount.current && lastRequestedAmount.current > 0) {
         setInsertAckMsg(`Only ${queued}/${lastRequestedAmount.current} accepted`);
@@ -587,6 +591,13 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
   const handleInsertCoin = (slotIndex: number, count: number = 1) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
       console.warn("Not connected to server");
+      return;
+    }
+
+    if (parseFloat(balance) < count) {
+      setInsertAckMsg("Not enough coins!");
+      setInsertRejected(true);
+      setTimeout(() => { setInsertAckMsg(null); setInsertRejected(false); }, 2000);
       return;
     }
 
@@ -992,6 +1003,7 @@ function Game({ token, account, address, onAuthFailure }: GameProps) {
         disabled={buttonDisabled || connectionStatus !== "connected"}
         slotCounts={slotCounts}
         ackMessage={insertAckMsg}
+        rejected={insertRejected}
       />
 
       {leaderboard.length > 0 && (

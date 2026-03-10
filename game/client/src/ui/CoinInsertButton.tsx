@@ -8,6 +8,7 @@ interface CoinInsertButtonProps {
   disabled: boolean;
   slotCounts?: number[];
   ackMessage?: string | null;
+  rejected?: boolean;
 }
 
 const SLOT_COUNT = SLOT_CONFIG.POSITIONS.length;
@@ -16,7 +17,7 @@ const BATCH_AMOUNTS = [1, 10, 50, 100];
 
 const SLOT_CAP = DROP_SCHEDULER_CONFIG.SLOT_CAP;
 
-export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, disabled, slotCounts, ackMessage }) => {
+export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, disabled, slotCounts, ackMessage, rejected }) => {
   const [selectedSlot, setSelectedSlot] = useState(Math.floor(SLOT_COUNT / 2)); // start center
   const [pressed, setPressed] = useState(false);
   const [selectedAmount, setSelectedAmount] = useState(1);
@@ -180,7 +181,7 @@ export const CoinInsertButton: React.FC<CoinInsertButtonProps> = ({ onClick, dis
 
       {/* Insert coin button */}
       <button
-        className={`coin-insert-btn ${pressed ? 'pressed' : ''}`}
+        className={`coin-insert-btn ${pressed ? 'pressed' : ''} ${rejected ? 'rejected' : ''}`}
         onPointerDown={handleInsertDown}
         onPointerUp={handleInsertUp}
         onPointerLeave={() => setPressed(false)}
