@@ -9,7 +9,7 @@ export class CameraSetup {
   private resizeObserver: ReturnType<typeof Engine.prototype.onResizeObservable.add> | null = null;
   private engine: Engine;
 
-  constructor(scene: Scene, canvas: HTMLCanvasElement) {
+  constructor(scene: Scene, canvas: HTMLCanvasElement, isAdmin = false) {
     this.camera = new ArcRotateCamera(
       "camera",
       Math.PI / 2,
@@ -30,6 +30,16 @@ export class CameraSetup {
     this.camera.wheelPrecision = 50;
 
     this.camera.panningSensibility = 0;
+
+    // Lock camera rotation and zoom for non-admin players
+    if (!isAdmin) {
+      this.camera.lowerAlphaLimit = this.camera.alpha;
+      this.camera.upperAlphaLimit = this.camera.alpha;
+      this.camera.lowerBetaLimit = this.camera.beta;
+      this.camera.upperBetaLimit = this.camera.beta;
+      this.camera.lowerRadiusLimit = this.camera.radius;
+      this.camera.upperRadiusLimit = this.camera.radius;
+    }
 
     // Adjust radius for narrow (portrait) screens
     this.engine = scene.getEngine();
