@@ -85,15 +85,26 @@ else
   echo "TLS cert already exists, skipping."
 fi
 
-echo "=== 7. Start services ==="
+echo "=== 7. Install fail2ban for Grafana brute force protection ==="
+if ! command -v fail2ban-server &>/dev/null; then
+  apt-get install -y fail2ban
+fi
+cp "$APP_DIR/deploy/fail2ban/nginx-grafana.conf" /etc/fail2ban/filter.d/nginx-grafana.conf
+cp "$APP_DIR/deploy/fail2ban/jail-grafana.conf" /etc/fail2ban/jail.d/nginx-grafana.conf
+cp "$APP_DIR/deploy/fail2ban/logrotate-grafana.conf" /etc/logrotate.d/nginx-grafana
+systemctl enable fail2ban
+systemctl restart fail2ban
+echo "fail2ban configured: 5 failed login attempts in 60s = 1h ban."
+
+echo "=== 8. Start services ==="
 cd "$APP_DIR"
 docker compose -f docker-compose.services.yml up -d --build
 
-echo "=== 8. Run DB migrations ==="
+echo "=== 9. Run DB migrations ==="
 sleep 5
 docker compose -f docker-compose.services.yml exec backend /bin/admin migrate
 
-echo "=== 9. Configure UFW firewall ==="
+echo "=== 10. Configure UFW firewall ==="
 if command -v ufw &>/dev/null; then
   ufw allow 22/tcp
   ufw allow 80/tcp
