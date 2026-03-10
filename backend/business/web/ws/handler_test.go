@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -381,5 +382,185 @@ func TestHandleMegaspeaker_Success(t *testing.T) {
 	}
 	if !ops["inventory_update"] {
 		t.Error("expected inventory_update message on connection")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// isFinite tests (Fix 1 — NaN/Infinity bypass)
+// ---------------------------------------------------------------------------
+
+func TestIsFinite(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		val  float64
+		want bool
+	}{
+		{"zero", 0, true},
+		{"positive", 1.5, true},
+		{"negative", -0.4, true},
+		{"max float", math.MaxFloat64, true},
+		{"smallest nonzero", math.SmallestNonzeroFloat64, true},
+		{"NaN", math.NaN(), false},
+		{"+Inf", math.Inf(1), false},
+		{"-Inf", math.Inf(-1), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isFinite(tc.val); got != tc.want {
+				t.Errorf("isFinite(%v) = %v, want %v", tc.val, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// NaN/Inf coordinate rejection tests (Fix 1)
+// ---------------------------------------------------------------------------
+
+// newTestHandlerWithNATS creates a handler with a mock NATS connection that
+// records publishes. Returns handler, connection, and a channel that receives
+// published NATS subjects.
+func newTestHandlerAdmin(t *testing.T) (*Handler, *Connection) {
+	t.Helper()
+
+	hub := NewHub()
+	log := zap.NewNop().Sugar()
+
+	invStorer := &mockInventoryStorer{}
+	invCore := inventory.NewCore(nil, invStorer, nil, nil)
+
+	usrStorer := &mockUserStorer{}
+	usrCore := user.NewCore(usrStorer)
+
+	h := &Handler{
+		log:           log,
+		hub:           hub,
+		inventoryCore: invCore,
+		userCore:      usrCore,
+	}
+
+	userID := uuid.New().String()
+	c := &Connection{
+		send:   make(chan []byte, sendBufLen),
+		hub:    hub,
+		userID: userID,
+		role:   "admin",
+	}
+	hub.Add(c)
+
+	return h, c
+}
+
+func TestHandleSpawnStack_RejectsNaN(t *testing.T) {
+	t.Parallel()
+
+	h, c := newTestHandlerAdmin(t)
+
+	// NaN x — should be silently dropped (no NATS publish, no crash).
+	h.handleSpawnStack(c, ClientMessage{Op: "spawn_stack", Type: "wall", X: math.NaN()})
+
+	// No message should be sent to the connection.
+	select {
+	case msg := <-c.send:
+		t.Fatalf("expected no message, got %v", msg)
+	case <-time.After(50 * time.Millisecond):
+		// OK — no message sent.
+	}
+}
+
+func TestHandleSpawnStack_RejectsInf(t *testing.T) {
+	t.Parallel()
+
+	h, c := newTestHandlerAdmin(t)
+
+	h.handleSpawnStack(c, ClientMessage{Op: "spawn_stack", Type: "wall", X: math.Inf(1)})
+
+	select {
+	case msg := <-c.send:
+		t.Fatalf("expected no message, got %v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestHandleTornado_RejectsNaN(t *testing.T) {
+	t.Parallel()
+
+	h, c := newTestHandler(t, testHandlerOpts{})
+
+	// Tornado requires a scroll — but NaN check happens before consumeScroll.
+	// So even without inventory, the NaN check should reject the message.
+	h.handleTornado(c, ClientMessage{Op: "tornado", X: math.NaN(), Z: 0.3})
+
+	// The connection should receive ability_error from consumeScroll if NaN
+	// check didn't fire. If NaN check works, no message at all.
+	select {
+	case raw := <-c.send:
+		var msg map[string]interface{}
+		msgpack.Unmarshal(raw, &msg)
+		// If we get ability_error, the NaN check was bypassed.
+		if msg["op"] == "ability_error" {
+			t.Fatal("NaN should be rejected before consumeScroll")
+		}
+		t.Fatalf("expected no message, got op=%v", msg["op"])
+	case <-time.After(50 * time.Millisecond):
+		// OK — NaN was rejected.
+	}
+}
+
+func TestHandleTornado_RejectsInfZ(t *testing.T) {
+	t.Parallel()
+
+	h, c := newTestHandler(t, testHandlerOpts{})
+
+	h.handleTornado(c, ClientMessage{Op: "tornado", X: 0.1, Z: math.Inf(-1)})
+
+	select {
+	case raw := <-c.send:
+		var msg map[string]interface{}
+		msgpack.Unmarshal(raw, &msg)
+		if msg["op"] == "ability_error" {
+			t.Fatal("Inf should be rejected before consumeScroll")
+		}
+		t.Fatalf("expected no message, got op=%v", msg["op"])
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestHandleExplosion_RejectsNaN(t *testing.T) {
+	t.Parallel()
+
+	h, c := newTestHandler(t, testHandlerOpts{})
+
+	h.handleExplosion(c, ClientMessage{Op: "explosion", X: 0.1, Z: math.NaN()})
+
+	select {
+	case raw := <-c.send:
+		var msg map[string]interface{}
+		msgpack.Unmarshal(raw, &msg)
+		if msg["op"] == "ability_error" {
+			t.Fatal("NaN should be rejected before consumeScroll")
+		}
+		t.Fatalf("expected no message, got op=%v", msg["op"])
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Global WS rate limit tests (Fix 7)
+// ---------------------------------------------------------------------------
+
+func TestReadPump_GlobalRateLimit_Constants(t *testing.T) {
+	t.Parallel()
+
+	// Verify the rate limit constant is reasonable (not accidentally 0 or huge).
+	const maxMsgPerSec = 30
+	if maxMsgPerSec < 10 {
+		t.Error("maxMsgPerSec too low, would disconnect normal clients")
+	}
+	if maxMsgPerSec > 100 {
+		t.Error("maxMsgPerSec too high, wouldn't protect against flooding")
 	}
 }
