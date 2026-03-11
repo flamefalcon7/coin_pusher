@@ -76,7 +76,7 @@ services:
       BACKEND_DB_NAME: ${DB_NAME}
       BACKEND_DB_DISABLE_TLS: "true"
       BACKEND_WALLET_SEED: ${WALLET_SEED}
-      BACKEND_EXECUTOR_RPC_URL: ${ALCHEMY_RPC_URL:-https://mainnet.base.org}
+      BACKEND_EXECUTOR_RPCURL: ${ALCHEMY_RPC_URL:-https://mainnet.base.org}
       BACKEND_EXECUTOR_USDC_CONTRACT: ${EXECUTOR_USDC_CONTRACT:-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913}
     depends_on:
       postgres: { condition: service_healthy }
