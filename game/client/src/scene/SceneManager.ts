@@ -594,6 +594,7 @@ export class SceneManager {
   spinJackpotWheel(resultSegment: number, reward: number, onComplete?: () => void): void {
     const wheel = this.staticMeshes.getJackpotWheel();
     if (!wheel) return;
+    this.soundManager.playWheelSpin();
     wheel.spinWheel(resultSegment, reward, onComplete);
   }
 

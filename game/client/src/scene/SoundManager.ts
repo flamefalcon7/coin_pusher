@@ -9,6 +9,7 @@ export class SoundManager {
   private coinLandBuf: AudioBuffer | null = null;
   private coinDespawnBuf: AudioBuffer | null = null;
   private slotSpinBuf: AudioBuffer | null = null;
+  private wheelSpinBuf: AudioBuffer | null = null;
   private static readonly BGM_COUNT = 3;
   private bgmBufs: AudioBuffer[] = [];
   private bgmIndex = 0;
@@ -35,7 +36,7 @@ export class SoundManager {
     if (this.loaded || !this.ctx) return;
     this.loaded = true;
 
-    const sfxFiles = ["coin-insert.mp3", "coin-land.mp3", "coin-despawn.mp3", "slot-spin.mp3"] as const;
+    const sfxFiles = ["coin-insert.mp3", "coin-land.mp3", "coin-despawn.mp3", "slot-spin.mp3", "wheel-spin.mp3"] as const;
     const bgmFiles = Array.from({ length: SoundManager.BGM_COUNT }, (_, i) => `bgm-${i}.mp3`);
 
     const decode = async (f: string) => {
@@ -44,7 +45,7 @@ export class SoundManager {
       return this.ctx!.decodeAudioData(arrayBuf);
     };
 
-    const [insertBuf, landBuf, despawnBuf, slotSpinBuf, ...bgmBufs] = await Promise.all(
+    const [insertBuf, landBuf, despawnBuf, slotSpinBuf, wheelSpinBuf, ...bgmBufs] = await Promise.all(
       [...sfxFiles, ...bgmFiles].map(decode),
     );
 
@@ -52,6 +53,7 @@ export class SoundManager {
     this.coinLandBuf = landBuf;
     this.coinDespawnBuf = despawnBuf;
     this.slotSpinBuf = slotSpinBuf;
+    this.wheelSpinBuf = wheelSpinBuf;
     this.bgmBufs = bgmBufs;
   }
 
@@ -432,7 +434,13 @@ export class SoundManager {
   /** Slot reels rolling — sample-based. */
   playSlotSpin(): void {
     this.ensureContext();
-    this.playSampleRandomized(this.slotSpinBuf, 0.5, 0);
+    this.playSampleRandomized(this.slotSpinBuf, 0.2, 0);
+  }
+
+  /** Jackpot wheel spinning — sample-based. */
+  playWheelSpin(): void {
+    this.ensureContext();
+    this.playSampleRandomized(this.wheelSpinBuf, 0.3, 0);
   }
 
   /** Ascending arpeggio — C5→E5→G5→C6 triangle waves. */
