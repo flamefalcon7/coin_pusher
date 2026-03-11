@@ -191,10 +191,11 @@ func TestRequestWithdrawal_SignatureVerification(t *testing.T) {
 	accountID := uuid.New()
 	nonce := "aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aabb7788ccddeeff"
 	toAddress := "0x1234567890abcdef1234567890abcdef12345678"
-	amount := "25.500000"
+	amount := "25.500000"     // cash coins (sent in request body)
+	usdcAmount := "2.550000"  // USDC = cash / ExchangeRate (used in signed message)
 
-	// Build the canonical message and sign it.
-	message := ethereum.FormatWithdrawMessage(nonce, toAddress, amount)
+	// Build the canonical message and sign it (signed message uses USDC amount).
+	message := ethereum.FormatWithdrawMessage(nonce, toAddress, usdcAmount)
 	sig := personalSign(t, w.PrivateHex, message)
 
 	// Construct user.Core with mock storer.
@@ -377,7 +378,7 @@ func TestRequestWithdrawal_SignatureVerification(t *testing.T) {
 	// -------------------------------------------------------------------
 	t.Run("lowercase address - passes verification", func(t *testing.T) {
 		lowerAddr := strings.ToLower(toAddress)
-		lowerMessage := ethereum.FormatWithdrawMessage(nonce, lowerAddr, amount)
+		lowerMessage := ethereum.FormatWithdrawMessage(nonce, lowerAddr, usdcAmount)
 		lowerSig := personalSign(t, w.PrivateHex, lowerMessage)
 
 		userStorer.consumeNonceFn = func(_ context.Context, _ string) (user.NonceRecord, error) {

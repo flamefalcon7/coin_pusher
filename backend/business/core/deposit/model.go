@@ -64,6 +64,9 @@ var AutoApproveThreshold = decimal.NewFromInt(100)
 // DailyWithdrawLimit — maximum total non-rejected withdrawals in 24h.
 var DailyWithdrawLimit = decimal.NewFromInt(500)
 
+// ExchangeRate — 1 USDC = 10 play/cash coins.
+var ExchangeRate = decimal.NewFromInt(10)
+
 // Sweep represents a deposit-address → hot-wallet USDC sweep.
 type Sweep struct {
 	SweepID          uuid.UUID        `db:"sweep_id" json:"sweep_id"`

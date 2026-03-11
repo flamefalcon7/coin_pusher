@@ -222,11 +222,11 @@ func (s *Store) UpdateWithdrawRequestStatus(ctx context.Context, requestID uuid.
 	return nil
 }
 
-// QueryDailyWithdrawTotal returns the sum of amount_cash for non-rejected
-// withdrawal requests created in the last 24 hours.
+// QueryDailyWithdrawTotal returns the sum of gross USDC (amount_usdc + fee_usdc)
+// for non-rejected withdrawal requests created in the last 24 hours.
 func (s *Store) QueryDailyWithdrawTotal(ctx context.Context, accountID uuid.UUID) (decimal.Decimal, error) {
 	const q = `
-		SELECT COALESCE(SUM(amount_cash), 0)
+		SELECT COALESCE(SUM(amount_usdc + fee_usdc), 0)
 		FROM withdraw_requests
 		WHERE account_id = $1
 		  AND status NOT IN ('rejected', 'failed', 'refunded')
