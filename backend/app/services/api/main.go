@@ -123,8 +123,8 @@ func run() error {
 
 	log.Infow("starting service", "host", cfg.Web.APIHost)
 
-	if cfg.Web.CORSOrigins == "*" && !cfg.Auth.DevMode {
-		return fmt.Errorf("BACKEND_WEB_CORS_ORIGINS must be set in production (not wildcard)")
+	if (cfg.Web.CORSOrigins == "*" || cfg.Web.CORSOrigins == "") && !cfg.Auth.DevMode {
+		return fmt.Errorf("BACKEND_WEB_CORS_ORIGINS must be set in production (not wildcard or empty)")
 	}
 
 	if cfg.Game.APIKey == "dev-secret" && !cfg.Auth.DevMode {
