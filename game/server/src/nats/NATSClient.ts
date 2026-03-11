@@ -105,6 +105,25 @@ export class NATSClient {
   async connect(url: string = "nats://localhost:4222"): Promise<void> {
     this.nc = await connect({ servers: url });
     console.log(`Connected to NATS at ${url}`);
+    this.monitorConnection();
+  }
+
+  /** Monitor NATS connection status for reconnect/disconnect events. */
+  private async monitorConnection(): Promise<void> {
+    if (!this.nc) return;
+    for await (const s of this.nc.status()) {
+      switch (s.type) {
+        case "reconnect":
+          console.log(`🔄 NATS reconnected to ${(s.data as string) || "server"}`);
+          break;
+        case "disconnect":
+          console.warn("⚠️ NATS disconnected");
+          break;
+        case "reconnecting":
+          console.log("🔄 NATS reconnecting...");
+          break;
+      }
+    }
   }
 
   // Subscribe to coin_insert commands (JSON encoded)

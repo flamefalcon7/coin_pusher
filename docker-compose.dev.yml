@@ -25,6 +25,11 @@ services:
     command: ["--http_port", "8222"]
     networks:
       - coin-pusher-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   # Development Game Server with hot reload
   game:
@@ -47,8 +52,10 @@ services:
     networks:
       - coin-pusher-network
     depends_on:
-      - shared
-      - nats
+      shared:
+        condition: service_started
+      nats:
+        condition: service_healthy
     command: pnpm --filter @coin-pusher/game dev
 
   # Client Dev Server (Vite)
@@ -118,7 +125,7 @@ services:
       postgres:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   pgdata:
