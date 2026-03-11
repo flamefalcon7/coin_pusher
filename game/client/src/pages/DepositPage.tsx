@@ -102,6 +102,9 @@ export const DepositPage: React.FC<DepositPageProps> = ({ token, apiUrl }) => {
           <div className="deposit-warning">
             Send only USDC on Base chain. Other tokens will be lost.
           </div>
+          <div className="deposit-notice">
+            Deposits require ~50 block confirmations and typically arrive within 2 minutes.
+          </div>
 
           <div className="deposit-history">
             <div className="deposit-history-title">Recent Deposits</div>

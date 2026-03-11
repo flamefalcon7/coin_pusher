@@ -189,6 +189,22 @@
   line-height: 1.5;
 }
 
+/* ── Notice ──────────────────────────────────────────────────────────── */
+
+.deposit-notice {
+  width: 100%;
+  max-width: 440px;
+  margin: 10px 20px 0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: rgba(78, 205, 196, 0.08);
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  font-size: 12px;
+  color: rgba(245, 230, 184, 0.6);
+  text-align: center;
+  line-height: 1.5;
+}
+
 /* ── History ─────────────────────────────────────────────────────────── */
 
 .deposit-history {
