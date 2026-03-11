@@ -48,6 +48,7 @@ services:
       BACKEND_AUTH_KEYS_FOLDER: /app/zarf/keys
       BACKEND_WEB_CORS_ORIGINS: ${CORS_ORIGINS}
       BACKEND_GAME_API_KEY: ${GAME_API_KEY}
+      BACKEND_WALLET_SEED: ${WALLET_SEED}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
