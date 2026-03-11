@@ -253,3 +253,17 @@
   color: rgba(245, 230, 184, 0.5);
   font-weight: 600;
 }
+
+@media (max-width: 480px) {
+  .profile-header {
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px 16px;
+  }
+
+  .profile-form-row {
+    flex-wrap: wrap;
+  }
+
+  .profile-form-row .profile-input {
+    width: 100%;
+  }
+}

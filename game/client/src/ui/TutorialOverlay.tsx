@@ -92,7 +92,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete }) 
         // Position tooltip relative to spotlight, clamped within viewport
         const gap = 16;
         const margin = 12;
-        const tooltipW = 320; // matches max-width in CSS
+        const tooltipW = window.innerWidth <= 480 ? 280 : 320;
         const tooltipH = 180; // estimated tooltip height
         const vw = window.innerWidth;
         const vh = window.innerHeight;

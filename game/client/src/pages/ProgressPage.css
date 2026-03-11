@@ -281,3 +281,13 @@
   color: var(--accent-pink);
   background: rgba(232, 57, 107, 0.12);
 }
+
+@media (max-width: 480px) {
+  .progress-header {
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px 16px;
+  }
+
+  .progress-card-claim-btn {
+    min-height: 44px;
+  }
+}

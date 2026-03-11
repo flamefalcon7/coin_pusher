@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import './Leaderboard.css';
 import { InfoTip } from './InfoTip';
+import { useIsMobile } from './useIsMobile';
+import { useIsLandscape } from './useIsLandscape';
 
 export interface LeaderboardEntry {
   user_id: string;
@@ -20,6 +22,15 @@ const ROW_HEIGHT = 28;
 type ShareDelta = { direction: 'up' | 'down'; key: number };
 
 export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUserId }) => {
+  const isMobile = useIsMobile();
+  const isLandscape = useIsLandscape();
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Auto-collapse on mobile/landscape
+  useEffect(() => {
+    if (isMobile || isLandscape) setCollapsed(true);
+  }, [isMobile, isLandscape]);
+
   // Track previous index per user_id so we can animate from old position.
   const prevOrderRef = useRef<Map<string, number>>(new Map());
   // Bump counter per user_id when their index changes, to re-trigger CSS animation.
@@ -116,30 +127,43 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
   // Update prevOrder after rendering so next render sees old positions.
   prevOrderRef.current = nextOrder;
 
+  const myInfo = myEntry ?? entries.find(e => e.user_id === myUserId) ?? null;
+
   return (
     <div className="leaderboard-panel">
-      <div className="leaderboard-title">HEAT RANKING <InfoTip text="Insert more coins = higher Heat = bigger share of rewards. Heat decays over time — keep inserting to maintain your rank." position="right" /></div>
-      <div className="leaderboard-list" style={{ height: entries.length * ROW_HEIGHT }}>
-        {rows}
+      <div className="leaderboard-title" onClick={() => setCollapsed(c => !c)}>
+        HEAT RANKING {collapsed ? '▸' : '▾'} <InfoTip text="Insert more coins = higher Heat = bigger share of rewards. Heat decays over time — keep inserting to maintain your rank." position="right" />
       </div>
-      {myEntry && !myInTop5 && (
+      {collapsed && myInfo && (
+        <div className="lb-collapsed-summary">
+          #{myInfo.rank} — {(myInfo.share * 100).toFixed(1)}%
+        </div>
+      )}
+      {!collapsed && (
         <>
-          <div className="leaderboard-divider" />
-          <div className={`lb-my-rank ${rankUp > 0 ? 'rank-up' : ''}`}>
-            <span className="lb-rank">#{myEntry.rank}</span>
-            <span className="lb-name">You</span>
-            <span className="lb-share">
-              {(myEntry.share * 100).toFixed(1)}%
-              {shareDelta && (
-                <span
-                  key={shareDelta.key}
-                  className={`lb-share-delta ${shareDelta.direction}`}
-                >
-                  {shareDelta.direction === 'up' ? '\u25B2' : '\u25BC'}
-                </span>
-              )}
-            </span>
+          <div className="leaderboard-list" style={{ height: entries.length * ROW_HEIGHT }}>
+            {rows}
           </div>
+          {myEntry && !myInTop5 && (
+            <>
+              <div className="leaderboard-divider" />
+              <div className={`lb-my-rank ${rankUp > 0 ? 'rank-up' : ''}`}>
+                <span className="lb-rank">#{myEntry.rank}</span>
+                <span className="lb-name">You</span>
+                <span className="lb-share">
+                  {(myEntry.share * 100).toFixed(1)}%
+                  {shareDelta && (
+                    <span
+                      key={shareDelta.key}
+                      className={`lb-share-delta ${shareDelta.direction}`}
+                    >
+                      {shareDelta.direction === 'up' ? '\u25B2' : '\u25BC'}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

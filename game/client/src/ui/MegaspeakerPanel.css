@@ -165,3 +165,41 @@
 .megaspeaker-send:not(:disabled):hover {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* ── Mobile ≤ 480px ─────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .megaspeaker-toggle {
+    right: auto;
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .megaspeaker-panel {
+    width: calc(100vw - 32px);
+    height: clamp(240px, 40vh, 360px);
+    left: 16px;
+    right: 16px;
+    bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .megaspeaker-input {
+    font-size: 16px; /* prevent iOS zoom on focus */
+  }
+}
+
+/* ── Landscape ──────────────────────────────────────────── */
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .megaspeaker-panel {
+    width: clamp(280px, 45vw, 360px);
+    height: calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+
+  .megaspeaker-toggle {
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+}

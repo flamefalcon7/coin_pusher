@@ -7,7 +7,7 @@
   border-radius: clamp(6px, 1.5vw, 8px);
   padding: clamp(6px, 1.5vw, 8px) clamp(8px, 2vw, 12px);
   min-width: clamp(140px, 35vw, 200px);
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 10;
   font-family: monospace;
 }
@@ -22,6 +22,14 @@
   align-items: center;
   gap: 4px;
   pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lb-collapsed-summary {
+  font-size: clamp(10px, 2.2vw, 12px);
+  color: #ffcc00;
+  padding: 2px 4px;
 }
 
 .leaderboard-list {

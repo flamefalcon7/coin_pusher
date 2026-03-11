@@ -1,5 +1,7 @@
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { InfoTip } from './InfoTip';
+import { useIsMobile } from './useIsMobile';
 
 interface PlayerInfoProps {
   balancePlay: string;
@@ -23,8 +25,49 @@ function truncAddr(addr: string): string {
 }
 
 export function PlayerInfo({ balancePlay, balanceCash, displayName, address, onLogout }: PlayerInfoProps) {
+  const isMobile = useIsMobile();
+  const [collapsed, setCollapsed] = useState(true);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+
+  // Auto-collapse on route change (navigating to sub-pages)
+  useEffect(() => {
+    setCollapsed(true);
+  }, [location.pathname]);
+
+  // Close on outside tap
+  useEffect(() => {
+    if (!isMobile || collapsed) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setCollapsed(true);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [isMobile, collapsed]);
+
+  if (isMobile && collapsed) {
+    return (
+      <div className="player-info player-info--collapsed" onClick={() => setCollapsed(false)}>
+        <div className="player-info-balances">
+          <span className="player-info-balance">
+            <span className="player-info-label">Play</span> {fmt(balancePlay)}
+          </span>
+          <span className="player-info-balance player-info-cash">
+            <span className="player-info-label">Cash</span> {fmt(balanceCash)}
+          </span>
+          <span className="player-info-expand">▾</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="player-info">
+    <div className="player-info" ref={panelRef}>
+      {isMobile && (
+        <button className="player-info-collapse-btn" onClick={() => setCollapsed(true)}>▴</button>
+      )}
       <div className="player-info-name">{displayName ?? truncAddr(address)}</div>
       <div className="player-info-balances">
         <span className="player-info-balance">
