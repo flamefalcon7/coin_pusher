@@ -269,6 +269,9 @@ func pollOnce(
 	// P1-12: Only process blocks with sufficient confirmations to avoid reorgs.
 	latestBlock := header.Number.Int64() - confirmationBlocks
 
+	// Always update lag so Grafana shows it even when polls fail.
+	indexerBlockLag.Set(float64(latestBlock - *lastBlock))
+
 	if *lastBlock >= latestBlock {
 		return nil
 	}
