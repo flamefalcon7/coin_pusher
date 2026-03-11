@@ -13,8 +13,9 @@ import { AbilityToast, type AbilityToastEntry } from "./ui/AbilityToast";
 import { InventoryBar } from "./ui/InventoryBar";
 import { WalletLogin } from "./ui/WalletLogin";
 import { SpectatorBanner } from "./ui/SpectatorBanner";
-import { getSavedAuth, getSavedAddress, clearAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
+import { getSavedAuth, getSavedAddress, clearAuth, saveAuth, updateSavedBalance, type AuthResult, type Account } from "./net/auth";
 import { InventoryClient } from "./net/InventoryClient";
+import { getProfile } from "./net/ProfileClient";
 import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
 import { TargetingHint } from "./ui/TargetingHint";
 import { IdleWarningBanner, IdleTimeoutOverlay } from "./ui/IdleOverlay";
@@ -168,6 +169,16 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       return next;
     });
   }, []);
+
+  // Refresh balance from server on mount (sessionStorage may be stale).
+  useEffect(() => {
+    if (!token) return;
+    getProfile(API_URL, token).then((fresh) => {
+      setBalance(fresh.balance_play);
+      setBalanceCash(fresh.balance_cash);
+      saveAuth(token, fresh);
+    }).catch(() => { /* ignore — stale token will be caught elsewhere */ });
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Editor state
   const editorManagerRef = useRef<EditorManager | null>(null);
