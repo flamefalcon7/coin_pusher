@@ -1027,6 +1027,11 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       <TargetingHint
         visible={tornadoTargeting || explosionTargeting}
         abilityName={tornadoTargeting ? 'Tornado' : 'Explosion'}
+        onCancel={() => {
+          setTornadoTargeting(false);
+          setExplosionTargeting(false);
+          sceneManagerRef.current?.hideTargetingReticle();
+        }}
       />
 
       {/* Dev tools — admin only */}

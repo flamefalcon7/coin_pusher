@@ -2,14 +2,16 @@ import { ArcRotateCamera, Vector3, Scene, Engine } from "@babylonjs/core";
 
 const BASE_RADIUS = 3;
 const MIN_RADIUS = 2;
-const MAX_RADIUS = 5;
+const MAX_RADIUS = 5.5;
 
 export class CameraSetup {
   private camera: ArcRotateCamera;
   private resizeObserver: ReturnType<typeof Engine.prototype.onResizeObservable.add> | null = null;
   private engine: Engine;
+  private isAdmin: boolean;
 
   constructor(scene: Scene, canvas: HTMLCanvasElement, isAdmin = false) {
+    this.isAdmin = isAdmin;
     this.camera = new ArcRotateCamera(
       "camera",
       Math.PI / 2,
@@ -31,14 +33,12 @@ export class CameraSetup {
 
     this.camera.panningSensibility = 0;
 
-    // Lock camera rotation and zoom for non-admin players
+    // Lock camera rotation for non-admin players (radius lock handled in adjustRadiusForAspect)
     if (!isAdmin) {
       this.camera.lowerAlphaLimit = this.camera.alpha;
       this.camera.upperAlphaLimit = this.camera.alpha;
       this.camera.lowerBetaLimit = this.camera.beta;
       this.camera.upperBetaLimit = this.camera.beta;
-      this.camera.lowerRadiusLimit = this.camera.radius;
-      this.camera.upperRadiusLimit = this.camera.radius;
     }
 
     // Adjust radius for narrow (portrait) screens
@@ -52,14 +52,21 @@ export class CameraSetup {
   private adjustRadiusForAspect(engine: Engine): void {
     const aspect = engine.getAspectRatio(this.camera);
     // Portrait or narrow screens: pull camera back so full table width is visible
-    // aspect ~0.5 (phone portrait) → radius ~4.2
-    // aspect ~1.0 (square/tablet) → radius ~3
-    // aspect ≥1.3 (landscape) → radius stays at BASE_RADIUS
+    // aspect ~0.5 (phone portrait) → radius ~6.5
+    // aspect ~1.0 (square/tablet) → radius ~3.9
+    // aspect ≥1.3 (landscape/desktop) → radius stays at BASE_RADIUS
     if (aspect < 1.3) {
       this.camera.radius = Math.min(
         MAX_RADIUS,
         BASE_RADIUS * (1.3 / aspect)
       );
+    } else {
+      this.camera.radius = BASE_RADIUS;
+    }
+    // Lock radius for non-admin after adjustment
+    if (!this.isAdmin) {
+      this.camera.lowerRadiusLimit = this.camera.radius;
+      this.camera.upperRadiusLimit = this.camera.radius;
     }
   }
 

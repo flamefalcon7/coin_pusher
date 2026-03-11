@@ -343,6 +343,7 @@
 @media (max-width: 480px) {
   .coin-panel {
     padding: 4px 10px;
+    max-width: calc(100vw - 32px);
   }
 
   .coin-panel-top-row {
@@ -350,11 +351,52 @@
     gap: 4px;
   }
 
+  .coin-dot {
+    padding: 4px;
+    background-clip: content-box;
+    margin: -4px;
+  }
+
+  .coin-arrow-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .coin-batch-btn {
+    padding: 1px 5px;
+    font-size: 10px;
+  }
+
   .coin-insert-btn {
-    width: 130px;
+    width: 100px;
+    height: 30px;
+  }
+
+  .coin-insert-btn-text {
+    font-size: 10px;
+    letter-spacing: 0.5px;
   }
 
   .slot-progress-row {
     max-width: 140px;
+  }
+}
+
+/* ── Landscape ────────────────────────────────────────────────────────── */
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .coin-panel {
+    top: calc(4px + env(safe-area-inset-top, 0px));
+    padding: 4px 10px;
+  }
+
+  .coin-panel-top-row {
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .coin-insert-btn {
+    width: 120px;
+    height: 32px;
   }
 }

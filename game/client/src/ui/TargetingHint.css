@@ -21,6 +21,7 @@
 
 .targeting-hint.visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .targeting-hint-action {
@@ -38,4 +39,39 @@
   color: rgba(245, 230, 184, 0.5);
   border-left: 1px solid rgba(245, 230, 184, 0.15);
   padding-left: 12px;
+}
+
+.targeting-hint-cancel-btn {
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-pink, #E8396B);
+  background: rgba(232, 57, 107, 0.15);
+  border: 1px solid rgba(232, 57, 107, 0.4);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  pointer-events: auto;
+}
+
+.targeting-hint-cancel-btn:hover {
+  background: rgba(232, 57, 107, 0.3);
+}
+
+/* ── Mobile ≤ 480px ───────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .targeting-hint {
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ── Landscape ────────────────────────────────────────────────────────── */
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .targeting-hint {
+    bottom: auto;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+  }
 }

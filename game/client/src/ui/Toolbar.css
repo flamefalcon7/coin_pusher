@@ -342,3 +342,30 @@
     padding: 4px;
   }
 }
+
+/* ── Landscape ────────────────────────────────────────────────────────── */
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .toolbar-abilities {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .toolbar-action-btn.toolbar-action-img {
+    width: clamp(40px, 8vw, 52px);
+    height: clamp(40px, 8vw, 52px);
+    border-radius: 8px;
+    padding: 4px;
+  }
+
+  /* Hide tooltips in landscape (they'd appear in wrong direction) */
+  .toolbar-action-btn[data-tooltip]::after {
+    display: none;
+  }
+}

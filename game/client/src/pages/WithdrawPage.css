@@ -299,3 +299,17 @@
   min-width: 40px;
   text-align: right;
 }
+
+@media (max-width: 480px) {
+  .withdraw-header {
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px 16px;
+  }
+
+  .withdraw-max-btn {
+    min-height: 44px;
+  }
+
+  .withdraw-submit-btn {
+    width: 100%;
+  }
+}
