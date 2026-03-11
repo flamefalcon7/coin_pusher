@@ -141,6 +141,12 @@ export type UpdateSceneObjectsMessage = {
   objects: EditorObjectNet[];
 };
 
+// Client → Server: Pause broadcast delivery (tab hidden)
+export type PauseUpdatesMessage = { op: "pause_updates" };
+
+// Client → Server: Resume broadcast delivery (tab visible)
+export type ResumeUpdatesMessage = { op: "resume_updates" };
+
 // Server → Client: World snapshot (initial state)
 export type WorldSnapshotMessage = {
   op: "world_snapshot";
@@ -186,7 +192,9 @@ export type ClientMessage =
   | FillPlatformMessage
   | UpdateSceneObjectsMessage
   | BatchInsertMessage
-  | MegaspeakerSendMessage;
+  | MegaspeakerSendMessage
+  | PauseUpdatesMessage
+  | ResumeUpdatesMessage;
 
 // Server → Client: Slot machine spin result
 export type SlotSymbol = "bitcoin" | "ethereum" | "solana";

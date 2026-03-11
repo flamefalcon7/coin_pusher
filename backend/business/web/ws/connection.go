@@ -33,6 +33,7 @@ type Connection struct {
 	lastSuperPush  time.Time
 	lastActivity   time.Time
 	idleWarned     bool
+	paused         bool
 	mu             sync.Mutex
 	closed         bool
 }
@@ -218,6 +219,21 @@ func (c *Connection) IdleDuration() time.Duration {
 	d := time.Since(c.lastActivity)
 	c.mu.Unlock()
 	return d
+}
+
+// SetPaused sets the paused flag (stops broadcast delivery).
+func (c *Connection) SetPaused(p bool) {
+	c.mu.Lock()
+	c.paused = p
+	c.mu.Unlock()
+}
+
+// IsPaused returns true if the connection has paused broadcast delivery.
+func (c *Connection) IsPaused() bool {
+	c.mu.Lock()
+	p := c.paused
+	c.mu.Unlock()
+	return p
 }
 
 // Close closes the connection.
