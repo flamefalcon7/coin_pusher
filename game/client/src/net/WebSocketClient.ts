@@ -14,6 +14,14 @@ export class WebSocketClient {
   private onCloseCallback?: (code: number) => void;
   private onErrorCallback?: (error: Event) => void;
 
+  // Reconnect state
+  private reconnecting = false;
+  private intentionalDisconnect = false;
+  private reconnectDelay = 1000; // initial delay ms
+  private readonly reconnectDelayMax = 15000;
+  private readonly reconnectBackoff = 2;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(url: string, token?: string) {
     this.url = url;
     this.token = token;
@@ -25,6 +33,7 @@ export class WebSocketClient {
       return;
     }
 
+    this.intentionalDisconnect = false;
     const wsUrl = this.token ? `${this.url}?token=${this.token}` : this.url;
     console.log(`📡 Connecting to ${this.url}...`);
     this.ws = new WebSocket(wsUrl);
@@ -34,6 +43,8 @@ export class WebSocketClient {
 
     this.ws.onopen = () => {
       console.log('✅ WebSocket connected');
+      this.reconnecting = false;
+      this.reconnectDelay = 1000; // reset backoff on success
       if (this.onOpenCallback) {
         this.onOpenCallback();
       }
@@ -77,6 +88,16 @@ export class WebSocketClient {
       console.log('👋 WebSocket disconnected', event.code);
       if (this.onCloseCallback) {
         this.onCloseCallback(event.code);
+      }
+      // Auto-reconnect unless intentional close, clean close, or auth rejection
+      const skipReconnect = this.intentionalDisconnect
+        || event.code === 1000   // clean close
+        || event.code === 4401   // unauthorized
+        || event.code === 4403   // forbidden
+        || event.code === 4408   // idle timeout
+        || event.code === 4410;  // idle disconnect
+      if (!skipReconnect) {
+        this.scheduleReconnect();
       }
     };
 
@@ -191,7 +212,26 @@ export class WebSocketClient {
     }
   }
 
+  private scheduleReconnect(): void {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    console.log(`🔄 Reconnecting in ${this.reconnectDelay}ms...`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnecting = false;
+      this.connect();
+      // Exponential backoff for next attempt
+      this.reconnectDelay = Math.min(this.reconnectDelay * this.reconnectBackoff, this.reconnectDelayMax);
+    }, this.reconnectDelay);
+  }
+
   disconnect(): void {
+    this.intentionalDisconnect = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnecting = false;
     if (this.ws) {
       this.ws.close();
       this.ws = null;

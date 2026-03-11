@@ -549,6 +549,12 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       // Spectator → Authenticated
       gameClientRef.current.reconnectWithToken(token);
 
+      // Sync balance from the fresh account data
+      if (account) {
+        setBalance(account.balance_play);
+        setBalanceCash(account.balance_cash);
+      }
+
       // Fetch inventory now that we're authenticated
       const inventoryClient = new InventoryClient(API_URL);
       inventoryClient.getInventory(token).then((inv) => {
@@ -568,6 +574,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     } else if (!token && prevTokenRef.current) {
       // Authenticated → Spectator (auth failure / logout)
       gameClientRef.current.reconnectAsSpectator();
+      setMyRankEntry(null);
     }
 
     prevTokenRef.current = token;
