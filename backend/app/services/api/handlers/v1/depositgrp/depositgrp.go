@@ -204,7 +204,9 @@ func (g *Group) RequestWithdrawal(ctx context.Context, w http.ResponseWriter, r 
 	// 3. Reconstruct the signed message and recover the signer address.
 	// IMPORTANT: Use req.ToAddress (raw) — NOT the EIP-55 normalized form —
 	// because the client signs with the address as the user typed it.
-	message := ethereum.FormatWithdrawMessage(req.Nonce, req.ToAddress, amount.StringFixed(6))
+	// Amount in the signed message is in USDC (real money), not cash coins.
+	usdcAmount := amount.Div(deposit.ExchangeRate)
+	message := ethereum.FormatWithdrawMessage(req.Nonce, req.ToAddress, usdcAmount.StringFixed(6))
 	recoveredAddr, err := ethereum.VerifyPersonalSign(message, req.Signature)
 	if err != nil {
 		return v1.NewRequestError(fmt.Errorf("invalid signature"), http.StatusUnauthorized)

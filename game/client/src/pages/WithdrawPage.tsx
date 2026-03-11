@@ -4,7 +4,9 @@ import { requestWithdrawal, getWithdrawals, getWithdrawNonce, type WithdrawalRec
 import { getSavedAddress } from '../net/auth';
 import './WithdrawPage.css';
 
-const WITHDRAW_FEE = 0.5;
+const WITHDRAW_FEE_USDC = 0.5;
+const WITHDRAW_FEE_CASH = 5; // 0.50 USDC × 10
+const EXCHANGE_RATE = 10;
 
 interface WithdrawPageProps {
   token: string;
@@ -58,7 +60,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
 
   const cashNum = parseFloat(balanceCash) || 0;
   const amountNum = parseFloat(amount) || 0;
-  const netReceive = Math.max(0, amountNum - WITHDRAW_FEE);
+  const netReceiveUSDC = Math.max(0, amountNum / EXCHANGE_RATE - WITHDRAW_FEE_USDC);
 
   const handleMax = useCallback(() => {
     const max = Math.max(0, cashNum);
@@ -74,8 +76,8 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
       setError('Invalid address. Must be 0x followed by 40 hex characters.');
       return;
     }
-    if (amountNum < 1) {
-      setError('Minimum withdrawal is 1 USDC.');
+    if (amountNum < 10) {
+      setError('Minimum withdrawal is 10 Cash Coins (1 USDC).');
       return;
     }
     if (amountNum > cashNum) {
@@ -89,9 +91,11 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
       const { nonce } = await getWithdrawNonce(apiUrl, token);
 
       // 2. Build the canonical withdraw message and sign with wallet.
-      const amountFixed = amountNum.toFixed(6);
+      // Sign with USDC amount (real money), not cash coins.
+      const usdcAmount = (amountNum / EXCHANGE_RATE).toFixed(6);
+      const amountFixed = amountNum.toFixed(6); // cash coins for API
       const normalizedTo = toAddress; // Server normalizes via EIP-55
-      const message = `Coin Pusher Withdraw\nTo: ${normalizedTo}\nAmount: ${amountFixed} USDC\nNonce: ${nonce}`;
+      const message = `Coin Pusher Withdraw\nTo: ${normalizedTo}\nAmount: ${usdcAmount} USDC\nNonce: ${nonce}`;
 
       const eth = window.ethereum;
       if (!eth) throw new Error('No wallet found. Please install MetaMask.');
@@ -111,7 +115,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
         nonce,
         signature,
       });
-      setSuccess(`Withdrawal submitted: ${formatAmount(res.net_amount)} USDC`);
+      setSuccess(`Withdrawal submitted! You will receive ${formatAmount(res.net_amount)} USDC`);
       setAmount('');
       setToAddress('');
 
@@ -149,7 +153,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
       </div>
 
       <div className="withdraw-balance-banner">
-        Available: <span className="withdraw-balance-amount">{formatAmount(balanceCash)} USDC</span> (Cash)
+        Available: <span className="withdraw-balance-amount">{formatAmount(balanceCash)} Cash Coins</span>
       </div>
 
       <div className="withdraw-card">
@@ -165,7 +169,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
           autoComplete="off"
         />
 
-        <label className="withdraw-label">Amount (USDC)</label>
+        <label className="withdraw-label">Amount (Cash Coins)</label>
         <div className="withdraw-amount-row">
           <input
             className="withdraw-input withdraw-amount-input"
@@ -174,19 +178,19 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
             value={amount}
             onChange={e => setAmount(e.target.value)}
             disabled={submitting}
-            min="1"
-            step="0.01"
+            min="10"
+            step="1"
           />
           <button className="withdraw-max-btn" onClick={handleMax} disabled={submitting}>MAX</button>
         </div>
 
         <div className="withdraw-fee-row">
           <span>Fee</span>
-          <span>{WITHDRAW_FEE.toFixed(2)} USDC</span>
+          <span>{WITHDRAW_FEE_USDC.toFixed(2)} USDC ({WITHDRAW_FEE_CASH} Cash Coins)</span>
         </div>
         <div className="withdraw-fee-row withdraw-receive">
           <span>You receive</span>
-          <span>{netReceive > 0 ? netReceive.toFixed(2) : '0.00'} USDC</span>
+          <span>{netReceiveUSDC > 0 ? netReceiveUSDC.toFixed(2) : '0.00'} USDC</span>
         </div>
 
         {error && <div className="withdraw-msg withdraw-msg-error">{error}</div>}
@@ -195,7 +199,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
         <button
           className="withdraw-submit-btn"
           onClick={handleSubmit}
-          disabled={submitting || amountNum < 1}
+          disabled={submitting || amountNum < 10}
         >
           {submitting ? 'Processing...' : 'Withdraw'}
         </button>
@@ -211,7 +215,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
           <div className="withdraw-history-list">
             {withdrawals.map(w => (
               <div key={w.withdrawal_id} className="withdraw-history-row">
-                <span className="withdraw-history-amount">{formatAmount(w.amount)} USDC</span>
+                <span className="withdraw-history-amount">{formatAmount(w.amount)} Cash</span>
                 <span className={`withdraw-history-status status-${w.status}`}>
                   {statusIcon(w.status)} {w.status}
                 </span>

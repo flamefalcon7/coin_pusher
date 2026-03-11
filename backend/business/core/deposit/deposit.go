@@ -232,7 +232,8 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 			return fmt.Errorf("creating deposit accounting log: %w", err)
 		}
 
-		if err := s.userCore.IncrementPlayBalance(ctx, accountID, amount); err != nil {
+		playAmount := amount.Mul(ExchangeRate)
+		if err := s.userCore.IncrementPlayBalance(ctx, accountID, playAmount); err != nil {
 			return fmt.Errorf("crediting play balance: %w", err)
 		}
 
@@ -250,7 +251,7 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 		}
 
 		if acct.ReferredBy != nil && !acct.ReferralRewardPaid {
-			reward := amount.Mul(decimal.NewFromFloat(0.10))
+			reward := amount.Mul(decimal.NewFromFloat(0.10)).Mul(ExchangeRate)
 			refID := fmt.Sprintf("referral:%s", accountID)
 
 			rewardLog := accounting.AccountingLog{
@@ -294,15 +295,17 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 }
 
 // RequestWithdrawal validates and creates a withdrawal request.
+// Amount parameter is in cash coins; converted to USDC via ExchangeRate for limits/fees.
 // Steps:
 // 1. Validate to_address format (EIP-55)
-// 2. Check withdraw_locked_until
-// 3. Check balance_cash >= amount (minimum 1 USDC)
-// 4. Check daily withdraw limit ($500/day)
-// 5. Calculate fee (flat 0.50 USDC for Phase 1)
-// 6. Debit balance_cash by amount
-// 7. Create WITHDRAW + WITHDRAW_FEE accounting logs
-// 8. Create withdraw_request record (auto-approve ≤ $100, else pending)
+// 2. Convert amount to USDC (amount / ExchangeRate)
+// 3. Check minimum (1 USDC = 10 cash coins)
+// 4. Check withdraw_locked_until
+// 5. Check daily withdraw limit ($500 USDC/day)
+// 6. Calculate fee (flat 0.50 USDC for Phase 1)
+// 7. Debit balance_cash by amount (cash coins)
+// 8. Create WITHDRAW + WITHDRAW_FEE accounting logs
+// 9. Create withdraw_request record (auto-approve ≤ $100 USDC, else pending)
 func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAddress string, amount decimal.Decimal, chain string) (WithdrawRequest, error) {
 	// Validate address.
 	normalizedAddr, err := ethereum.NormalizeAddress(toAddress)
@@ -310,20 +313,23 @@ func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAdd
 		return WithdrawRequest{}, v1.NewRequestError(fmt.Errorf("invalid address: %w", err), 400)
 	}
 
-	// Validate minimum.
-	if amount.LessThan(MinWithdrawal) {
-		return WithdrawRequest{}, v1.NewRequestError(fmt.Errorf("minimum withdrawal is %s USDC", MinWithdrawal), 400)
+	// Convert cash coins to USDC for limit/fee checks.
+	amountUSDC := amount.Div(ExchangeRate)
+
+	// Validate minimum (in USDC).
+	if amountUSDC.LessThan(MinWithdrawal) {
+		return WithdrawRequest{}, v1.NewRequestError(fmt.Errorf("minimum withdrawal is %s cash coins (%s USDC)", MinWithdrawal.Mul(ExchangeRate), MinWithdrawal), 400)
 	}
 
 	fee := WithdrawalFee
-	netAmount := amount.Sub(fee)
-	if netAmount.LessThanOrEqual(decimal.Zero) {
+	netUSDC := amountUSDC.Sub(fee)
+	if netUSDC.LessThanOrEqual(decimal.Zero) {
 		return WithdrawRequest{}, v1.NewRequestError(fmt.Errorf("withdrawal amount must be greater than fee (%s USDC)", fee), 400)
 	}
 
-	// Determine status: auto-approve ≤ $100, else pending (requires manual review).
+	// Determine status: auto-approve ≤ threshold (in USDC), else pending.
 	status := "pending"
-	if amount.LessThanOrEqual(AutoApproveThreshold) {
+	if amountUSDC.LessThanOrEqual(AutoApproveThreshold) {
 		status = "approved"
 	}
 
@@ -333,7 +339,7 @@ func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAdd
 		RequestID:  requestID,
 		AccountID:  accountID,
 		AmountCash: amount,
-		AmountUSDC: netAmount,
+		AmountUSDC: netUSDC,
 		FeeUSDC:    fee,
 		Chain:      chain,
 		ToAddress:  normalizedAddr,
@@ -360,7 +366,7 @@ func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAdd
 		if err != nil {
 			return fmt.Errorf("query daily total: %w", err)
 		}
-		if dailyTotal.Add(amount).GreaterThan(DailyWithdrawLimit) {
+		if dailyTotal.Add(amountUSDC).GreaterThan(DailyWithdrawLimit) {
 			return v1.NewRequestError(
 				fmt.Errorf("daily withdrawal limit exceeded (limit: %s USDC, used: %s USDC)", DailyWithdrawLimit, dailyTotal),
 				400,
@@ -388,12 +394,12 @@ func (c *Core) RequestWithdrawal(ctx context.Context, accountID uuid.UUID, toAdd
 			return fmt.Errorf("creating withdraw log: %w", err)
 		}
 
-		// WITHDRAW_FEE accounting log.
+		// WITHDRAW_FEE accounting log (fee in cash coins).
 		feeLog := accounting.AccountingLog{
 			LogID:       uuid.New(),
 			AccountID:   accountID,
 			ActionType:  accounting.ActionWithdrawFee,
-			Amount:      fee,
+			Amount:      fee.Mul(ExchangeRate),
 			Currency:    accounting.CurrencyCash,
 			ReferenceID: refID,
 			CreatedAt:   now,
@@ -512,12 +518,12 @@ func (c *Core) RefundFailedWithdrawal(ctx context.Context, requestID uuid.UUID, 
 			return fmt.Errorf("creating refund log: %w", err)
 		}
 
-		// WITHDRAW_FEE_REFUND accounting log (fee reversal for clean audit trail).
+		// WITHDRAW_FEE_REFUND accounting log (fee reversal in cash coins, matches original fee log).
 		feeRefundLog := accounting.AccountingLog{
 			LogID:       uuid.New(),
 			AccountID:   wr.AccountID,
 			ActionType:  accounting.ActionWithdrawFeeRefund,
-			Amount:      wr.FeeUSDC,
+			Amount:      wr.FeeUSDC.Mul(ExchangeRate),
 			Currency:    accounting.CurrencyCash,
 			ReferenceID: refID,
 			CreatedAt:   now,

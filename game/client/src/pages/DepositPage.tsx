@@ -99,6 +99,9 @@ export const DepositPage: React.FC<DepositPageProps> = ({ token, apiUrl }) => {
             </div>
           </div>
 
+          <div className="deposit-notice deposit-exchange-rate">
+            1 USDC = 10 Play Coins
+          </div>
           <div className="deposit-warning">
             Send only USDC on Base chain. Other tokens will be lost.
           </div>

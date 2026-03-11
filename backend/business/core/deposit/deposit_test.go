@@ -593,6 +593,7 @@ func TestProcessDeposit_RecordsCorrectFields(t *testing.T) {
 	accountID := uuid.New()
 	var recorded Deposit
 	var createdLogs []accounting.AccountingLog
+	var balanceUpdates []decimal.Decimal
 
 	storer := &mockStorer{
 		queryDepositByTxHashFn: func(ctx context.Context, txHash string) (Deposit, error) {
@@ -609,7 +610,12 @@ func TestProcessDeposit_RecordsCorrectFields(t *testing.T) {
 			return nil
 		},
 	}
-	userStorer := &mockUserStorer{}
+	userStorer := &mockUserStorer{
+		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			balanceUpdates = append(balanceUpdates, delta)
+			return decimal.NewFromInt(100), nil
+		},
+	}
 
 	core := newTestCore(storer, userStorer, acctStorer)
 	err := core.ProcessDeposit(context.Background(), accountID, decimal.NewFromFloat(25.5), "0xabc", 12345, "0xsender")
@@ -645,6 +651,15 @@ func TestProcessDeposit_RecordsCorrectFields(t *testing.T) {
 	}
 	if createdLogs[0].ActionType != accounting.ActionDeposit {
 		t.Errorf("action_type = %q, want DEPOSIT", createdLogs[0].ActionType)
+	}
+
+	// Play balance should be credited with USDC × ExchangeRate (25.5 × 10 = 255).
+	if len(balanceUpdates) < 1 {
+		t.Fatal("expected at least 1 balance update")
+	}
+	expectedPlay := decimal.NewFromFloat(25.5).Mul(ExchangeRate)
+	if !balanceUpdates[0].Equal(expectedPlay) {
+		t.Errorf("play balance credit = %s, want %s (USDC × %s)", balanceUpdates[0], expectedPlay, ExchangeRate)
 	}
 }
 
@@ -746,8 +761,8 @@ func TestRequestWithdrawal_DailyLimitExceeded(t *testing.T) {
 
 	core := newTestCore(storer, userStorer, acctStorer)
 
-	// $490 used + $20 request = $510 > $500 limit
-	_, err := core.RequestWithdrawal(context.Background(), accountID, validAddr, decimal.NewFromInt(20), "base")
+	// 200 cash = 20 USDC. $490 used + $20 = $510 > $500 limit
+	_, err := core.RequestWithdrawal(context.Background(), accountID, validAddr, decimal.NewFromInt(200), "base")
 	if err == nil {
 		t.Fatal("expected error for daily limit exceeded")
 	}
@@ -783,7 +798,7 @@ func TestRequestWithdrawal_AutoApprove(t *testing.T) {
 
 	core := newTestCore(storer, userStorer, acctStorer)
 
-	// $50 ≤ $100 threshold → auto-approved.
+	// 50 cash = 5 USDC ≤ $100 threshold → auto-approved.
 	wr, err := core.RequestWithdrawal(context.Background(), accountID, validAddr, decimal.NewFromInt(50), "base")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -811,8 +826,9 @@ func TestRequestWithdrawal_AutoApprove(t *testing.T) {
 			}
 		case accounting.ActionWithdrawFee:
 			foundFee = true
-			if !log.Amount.Equal(WithdrawalFee) {
-				t.Errorf("fee log amount = %s, want %s", log.Amount, WithdrawalFee)
+			feeCash := WithdrawalFee.Mul(ExchangeRate)
+			if !log.Amount.Equal(feeCash) {
+				t.Errorf("fee log amount = %s, want %s (fee in cash coins)", log.Amount, feeCash)
 			}
 		}
 	}
@@ -848,8 +864,8 @@ func TestRequestWithdrawal_PendingAboveThreshold(t *testing.T) {
 
 	core := newTestCore(storer, userStorer, acctStorer)
 
-	// $150 > $100 threshold → pending.
-	wr, err := core.RequestWithdrawal(context.Background(), accountID, validAddr, decimal.NewFromInt(150), "base")
+	// 1500 cash = 150 USDC > $100 threshold → pending.
+	wr, err := core.RequestWithdrawal(context.Background(), accountID, validAddr, decimal.NewFromInt(1500), "base")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -887,15 +903,15 @@ func TestRequestWithdrawal_FeeCalculation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// amount_cash = 10, fee = 0.50, amount_usdc = 9.50
+	// amount_cash = 10, 10/10 = 1 USDC, fee = 0.50, net = 0.50 USDC
 	if !capturedWR.AmountCash.Equal(decimal.NewFromInt(10)) {
 		t.Errorf("amount_cash = %s, want 10", capturedWR.AmountCash)
 	}
 	if !capturedWR.FeeUSDC.Equal(decimal.NewFromFloat(0.50)) {
 		t.Errorf("fee_usdc = %s, want 0.50", capturedWR.FeeUSDC)
 	}
-	if !capturedWR.AmountUSDC.Equal(decimal.NewFromFloat(9.50)) {
-		t.Errorf("amount_usdc = %s, want 9.50", capturedWR.AmountUSDC)
+	if !capturedWR.AmountUSDC.Equal(decimal.NewFromFloat(0.50)) {
+		t.Errorf("amount_usdc = %s, want 0.50", capturedWR.AmountUSDC)
 	}
 }
 
@@ -1037,6 +1053,14 @@ func TestQueryWithdrawals(t *testing.T) {
 // Constants
 // ---------------------------------------------------------------------------
 
+func TestExchangeRate(t *testing.T) {
+	t.Parallel()
+
+	if !ExchangeRate.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("ExchangeRate = %s, want 10", ExchangeRate)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // RefundFailedWithdrawal
 // ---------------------------------------------------------------------------
@@ -1113,8 +1137,9 @@ func TestRefundFailedWithdrawal_HappyPath(t *testing.T) {
 			}
 		case accounting.ActionWithdrawFeeRefund:
 			foundFeeRefund = true
-			if !log.Amount.Equal(decimal.NewFromFloat(0.50)) {
-				t.Errorf("fee refund log amount = %s, want 0.50", log.Amount)
+			feeCash := WithdrawalFee.Mul(ExchangeRate)
+			if !log.Amount.Equal(feeCash) {
+				t.Errorf("fee refund log amount = %s, want %s (fee in cash coins)", log.Amount, feeCash)
 			}
 		}
 	}
@@ -1233,8 +1258,10 @@ func TestProcessDeposit_CrashRecovery_MissingAccountingLog(t *testing.T) {
 	if !logCreated {
 		t.Error("expected accounting log to be created for crash recovery")
 	}
-	if !creditedAmount.Equal(decimal.NewFromInt(25)) {
-		t.Errorf("credited amount = %s, want 25", creditedAmount)
+	// Play balance should be credited with USDC × ExchangeRate (25 × 10 = 250).
+	expectedPlay := decimal.NewFromInt(25).Mul(ExchangeRate)
+	if !creditedAmount.Equal(expectedPlay) {
+		t.Errorf("credited amount = %s, want %s", creditedAmount, expectedPlay)
 	}
 	if creditedCurrency != "PLAY" {
 		t.Errorf("credited currency = %q, want PLAY", creditedCurrency)
