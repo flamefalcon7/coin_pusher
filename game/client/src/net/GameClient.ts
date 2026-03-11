@@ -106,6 +106,7 @@ export class GameClient {
   private _isSpectator: boolean = false;
   private _snapshotJustLoaded: boolean = false;
   private _snapshotKeyCoinIds: Set<number> | null = null;
+  private visibilityHandler: (() => void) | null = null;
 
   constructor(url: string, token?: string) {
     this.url = url;
@@ -362,10 +363,32 @@ export class GameClient {
       this.connectionStatusCallback("connecting");
     }
     this.wsClient.connect();
+
+    // Pause/resume broadcasts on tab visibility change.
+    if (!this.visibilityHandler) {
+      this.visibilityHandler = () => {
+        if (!this.wsClient.isConnected()) return;
+        if (document.hidden) {
+          this.wsClient.send({ op: "pause_updates" });
+          this.pendingPingTime = 0;
+        } else {
+          this.wsClient.send({ op: "resume_updates" });
+        }
+      };
+      document.addEventListener("visibilitychange", this.visibilityHandler);
+    }
   }
 
   disconnect(): void {
     this.wsClient.disconnect();
+  }
+
+  dispose(): void {
+    this.disconnect();
+    if (this.visibilityHandler) {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
   }
 
   /** Returns true if connected as an unauthenticated spectator. */

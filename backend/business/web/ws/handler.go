@@ -228,8 +228,8 @@ func (h *Handler) readPump(c *Connection) {
 			continue
 		}
 
-		// Spectators can only send pings — silently drop everything else.
-		if c.IsSpectator() && msg.Op != "ping" {
+		// Spectators can only send pings and pause/resume — silently drop everything else.
+		if c.IsSpectator() && msg.Op != "ping" && msg.Op != "pause_updates" && msg.Op != "resume_updates" {
 			continue
 		}
 
@@ -270,6 +270,20 @@ func (h *Handler) readPump(c *Connection) {
 		case "megaspeaker":
 			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
 			h.handleMegaspeaker(c, msg)
+		case "pause_updates":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
+			c.SetPaused(true)
+			h.log.Debugw("client paused updates", "user_id", c.userID)
+		case "resume_updates":
+			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
+			c.SetPaused(false)
+			h.log.Debugw("client resumed updates", "user_id", c.userID)
+			// Send cached snapshot so client resyncs immediately.
+			if snap := h.hub.GetSnapshot(); snap != nil {
+				c.SendRaw(snap)
+			} else if resp, err := h.nc.Request(TopicSnapshotReq(h.room), nil, snapshotReqTTL); err == nil {
+				c.SendRaw(resp.Data)
+			}
 		default:
 			metrics.WSMessagesReceived.WithLabelValues("unknown").Inc()
 		}

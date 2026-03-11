@@ -92,6 +92,9 @@ func (h *Hub) Broadcast(data []byte) {
 	defer h.mu.RUnlock()
 
 	for c := range h.connections {
+		if c.IsPaused() {
+			continue
+		}
 		c.SendRaw(data)
 	}
 }
