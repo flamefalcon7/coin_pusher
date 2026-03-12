@@ -179,6 +179,15 @@ func (m *mockDepositStorer) HasActiveSweep(_ context.Context, _ uuid.UUID) (bool
 func (m *mockDepositStorer) QuerySweepsByStatus(_ context.Context, _ []string, _ int) ([]deposit.Sweep, error) {
 	return nil, nil
 }
+func (m *mockDepositStorer) CountApprovedWithdrawals(_ context.Context) (int, error) {
+	return 0, nil
+}
+func (m *mockDepositStorer) CountActiveSweeps(_ context.Context) (int, error) {
+	return 0, nil
+}
+func (m *mockDepositStorer) CountDepositAddresses(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
 
 // ---------------------------------------------------------------------------
 // Test: RequestWithdrawal with real EIP-191 signatures.

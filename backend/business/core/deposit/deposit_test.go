@@ -182,6 +182,18 @@ func (m *mockStorer) QuerySweepsByStatus(ctx context.Context, statuses []string,
 	return nil, nil
 }
 
+func (m *mockStorer) CountApprovedWithdrawals(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
+func (m *mockStorer) CountActiveSweeps(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
+func (m *mockStorer) CountDepositAddresses(ctx context.Context, chain string) (int, error) {
+	return 0, nil
+}
+
 // ---------------------------------------------------------------------------
 // Mock accounting storer
 // ---------------------------------------------------------------------------

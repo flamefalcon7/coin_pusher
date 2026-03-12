@@ -36,4 +36,9 @@ type Storer interface {
 	CreateSweep(ctx context.Context, s Sweep) error
 	UpdateSweepStatus(ctx context.Context, sweepID uuid.UUID, status string, sweepTxHash *string, gasFundTxHash *string, errorMsg *string) error
 	QuerySweepsByStatus(ctx context.Context, statuses []string, limit int) ([]Sweep, error)
+
+	// Counting operations (metrics).
+	CountApprovedWithdrawals(ctx context.Context) (int, error)
+	CountActiveSweeps(ctx context.Context) (int, error)
+	CountDepositAddresses(ctx context.Context, chain string) (int, error)
 }
