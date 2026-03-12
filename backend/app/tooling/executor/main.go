@@ -93,6 +93,31 @@ var (
 		Help:    "RPC call latency.",
 		Buckets: prometheus.DefBuckets,
 	})
+
+	hotWalletETHBalance = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_hot_wallet_eth_balance",
+		Help: "Hot wallet ETH balance (in ether).",
+	})
+	hotWalletUSDCBalance = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_hot_wallet_usdc_balance",
+		Help: "Hot wallet USDC balance (in USDC).",
+	})
+	hotWalletNonce = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_hot_wallet_nonce",
+		Help: "Hot wallet pending nonce.",
+	})
+	pendingWithdrawals = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_pending_withdrawals",
+		Help: "Number of approved (queued) withdrawals.",
+	})
+	activeSweeps = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_active_sweeps",
+		Help: "Number of active (non-terminal) sweeps.",
+	})
+	depositAddressesTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_deposit_addresses_total",
+		Help: "Total deposit addresses.",
+	})
 )
 
 func main() {
@@ -236,6 +261,23 @@ func run() error {
 	if err := recoverStuckSweeps(ctx, log, client, depositCore, cfg.Executor.ReceiptTimeout); err != nil {
 		log.Errorw("sweep recovery error (non-fatal)", "error", err)
 	}
+
+	// -------------------------------------------------------------------------
+	// Hot wallet metrics collection (best-effort, 30s interval).
+	hotAddress := common.HexToAddress(hotAddr)
+	collectHotWalletMetrics(ctx, log, client, hotAddress, usdcAddr, depositCore)
+	go func() {
+		metricsTicker := time.NewTicker(30 * time.Second)
+		defer metricsTicker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-metricsTicker.C:
+				collectHotWalletMetrics(ctx, log, client, hotAddress, usdcAddr, depositCore)
+			}
+		}
+	}()
 
 	// -------------------------------------------------------------------------
 	// Main loop
@@ -950,6 +992,83 @@ func executeSweep(
 	)
 
 	return nil
+}
+
+// =========================================================================
+// Hot Wallet Metrics
+// =========================================================================
+
+// collectHotWalletMetrics queries on-chain balances, nonce, and DB counts,
+// then sets the corresponding Prometheus gauges. Errors are logged but not
+// returned — this is best-effort metrics collection.
+func collectHotWalletMetrics(
+	ctx context.Context,
+	log *zap.SugaredLogger,
+	client *ethclient.Client,
+	hotAddress common.Address,
+	usdcAddr common.Address,
+	depositCore *deposit.Core,
+) {
+	// ETH balance.
+	ethBal, err := client.BalanceAt(ctx, hotAddress, nil)
+	if err != nil {
+		log.Errorw("metrics: eth balance query failed", "error", err)
+	} else {
+		ethFloat, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(ethBal),
+			new(big.Float).SetFloat64(1e18),
+		).Float64()
+		hotWalletETHBalance.Set(ethFloat)
+	}
+
+	// USDC balance via balanceOf.
+	balanceData := ethutil.EncodeBalanceOf(hotAddress)
+	result, err := client.CallContract(ctx, ethereum.CallMsg{
+		To:   &usdcAddr,
+		Data: balanceData,
+	}, nil)
+	if err != nil {
+		log.Errorw("metrics: usdc balance query failed", "error", err)
+	} else {
+		rawBalance := new(big.Int).SetBytes(result)
+		usdcFloat, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(rawBalance),
+			new(big.Float).SetFloat64(1e6),
+		).Float64()
+		hotWalletUSDCBalance.Set(usdcFloat)
+	}
+
+	// Pending nonce.
+	nonce, err := client.PendingNonceAt(ctx, hotAddress)
+	if err != nil {
+		log.Errorw("metrics: pending nonce query failed", "error", err)
+	} else {
+		hotWalletNonce.Set(float64(nonce))
+	}
+
+	// Pending withdrawals count.
+	pendingCount, err := depositCore.CountApprovedWithdrawals(ctx)
+	if err != nil {
+		log.Errorw("metrics: count approved withdrawals failed", "error", err)
+	} else {
+		pendingWithdrawals.Set(float64(pendingCount))
+	}
+
+	// Active sweeps count.
+	sweepCount, err := depositCore.CountActiveSweeps(ctx)
+	if err != nil {
+		log.Errorw("metrics: count active sweeps failed", "error", err)
+	} else {
+		activeSweeps.Set(float64(sweepCount))
+	}
+
+	// Total deposit addresses.
+	addrCount, err := depositCore.CountDepositAddresses(ctx, deposit.DefaultChain)
+	if err != nil {
+		log.Errorw("metrics: count deposit addresses failed", "error", err)
+	} else {
+		depositAddressesTotal.Set(float64(addrCount))
+	}
 }
 
 // =========================================================================

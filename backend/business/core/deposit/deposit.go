@@ -550,3 +550,18 @@ func (c *Core) CreateSweep(ctx context.Context, s Sweep) error {
 func (c *Core) UpdateSweepStatus(ctx context.Context, sweepID uuid.UUID, status string, sweepTxHash *string, gasFundTxHash *string, errorMsg *string) error {
 	return c.storer.UpdateSweepStatus(ctx, sweepID, status, sweepTxHash, gasFundTxHash, errorMsg)
 }
+
+// CountApprovedWithdrawals returns the number of approved (queued) withdrawal requests.
+func (c *Core) CountApprovedWithdrawals(ctx context.Context) (int, error) {
+	return c.storer.CountApprovedWithdrawals(ctx)
+}
+
+// CountActiveSweeps returns the number of sweeps in non-terminal statuses.
+func (c *Core) CountActiveSweeps(ctx context.Context) (int, error) {
+	return c.storer.CountActiveSweeps(ctx)
+}
+
+// CountDepositAddresses returns the total number of deposit addresses for a chain.
+func (c *Core) CountDepositAddresses(ctx context.Context, chain string) (int, error) {
+	return c.storer.CountDepositAddresses(ctx, chain)
+}

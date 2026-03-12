@@ -385,3 +385,43 @@ func (s *Store) QuerySweepsByStatus(ctx context.Context, statuses []string, limi
 
 	return sweeps, nil
 }
+
+// =========================================================================
+// Counting (metrics)
+// =========================================================================
+
+// CountApprovedWithdrawals returns the number of approved (queued) withdrawal requests.
+func (s *Store) CountApprovedWithdrawals(ctx context.Context) (int, error) {
+	const q = `SELECT count(*) FROM withdraw_requests WHERE status = 'approved'`
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, q).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting approved withdrawals: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountActiveSweeps returns the number of sweeps in non-terminal statuses.
+func (s *Store) CountActiveSweeps(ctx context.Context) (int, error) {
+	const q = `SELECT count(*) FROM sweeps WHERE status NOT IN ('confirmed', 'failed')`
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, q).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting active sweeps: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountDepositAddresses returns the total number of deposit addresses for a chain.
+func (s *Store) CountDepositAddresses(ctx context.Context, chain string) (int, error) {
+	const q = `SELECT count(*) FROM deposit_addresses WHERE chain = $1`
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, q, chain).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting deposit addresses: %w", err)
+	}
+
+	return count, nil
+}
