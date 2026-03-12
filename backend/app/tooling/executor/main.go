@@ -59,8 +59,8 @@ type config struct {
 		ReceiptTimeout time.Duration `conf:"default:120s"`
 		SweepThreshold float64       `conf:"default:10"`
 		SweepInterval  time.Duration `conf:"default:30m"`
-		GasFundAmount  float64       `conf:"default:0.0001"`
-		MaxGasPrice    float64       `conf:"default:5"` // gwei — skip execution when base fee exceeds this
+		GasFundAmount  float64       `conf:"default:0.000005"`
+		MaxGasPrice    float64       `conf:"default:0.1"` // gwei — skip execution when base fee exceeds this
 	}
 }
 
@@ -250,6 +250,8 @@ func run() error {
 		"poll_interval", cfg.Executor.PollInterval,
 		"sweep_interval", cfg.Executor.SweepInterval,
 		"sweep_threshold", cfg.Executor.SweepThreshold,
+		"gas_fund_amount", cfg.Executor.GasFundAmount,
+		"max_gas_price_gwei", cfg.Executor.MaxGasPrice,
 		"batch_size", cfg.Executor.BatchSize,
 	)
 
