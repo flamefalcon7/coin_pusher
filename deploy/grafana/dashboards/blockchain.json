@@ -26,8 +26,8 @@
       },
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 1 },
       "id": 209,
-      "options": { "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^address$/", "values": false }, "textMode": "name" },
-      "title": "Address",
+      "options": { "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "name" },
+      "title": "Hot Wallet Address",
       "type": "stat",
       "targets": [{ "expr": "coinpusher_hot_wallet_info", "refId": "A", "instant": true, "legendFormat": "{{address}}" }]
     },
