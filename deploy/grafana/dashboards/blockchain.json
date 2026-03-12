@@ -19,13 +19,29 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 1 },
+      "id": 209,
+      "options": { "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^address$/", "values": false }, "textMode": "name" },
+      "title": "Address",
+      "type": "stat",
+      "targets": [{ "expr": "coinpusher_hot_wallet_info", "refId": "A", "instant": true, "legendFormat": "{{address}}" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
           "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.005 }, { "color": "green", "value": 0.01 }] },
           "color": { "mode": "thresholds" },
           "unit": "suffix: ETH"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
       "id": 201,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Hot Wallet ETH Balance",
@@ -42,7 +58,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 3 },
       "id": 202,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Hot Wallet USDC Balance",
@@ -58,7 +74,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
       "id": 203,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Pending Withdrawals",
@@ -74,7 +90,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 3 },
       "id": 204,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Active Sweeps",
@@ -90,7 +106,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
       "id": 205,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Hot Wallet Nonce",
@@ -106,7 +122,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 3 },
       "id": 206,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Deposit Addresses",
@@ -123,7 +139,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
       "id": 207,
       "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } },
       "title": "Gas Price Over Time",
@@ -147,7 +163,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
       "id": 208,
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["lastNotNull"] } },
       "title": "Hot Wallet Balances Over Time",
@@ -159,7 +175,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
       "id": 100,
       "title": "Indexer",
       "type": "row"
@@ -173,7 +189,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 14 },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
       "id": 1,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Block Lag",
@@ -189,7 +205,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 14 },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
       "id": 2,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Block Cursor",
@@ -206,7 +222,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 14 },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
       "id": 3,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Deposits Processed/s",
@@ -219,7 +235,7 @@
         "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 50 } },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 14 },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
       "id": 4,
       "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } },
       "title": "Poll Errors",
@@ -232,7 +248,7 @@
         "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 } },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "id": 5,
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
       "title": "Indexer RPC Latency",
@@ -249,7 +265,7 @@
         "defaults": { "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20 } },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "id": 6,
       "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } },
       "title": "Block Lag Over Time",
@@ -258,7 +274,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
       "id": 101,
       "title": "Executor",
       "type": "row"
@@ -269,7 +285,7 @@
         "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 } },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
       "id": 7,
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["sum"] } },
       "title": "Withdrawals: Processed vs Failed",
@@ -285,7 +301,7 @@
         "defaults": { "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 } },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
       "id": 8,
       "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } },
       "title": "Sweeps Total",
@@ -304,7 +320,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 35 },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 37 },
       "id": 9,
       "options": { "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true },
       "title": "Gas Price",
@@ -317,7 +333,7 @@
         "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 } },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 35 },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 37 },
       "id": 10,
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
       "title": "Executor RPC Latency",
@@ -330,7 +346,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
       "id": 300,
       "title": "Financial Alerts",
       "type": "row"
@@ -344,7 +360,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 44 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 46 },
       "id": 301,
       "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } },
       "title": "Withdrawal Refund Errors",
@@ -360,7 +376,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 44 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 46 },
       "id": 302,
       "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } },
       "title": "Coins Lost (Refund Failed)",
@@ -375,7 +391,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 44 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 46 },
       "id": 303,
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
       "title": "Sweep Success Rate",

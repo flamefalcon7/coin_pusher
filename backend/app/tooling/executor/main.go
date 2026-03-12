@@ -118,6 +118,10 @@ var (
 		Name: "coinpusher_deposit_addresses_total",
 		Help: "Total deposit addresses.",
 	})
+	hotWalletInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "coinpusher_hot_wallet_info",
+		Help: "Hot wallet metadata (address label).",
+	}, []string{"address"})
 )
 
 func main() {
@@ -248,6 +252,8 @@ func run() error {
 		"sweep_threshold", cfg.Executor.SweepThreshold,
 		"batch_size", cfg.Executor.BatchSize,
 	)
+
+	hotWalletInfo.WithLabelValues(hotAddr).Set(1)
 
 	// -------------------------------------------------------------------------
 	// Recovery: resolve any orphaned 'submitted' withdrawals from a previous crash.
