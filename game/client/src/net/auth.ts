@@ -1,4 +1,5 @@
 // Wallet authentication flow: nonce → sign → login → JWT
+import { disconnectWalletConnect } from "./walletProvider";
 
 export interface Account {
   account_id: string;
@@ -43,6 +44,7 @@ export function clearAuth(): void {
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(ACCOUNT_KEY);
   sessionStorage.removeItem(ADDRESS_KEY);
+  disconnectWalletConnect().catch(() => {});
 }
 
 export function getSavedAddress(): string | null {
@@ -89,35 +91,26 @@ async function walletLogin(
 }
 
 /**
- * Full wallet login flow:
- * 1. eth_requestAccounts → get address
+ * Full wallet login flow using a pre-connected wallet:
+ * 1. Use provided address + sign function from wallet provider
  * 2. fetchNonce → get server nonce + message
- * 3. personal_sign → user signs the message
+ * 3. sign → user signs the message
  * 4. walletLogin → exchange signature for JWT
  */
-export async function connectAndSign(apiBase: string, referralCode?: string): Promise<AuthResult> {
-  const eth = window.ethereum;
-  if (!eth) {
-    throw new Error("No wallet found. Please install MetaMask.");
-  }
+export async function connectAndSign(
+  apiBase: string,
+  wallet: { address: string; sign: (message: string) => Promise<string> },
+  referralCode?: string,
+): Promise<AuthResult> {
+  const { address, sign } = wallet;
 
-  // 1. Connect wallet
-  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-  if (!accounts.length) {
-    throw new Error("No accounts returned from wallet.");
-  }
-  const address = accounts[0];
-
-  // 2. Fetch nonce
+  // 1. Fetch nonce
   const { nonce, message } = await fetchNonce(apiBase);
 
-  // 3. Sign message
-  const signature = (await eth.request({
-    method: "personal_sign",
-    params: [message, address],
-  })) as string;
+  // 2. Sign message
+  const signature = await sign(message);
 
-  // 4. Login
+  // 3. Login
   const result = await walletLogin(apiBase, address, nonce, signature, referralCode);
 
   // Persist token + account + address for session

@@ -384,8 +384,15 @@
   color: rgba(245, 230, 184, 0.6);
 }
 
-.wallet-login-btn {
+.wallet-login-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 8px;
+  width: 100%;
+}
+
+.wallet-login-btn {
   padding: 12px 32px;
   border: none;
   border-radius: 8px;
@@ -406,6 +413,10 @@
 .wallet-login-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.wallet-login-btn-wc {
+  background: linear-gradient(135deg, #3b99fc, #5c6bc0);
 }
 
 .wallet-login-error {
