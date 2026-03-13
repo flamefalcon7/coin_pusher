@@ -497,7 +497,8 @@ export class StaticMeshes {
       const relativeY =
         START_Y + row * VERTICAL_SPACING - WALL_HEIGHT / 2 + Y_OFFSET;
 
-      const relativeZ = THICKNESS / 2 + HEIGHT / 2 - 0.01;
+      // Pin rear flush with wall front surface (matches server physics)
+      const relativeZ = HEIGHT / 2;
 
       for (let col = 0; col < pinCount; col++) {
         const x = startX + col * HORIZONTAL_SPACING;

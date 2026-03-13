@@ -4,10 +4,8 @@ import { SCENE_CONFIG } from "@coin-pusher/shared";
 
 export class SceneBuilder {
   private world: RAPIER.World;
-  private physicsWorld: PhysicsWorld;
 
   constructor(physicsWorld: PhysicsWorld) {
-    this.physicsWorld = physicsWorld;
     this.world = physicsWorld.getWorld();
   }
 
@@ -226,9 +224,8 @@ export class SceneBuilder {
       const relativeY =
         START_Y + row * VERTICAL_SPACING - WALL_HEIGHT / 2 + Y_OFFSET;
 
-      // Z position: just in front of the back wall (pin height is along Z when rotated)
-      // Embed pins slightly (0.01) into the wall to prevent gaps where coins can get stuck
-      const relativeZ = THICKNESS / 2 + HEIGHT / 2 - 0.01;
+      // Z position: pin rear flush with wall front surface (no gap for coins to slip behind)
+      const relativeZ = HEIGHT / 2;
 
       for (let col = 0; col < pinCount; col++) {
         const x = startX + col * HORIZONTAL_SPACING;
@@ -241,11 +238,9 @@ export class SceneBuilder {
           .setTranslation(x, relativeY, relativeZ)
           .setRotation(pinRotation)
           .setFriction(FRICTION)
-          .setRestitution(RESTITUTION)
-          .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+          .setRestitution(RESTITUTION);
 
-        const collider = this.world.createCollider(pinColliderDesc, parentBody);
-        this.physicsWorld.registerPinCollider(collider.handle);
+        this.world.createCollider(pinColliderDesc, parentBody);
         pinsCreated++;
       }
     }
