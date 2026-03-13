@@ -410,7 +410,7 @@ export const KEY_COIN_CONFIG = {
   RESTITUTION: 0.3,
   CCD_DISABLE_VELOCITY: 0.5,
   CCD_DISABLE_HEIGHT: 0.5,
-  BORDER_RADIUS: 0.0001,
+  BORDER_RADIUS: 0.001,
 } as const;
 
 // Coin configuration
@@ -424,7 +424,7 @@ export const COIN_CONFIG = {
   DESPAWN_Y: -0.1, // meters (below this = remove)
   CCD_DISABLE_VELOCITY: 0.5, // m/s
   CCD_DISABLE_HEIGHT: 0.5, // meters
-  BORDER_RADIUS: 0.0001, // meters (chamfer radius)
+  BORDER_RADIUS: 0.001, // meters (chamfer radius)
 } as const;
 
 // Network/Interpolation configuration
@@ -490,7 +490,7 @@ export const SCENE_CONFIG = {
     RESTITUTION: 0.3, // bouncier so coins don't settle against wall
   },
   PINS: {
-    RADIUS: 0.006, // meters (thinner pins)
+    RADIUS: 0.01, // meters
     HEIGHT: 0.12, // meters
     ROWS: 5,
     ODD_ROW_COUNT: 5, // pins at x: -0.4, -0.2, 0.0, 0.2, 0.4 (aligned with slots)
