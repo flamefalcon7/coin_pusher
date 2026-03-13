@@ -189,6 +189,11 @@ func (h *Hub) StartIdleChecker(log *zap.SugaredLogger, checkInterval, warningDur
 					}
 					continue
 				}
+				// Paused connections (tab hidden) are exempt from idle checks.
+				if c.IsPaused() {
+					continue
+				}
+
 				idle := c.IdleDuration()
 
 				if idle >= timeoutDur {

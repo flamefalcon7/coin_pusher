@@ -544,7 +544,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       toonGuiRef.current?.dispose();
       toonGuiRef.current = null;
       editorManager.dispose();
-      gameClient.disconnect();
+      gameClient.dispose();
       sceneManager.dispose();
     };
   }, []);
@@ -636,18 +636,23 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
 
       switch (event.key) {
         case "1":
+          sceneManagerRef.current?.enableBatchAnimation();
           gameClientRef.current.spawnStack("wall", x);
           break;
         case "2":
+          sceneManagerRef.current?.enableBatchAnimation();
           gameClientRef.current.spawnStack("tower", x);
           break;
         case "3":
+          sceneManagerRef.current?.enableBatchAnimation();
           gameClientRef.current.spawnStack("pyramid", x);
           break;
         case "4":
+          sceneManagerRef.current?.enableBatchAnimation();
           gameClientRef.current.spawnStack("pyramid3bleLayer", x);
           break;
         case "5":
+          sceneManagerRef.current?.enableBatchAnimation();
           gameClientRef.current.spawnStack("cylinder", x);
           break;
         case "0":
