@@ -23,7 +23,7 @@ export class Coin {
     x: number,
     y: number,
     z: number,
-    rotation?: { x: number; y: number; z: number; w: number }
+    rotation?: { x: number; y: number; z: number; w: number },
   ) {
     const world = physicsWorld.getWorld();
     this.id = id;
@@ -39,8 +39,8 @@ export class Coin {
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, y, z)
       .setRotation(finalRotation)
-      .setLinearDamping(6.0)
-      .setAngularDamping(6.0);
+      .setLinearDamping(4.0)
+      .setAngularDamping(5.0);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall
@@ -55,7 +55,7 @@ export class Coin {
     const colliderDesc = RAPIER.ColliderDesc.roundCylinder(
       coreHalfHeight,
       coreRadius,
-      COIN_CONFIG.BORDER_RADIUS
+      COIN_CONFIG.BORDER_RADIUS,
     )
       .setMass(COIN_CONFIG.MASS)
       .setFriction(COIN_CONFIG.FRICTION)
@@ -88,7 +88,7 @@ export class Coin {
             `💤 Coin ${this.id} sleeping. ` +
               `Lin: ${Math.sqrt(vSq).toFixed(3)}, ` +
               `Ang: ${Math.sqrt(wSq).toFixed(3)}, ` +
-              `Y: ${position.y.toFixed(3)}`
+              `Y: ${position.y.toFixed(3)}`,
           );
         }
         this.rigidBody.sleep();

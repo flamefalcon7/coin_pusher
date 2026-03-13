@@ -5,7 +5,12 @@ export const PROTOCOL_VERSION = 1;
 export type BodyType = "coin" | "key_coin" | "pusher";
 
 // Skill scroll types
-export type SkillScrollType = "shock" | "tornado" | "explosion" | "lightning" | "superPush";
+export type SkillScrollType =
+  | "shock"
+  | "tornado"
+  | "explosion"
+  | "lightning"
+  | "superPush";
 
 // Editor primitive types
 export type EditorPrimitiveType = "box" | "sphere" | "cylinder" | "prism";
@@ -266,7 +271,12 @@ export type ChestOpenResultMessage = {
 // Server → Client: Heat state update (1Hz from backend via relay)
 export type HeatUpdateMessage = {
   op: "heat_update";
-  players: { user_id: string; username: string; share: number; raw_heat: number }[];
+  players: {
+    user_id: string;
+    username: string;
+    share: number;
+    raw_heat: number;
+  }[];
 };
 
 // Server → Client: Queue progress update
@@ -397,7 +407,7 @@ export const KEY_COIN_CONFIG = {
   THICKNESS: 0.015, // meters
   MASS: 0.015, // kg
   FRICTION: 0.7,
-  RESTITUTION: 0.0,
+  RESTITUTION: 0.3,
   CCD_DISABLE_VELOCITY: 0.5,
   CCD_DISABLE_HEIGHT: 0.5,
   BORDER_RADIUS: 0.0001,
@@ -409,7 +419,7 @@ export const COIN_CONFIG = {
   THICKNESS: 0.012, // meters (was 0.015 — thinner)
   MASS: 0.01, // kg
   FRICTION: 0.7, // (was 0.5 — higher friction helps coins grip edges)
-  RESTITUTION: 0.0,
+  RESTITUTION: 0.3,
   SPAWN_HEIGHT: 1.5, // meters
   DESPAWN_Y: -0.1, // meters (below this = remove)
   CCD_DISABLE_VELOCITY: 0.5, // m/s
@@ -490,7 +500,7 @@ export const SCENE_CONFIG = {
     START_Y: 0.3, // meters from bottom of back wall
     Y_OFFSET: 0.8, // meters (adjust vertical position of all pins)
     FRICTION: 0.0,
-    RESTITUTION: 0.8, // high bounce to push coins away from pins
+    RESTITUTION: 0.95, // high bounce to push coins away from pins
   },
   SIDE_WALLS: {
     DEPTH: 1.3, // meters
@@ -578,8 +588,8 @@ export const JACKPOT_WHEEL_CONFIG = {
   SEGMENTS: 6,
   SEGMENT_REWARDS: [3, 3, 3, 6, 6, 9] as const,
   SPIN_DURATION: 4000, // ms total spin animation time
-  WIDTH: 0.30, // meters — wheel diameter reference
-  HEIGHT: 0.40, // meters — backplate height
+  WIDTH: 0.3, // meters — wheel diameter reference
+  HEIGHT: 0.4, // meters — backplate height
 } as const;
 
 // Heat system configuration

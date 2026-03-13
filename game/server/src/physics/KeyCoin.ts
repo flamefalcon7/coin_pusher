@@ -23,7 +23,7 @@ export class KeyCoin {
     x: number,
     y: number,
     z: number,
-    rotation?: { x: number; y: number; z: number; w: number }
+    rotation?: { x: number; y: number; z: number; w: number },
   ) {
     const world = physicsWorld.getWorld();
     this.id = id;
@@ -39,8 +39,8 @@ export class KeyCoin {
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, y, z)
       .setRotation(finalRotation)
-      .setLinearDamping(6.0)
-      .setAngularDamping(6.0);
+      .setLinearDamping(4.0)
+      .setAngularDamping(5.0);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
     this.rigidBody.enableCcd(true); // Enable CCD on spawn for free-fall
@@ -55,7 +55,7 @@ export class KeyCoin {
     const colliderDesc = RAPIER.ColliderDesc.roundCylinder(
       coreHalfHeight,
       coreRadius,
-      KEY_COIN_CONFIG.BORDER_RADIUS
+      KEY_COIN_CONFIG.BORDER_RADIUS,
     )
       .setMass(KEY_COIN_CONFIG.MASS)
       .setFriction(KEY_COIN_CONFIG.FRICTION)
