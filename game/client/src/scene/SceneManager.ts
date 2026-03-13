@@ -270,6 +270,10 @@ export class SceneManager {
     this.coinManager.clear();
   }
 
+  enableBatchAnimation(durationMs?: number): void {
+    this.coinManager.enableBatchAnimation(durationMs);
+  }
+
   addCoinHighlight(coinId: number): void {
     this.coinManager.addHighlight(coinId);
   }

@@ -2,6 +2,7 @@ package ws
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -33,7 +34,7 @@ type Connection struct {
 	lastSuperPush  time.Time
 	lastActivity   time.Time
 	idleWarned     bool
-	paused         bool
+	paused         atomic.Bool
 	mu             sync.Mutex
 	closed         bool
 }
@@ -223,17 +224,12 @@ func (c *Connection) IdleDuration() time.Duration {
 
 // SetPaused sets the paused flag (stops broadcast delivery).
 func (c *Connection) SetPaused(p bool) {
-	c.mu.Lock()
-	c.paused = p
-	c.mu.Unlock()
+	c.paused.Store(p)
 }
 
 // IsPaused returns true if the connection has paused broadcast delivery.
 func (c *Connection) IsPaused() bool {
-	c.mu.Lock()
-	p := c.paused
-	c.mu.Unlock()
-	return p
+	return c.paused.Load()
 }
 
 // Close closes the connection.

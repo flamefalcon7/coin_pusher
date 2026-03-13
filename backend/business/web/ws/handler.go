@@ -276,14 +276,14 @@ func (h *Handler) readPump(c *Connection) {
 			h.log.Debugw("client paused updates", "user_id", c.userID)
 		case "resume_updates":
 			metrics.WSMessagesReceived.WithLabelValues(msg.Op).Inc()
-			c.SetPaused(false)
 			h.log.Debugw("client resumed updates", "user_id", c.userID)
-			// Send cached snapshot so client resyncs immediately.
+			// Send snapshot BEFORE unpausing so no stale deltas can slip in.
 			if snap := h.hub.GetSnapshot(); snap != nil {
 				c.SendRaw(snap)
 			} else if resp, err := h.nc.Request(TopicSnapshotReq(h.room), nil, snapshotReqTTL); err == nil {
 				c.SendRaw(resp.Data)
 			}
+			c.SetPaused(false)
 		default:
 			metrics.WSMessagesReceived.WithLabelValues("unknown").Inc()
 		}

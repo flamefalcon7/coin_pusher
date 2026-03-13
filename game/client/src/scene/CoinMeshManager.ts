@@ -55,6 +55,7 @@ export class CoinMeshManager {
   // ── Spiral spawn animation state ───────────────────────────────────
   private spawnAnims: Map<number, SpawnAnim> = new Map(); // coinId -> anim
   private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number]; isKeyCoin?: boolean }[] = [];
+  private batchAnimationUntil: number = 0; // timestamp until which batch animation is allowed
 
   // ── Highlight mesh for owned coins ────────────────────────────────
   private highlightMesh!: Mesh;
@@ -228,6 +229,11 @@ export class CoinMeshManager {
     this.pendingNewCoins.push({ id, pos, rot, isKeyCoin });
   }
 
+  /** Allow batch spiral animation for the next `durationMs` milliseconds. */
+  enableBatchAnimation(durationMs: number = 2000): void {
+    this.batchAnimationUntil = Date.now() + durationMs;
+  }
+
   /**
    * Call once per frame AFTER all addCoin() calls for this tick.
    * Detects batch spawns and sets up spiral animation or instant placement.
@@ -246,8 +252,8 @@ export class CoinMeshManager {
       this.allocateKeyCoin(coin.id, coin.pos, coin.rot);
     }
 
-    // Regular coins: batch animation logic
-    const isBatch = regularBatch.length >= BATCH_THRESHOLD;
+    // Regular coins: batch animation only during explicit animation window (admin spawn)
+    const isBatch = regularBatch.length >= BATCH_THRESHOLD && Date.now() < this.batchAnimationUntil;
 
     if (isBatch) {
       // Sort by Y (bottom first) for staggered reveal
