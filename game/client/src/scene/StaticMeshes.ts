@@ -481,7 +481,7 @@ export class StaticMeshes {
       Y_OFFSET,
     } = SCENE_CONFIG.PINS;
 
-    const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
+    const { HEIGHT: WALL_HEIGHT } = SCENE_CONFIG.BACK_WALL;
 
     const pinMat = createToonMat("pinMat", new Color3(0.7, 0.7, 0.85), this.scene);
 
