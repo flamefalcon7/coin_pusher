@@ -64,7 +64,9 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
 
   const handleMax = useCallback(() => {
     const max = Math.max(0, cashNum);
-    setAmount(max > 0 ? max.toFixed(2) : '');
+    // Floor to 2 decimals to avoid rounding up past actual balance
+    const floored = Math.floor(max * 100) / 100;
+    setAmount(floored > 0 ? floored.toFixed(2) : '');
   }, [cashNum]);
 
   const handleSubmit = useCallback(async () => {
