@@ -207,7 +207,7 @@ export class SceneBuilder {
       RESTITUTION,
     } = SCENE_CONFIG.PINS;
 
-    const { HEIGHT: WALL_HEIGHT, THICKNESS } = SCENE_CONFIG.BACK_WALL;
+    const { HEIGHT: WALL_HEIGHT } = SCENE_CONFIG.BACK_WALL;
 
     let pinsCreated = 0;
 
