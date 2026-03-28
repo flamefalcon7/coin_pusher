@@ -197,6 +197,8 @@ export class GameClient {
         break;
 
       case "state_delta":
+        // Sync clock to game server's timestamps (not Go backend's pong)
+        this.clockSync.recordStateDeltaTime(message.serverTime);
         // Add to state buffer
         this.stateBuffer.addState({
           serverTime: message.serverTime,
