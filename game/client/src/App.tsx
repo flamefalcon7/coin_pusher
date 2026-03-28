@@ -198,6 +198,9 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     const gameClient = new GameClient(WS_URL, token ?? undefined);
     gameClientRef.current = gameClient;
 
+    // TEMP: Start network profiler — delete after profiling
+    import("./net/NetProfiler").then(({ netProfiler }) => netProfiler.start());
+
     // Handle auth failure (WS closed with 4401/4403)
     gameClient.onAuthFailure(onAuthFailure);
 

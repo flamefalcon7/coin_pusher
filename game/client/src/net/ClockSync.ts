@@ -1,4 +1,5 @@
 import { NETWORK_CONFIG } from "@coin-pusher/shared";
+import { netProfiler } from "./NetProfiler"; // TEMP: profiling
 
 interface RTTSample {
   clientTime: number;
@@ -42,6 +43,7 @@ export class ClockSync {
 
     // Recalculate offset
     this.calculateOffset();
+    netProfiler.recordOffset(this.offset); // TEMP: profiling
 
     console.log(`⏱️  RTT: ${rtt}ms, Offset: ${this.offset.toFixed(1)}ms`);
   }
