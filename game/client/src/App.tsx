@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { netProfiler } from "./net/NetProfiler"; // TEMP: profiling
 import { useLocation } from "react-router-dom";
 import "./App.css";
 import { HUD } from "./ui/HUD";
@@ -198,10 +197,6 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     // Initialize game client (token may be null for spectators)
     const gameClient = new GameClient(WS_URL, token ?? undefined);
     gameClientRef.current = gameClient;
-
-    // TEMP: Start network profiler — delete after profiling
-    console.log("=== NETPROFILER INIT ===");
-    netProfiler.start();
 
     // Handle auth failure (WS closed with 4401/4403)
     gameClient.onAuthFailure(onAuthFailure);
