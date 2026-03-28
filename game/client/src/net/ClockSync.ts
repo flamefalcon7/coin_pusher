@@ -16,7 +16,6 @@ export class ClockSync {
   // State-delta-based clock sync: uses the game server's timestamps directly.
   // This avoids the clock mismatch between Go backend (pong) and Game Server (state_delta).
   private deltaOffsets: number[] = [];
-  private smoothedDeltaOffset: number | null = null;
 
   constructor(pingInterval: number = NETWORK_CONFIG.PING_INTERVAL) {
     this.pingInterval = pingInterval;
