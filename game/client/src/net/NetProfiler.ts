@@ -33,10 +33,7 @@ export class NetProfiler {
   start(): void {
     this.startTime = Date.now();
     this.reportInterval = setInterval(() => this.report(), 5000);
-    console.log(
-      "%c[NetProfiler] Started — collecting data every 5s",
-      "color: #00ff88; font-weight: bold"
-    );
+    console.log("[NetProfiler] Started — collecting data every 5s");
   }
 
   stop(): void {
@@ -118,32 +115,7 @@ export class NetProfiler {
     // Buffer
     const bufStats = this.getStats(this.bufferSizes);
 
-    console.log(
-      `%c[NetProfiler] Report @ ${elapsed}s
-┌─────────────────────────────────────────────────────────┐
-│ INTERPOLATION (${total} frames)                          │
-│   Interpolated: ${this.interpCount} (${interpPct}%)                       │
-│   Extrapolated: ${this.extrapCount} (${extrapPct}%)                       │
-│   Null (no data): ${this.nullCount} (${nullPct}%)                      │
-├─────────────────────────────────────────────────────────┤
-│ CLOCK SYNC (${this.offsets.length} samples)                              │
-│   Offset range: ${offsetRange}ms                          │
-│   Jumps > 30ms: ${offsetJumps}                                  │
-├─────────────────────────────────────────────────────────┤
-│ STATE_DELTA ARRIVAL (expected: ~66ms interval)          │
-│   Mean: ${deltaStats.mean}ms  Std: ${deltaStats.std}ms              │
-│   Min: ${deltaStats.min}ms  Max: ${deltaStats.max}ms               │
-│   Bursts (< 10ms apart): ${deltaBursts}                         │
-├─────────────────────────────────────────────────────────┤
-│ FRAME TIMING (expected: ~16.7ms)                        │
-│   Mean: ${frameStats.mean}ms  Std: ${frameStats.std}ms              │
-│   Long frames (> 20ms): ${longFrames}                           │
-├─────────────────────────────────────────────────────────┤
-│ STATE BUFFER                                            │
-│   Avg size: ${bufStats.mean}  Min: ${bufStats.min}  Max: ${bufStats.max}          │
-└─────────────────────────────────────────────────────────┘`,
-      "color: #00ccff; font-family: monospace"
-    );
+    console.log(`[NetProfiler] Report @ ${elapsed}s | INTERP: ${this.interpCount}(${interpPct}%) EXTRAP: ${this.extrapCount}(${extrapPct}%) NULL: ${this.nullCount}(${nullPct}%) | CLOCK: range=${offsetRange}ms jumps>${offsetJumps} | DELTA: mean=${deltaStats.mean}ms std=${deltaStats.std}ms bursts=${deltaBursts} | FRAME: mean=${frameStats.mean}ms long=${longFrames} | BUF: avg=${bufStats.mean} min=${bufStats.min} max=${bufStats.max}`);
 
     // Reset counters for next window
     this.interpCount = 0;
