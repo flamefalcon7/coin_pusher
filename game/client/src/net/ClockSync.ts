@@ -68,9 +68,20 @@ export class ClockSync {
       }
     }
 
-    // Calculate offset: (serverTime - clientTime) - RTT/2
+    // Calculate raw offset: (serverTime - clientTime) - RTT/2
     const clientMidpoint = bestSample.clientTime + bestSample.rtt / 2;
-    this.offset = bestSample.serverTime - clientMidpoint;
+    const rawOffset = bestSample.serverTime - clientMidpoint;
+
+    // Hybrid smoothing: small changes get EMA, large changes snap immediately.
+    // Prevents frame-to-frame jitter while staying responsive to WiFi handoffs.
+    const delta = Math.abs(rawOffset - this.offset);
+    if (this.offset === 0 || delta >= 30) {
+      // First sample or large jump (WiFi handoff, route change): snap
+      this.offset = rawOffset;
+    } else {
+      // Small change: smooth with EMA (alpha=0.2)
+      this.offset = this.offset * 0.8 + rawOffset * 0.2;
+    }
   }
 
   getServerTime(): number {
