@@ -68,18 +68,12 @@ export class ClockSync {
       this.deltaOffsets.shift();
     }
 
-    // Use median to filter outliers (network jitter)
+    // rawOffset = serverTime - clientNow includes one-way network delay.
+    // Use median for stability. No EMA — 30 samples at 15Hz (2 seconds)
+    // is already a stable window, and EMA's slow convergence caused
+    // extrapolation spikes during the initial seconds.
     const sorted = this.deltaOffsets.slice().sort((a, b) => a - b);
-    const medianOffset = sorted[Math.floor(sorted.length / 2)];
-
-    // Hybrid smoothing: snap on large changes, EMA on small changes
-    if (this.smoothedDeltaOffset === null || Math.abs(medianOffset - this.smoothedDeltaOffset) >= 30) {
-      this.smoothedDeltaOffset = medianOffset;
-    } else {
-      this.smoothedDeltaOffset = this.smoothedDeltaOffset * 0.9 + medianOffset * 0.1;
-    }
-
-    this.offset = this.smoothedDeltaOffset;
+    this.offset = sorted[Math.floor(sorted.length / 2)];
     netProfiler.recordOffset(this.offset); // TEMP: profiling
   }
 
