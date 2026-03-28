@@ -157,4 +157,6 @@ export class NetProfiler {
 }
 
 // Singleton for easy access from multiple files
+// @ts-ignore — prevent tree-shaking by attaching to window
 export const netProfiler = new NetProfiler();
+(window as any).__netProfiler = netProfiler;
