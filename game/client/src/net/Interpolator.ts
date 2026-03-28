@@ -105,6 +105,10 @@ export class Interpolator {
 
     if (!states) {
       netProfiler.recordExtrapolation(); // TEMP: profiling
+      // TEMP: diagnostic — why is extrapolation happening?
+      const newest = this.stateBuffer.getNewestTime();
+      const oldest = this.stateBuffer.getOldestTime();
+      netProfiler.recordExtrapReason(targetTime, oldest, newest, interpolationDelay);
       return this.getExtrapolatedState(targetTime);
     }
     netProfiler.recordInterpolation(); // TEMP: profiling
