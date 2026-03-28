@@ -57,6 +57,23 @@ export class NetProfiler {
     this.extrapCount++;
   }
 
+  // TEMP: diagnostic for extrapolation
+  extrapBeforeOldest = 0;
+  extrapAfterNewest = 0;
+  extrapEmptyBuffer = 0;
+  extrapTargetDiffs: number[] = [];
+
+  recordExtrapReason(targetTime: number, oldest: number, newest: number, _delay: number): void {
+    if (newest === 0) {
+      this.extrapEmptyBuffer++;
+    } else if (targetTime < oldest) {
+      this.extrapBeforeOldest++;
+    } else if (targetTime > newest) {
+      this.extrapAfterNewest++;
+      this.extrapTargetDiffs.push(targetTime - newest);
+    }
+  }
+
   recordNull(): void {
     this.nullCount++;
   }
