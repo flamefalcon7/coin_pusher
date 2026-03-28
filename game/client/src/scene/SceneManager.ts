@@ -204,6 +204,15 @@ export class SceneManager {
 
   // ── Render Loop ──────────────────────────────────────────────────────────
 
+  /**
+   * Register a callback that runs every frame BEFORE the scene renders.
+   * This ensures game state updates and rendering are in the same frame,
+   * eliminating the desync between two independent rAF loops.
+   */
+  onBeforeRender(callback: () => void): void {
+    this.scene.registerBeforeRender(callback);
+  }
+
   startRenderLoop(): void {
     if (this.running) return;
 

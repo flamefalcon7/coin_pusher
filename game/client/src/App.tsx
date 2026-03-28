@@ -448,100 +448,90 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     // Track last reported coin count to avoid unnecessary React re-renders
     let lastReportedCoinCount = 0;
 
-    // Update loop using requestAnimationFrame for smooth rendering
-    let animationFrameId: number;
-    let lastUpdateTime = 0;
-    const targetFPS = 60;
-    const targetFrameTime = 1000 / targetFPS;
+    // Game state update runs inside Babylon's render loop via registerBeforeRender.
+    // This eliminates the desync between two independent rAF loops that caused
+    // 27% of frames to exceed 20ms (profiled data).
+    let lastUpdateTime = performance.now();
 
-    const updateLoop = (currentTime: number) => {
-      // Update game client (check for pings, etc.) - do this every frame
+    sceneManager.onBeforeRender(() => {
+      const currentTime = performance.now();
+      const deltaTime = currentTime - lastUpdateTime;
+      lastUpdateTime = currentTime;
+
+      // Update game client (check for pings, etc.)
       gameClient.update();
 
-      // Throttle game state updates to target FPS
-      const deltaTime = currentTime - lastUpdateTime;
-      if (deltaTime >= targetFrameTime) {
-        lastUpdateTime = currentTime - (deltaTime % targetFrameTime);
-
-        // Get interpolated state
-        const state = gameClient.getInterpolatedState();
-        if (state) {
-          // Check if this is the first frame after a world_snapshot
-          const isSnapshotFrame = gameClient.consumeSnapshotFlag();
-          if (isSnapshotFrame) {
-            knownCoins.clear();
-            sceneManager.clearCoins();
-            // Seed key coin IDs from snapshot body types
-            const snapshotKeyCoinIds = gameClient.consumeSnapshotKeyCoinIds();
-            if (snapshotKeyCoinIds) {
-              keyCoinIdsRef.current = snapshotKeyCoinIds;
-            }
-          }
-
-          // Update pusher position
-          sceneManager.updatePusherPosition(state.pusherZ);
-
-          // Update coins — reuse the Set instead of allocating a new one
-          currentCoinIds.clear();
-          const coins = state.coins;
-
-          for (let i = 0, len = coins.length; i < len; i++) {
-            const coin = coins[i];
-            currentCoinIds.add(coin.id);
-
-            if (!knownCoins.has(coin.id)) {
-              // New coin — check if it's a key coin
-              const isKeyCoin = keyCoinIdsRef.current.has(coin.id);
-              sceneManager.addCoin(coin.id, coin.pos, coin.rot, isKeyCoin);
-              knownCoins.add(coin.id);
-              // Skip sound for snapshot coins (bulk load on connect/reconnect)
-              if (!isSnapshotFrame) {
-                sceneManager.getSoundManager().playCoinLand();
-              }
-            } else {
-              // Update existing coin
-              sceneManager.updateCoin(coin.id, coin.pos, coin.rot);
-            }
-          }
-
-          // Remove despawned coins (coins no longer in interpolated state
-          // have been removed by the Interpolator via despawn messages)
-          let despawnCount = 0;
-          for (const id of knownCoins) {
-            if (!currentCoinIds.has(id)) {
-              sceneManager.removeCoinWithEffect(id);
-              knownCoins.delete(id);
-              keyCoinIdsRef.current.delete(id);
-              despawnCount++;
-            }
-          }
-          if (despawnCount > 0) {
-            sceneManager.getSoundManager().playCoinDespawn(despawnCount);
-          }
-
-          // Batch update coin instances to GPU (pass dt in seconds for animations)
-          sceneManager.updateCoinBuffers(deltaTime / 1000);
-          sceneManager.updateCoinHighlights();
-
-          // Only trigger React re-render when coin count actually changes
-          const size = knownCoins.size;
-          if (size !== lastReportedCoinCount) {
-            lastReportedCoinCount = size;
-            setActiveCoinCount(size);
+      // Get interpolated state
+      const state = gameClient.getInterpolatedState();
+      if (state) {
+        // Check if this is the first frame after a world_snapshot
+        const isSnapshotFrame = gameClient.consumeSnapshotFlag();
+        if (isSnapshotFrame) {
+          knownCoins.clear();
+          sceneManager.clearCoins();
+          // Seed key coin IDs from snapshot body types
+          const snapshotKeyCoinIds = gameClient.consumeSnapshotKeyCoinIds();
+          if (snapshotKeyCoinIds) {
+            keyCoinIdsRef.current = snapshotKeyCoinIds;
           }
         }
+
+        // Update pusher position
+        sceneManager.updatePusherPosition(state.pusherZ);
+
+        // Update coins — reuse the Set instead of allocating a new one
+        currentCoinIds.clear();
+        const coins = state.coins;
+
+        for (let i = 0, len = coins.length; i < len; i++) {
+          const coin = coins[i];
+          currentCoinIds.add(coin.id);
+
+          if (!knownCoins.has(coin.id)) {
+            // New coin — check if it's a key coin
+            const isKeyCoin = keyCoinIdsRef.current.has(coin.id);
+            sceneManager.addCoin(coin.id, coin.pos, coin.rot, isKeyCoin);
+            knownCoins.add(coin.id);
+            // Skip sound for snapshot coins (bulk load on connect/reconnect)
+            if (!isSnapshotFrame) {
+              sceneManager.getSoundManager().playCoinLand();
+            }
+          } else {
+            // Update existing coin
+            sceneManager.updateCoin(coin.id, coin.pos, coin.rot);
+          }
+        }
+
+        // Remove despawned coins (coins no longer in interpolated state
+        // have been removed by the Interpolator via despawn messages)
+        let despawnCount = 0;
+        for (const id of knownCoins) {
+          if (!currentCoinIds.has(id)) {
+            sceneManager.removeCoinWithEffect(id);
+            knownCoins.delete(id);
+            keyCoinIdsRef.current.delete(id);
+            despawnCount++;
+          }
+        }
+        if (despawnCount > 0) {
+          sceneManager.getSoundManager().playCoinDespawn(despawnCount);
+        }
+
+        // Batch update coin instances to GPU (pass dt in seconds for animations)
+        sceneManager.updateCoinBuffers(deltaTime / 1000);
+        sceneManager.updateCoinHighlights();
+
+        // Only trigger React re-render when coin count actually changes
+        const size = knownCoins.size;
+        if (size !== lastReportedCoinCount) {
+          lastReportedCoinCount = size;
+          setActiveCoinCount(size);
+        }
       }
-
-      // Continue animation loop
-      animationFrameId = requestAnimationFrame(updateLoop);
-    };
-
-    // Start the animation loop
-    animationFrameId = requestAnimationFrame(updateLoop);
+    });
 
     // Cleanup on unmount
     return () => {
-      cancelAnimationFrame(animationFrameId);
       if (testIntervalRef.current) {
         clearInterval(testIntervalRef.current);
         testIntervalRef.current = null;
