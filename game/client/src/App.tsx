@@ -200,6 +200,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     gameClientRef.current = gameClient;
 
     // TEMP: Start network profiler — delete after profiling
+    console.log("=== NETPROFILER INIT ===");
     netProfiler.start();
 
     // Handle auth failure (WS closed with 4401/4403)
