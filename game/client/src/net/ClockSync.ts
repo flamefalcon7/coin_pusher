@@ -13,6 +13,11 @@ export class ClockSync {
   private lastPingTime: number = 0;
   private pingInterval: number;
 
+  // State-delta-based clock sync: uses the game server's timestamps directly.
+  // This avoids the clock mismatch between Go backend (pong) and Game Server (state_delta).
+  private deltaOffsets: number[] = [];
+  private smoothedDeltaOffset: number | null = null;
+
   constructor(pingInterval: number = NETWORK_CONFIG.PING_INTERVAL) {
     this.pingInterval = pingInterval;
   }
@@ -41,47 +46,41 @@ export class ClockSync {
       this.samples.shift();
     }
 
-    // Recalculate offset
-    this.calculateOffset();
-    netProfiler.recordOffset(this.offset); // TEMP: profiling
-
     console.log(`⏱️  RTT: ${rtt}ms, Offset: ${this.offset.toFixed(1)}ms`);
   }
 
-  private calculateOffset(): void {
-    if (this.samples.length === 0) return;
+  /**
+   * Record a state_delta's serverTime for direct clock sync with the game server.
+   * Called every 67ms (15Hz), much more frequent than ping/pong.
+   * The game server sets serverTime = Date.now() right before publishing.
+   */
+  recordStateDeltaTime(gameServerTime: number): void {
+    const clientNow = Date.now();
+    // Raw offset: how far ahead the game server clock is from the client clock.
+    // This includes network delay (NATS + relay + WebSocket), so the game server
+    // is actually further ahead than this estimate. But since we're using this
+    // offset to look BACKWARDS in time (targetTime = serverTime - delay),
+    // underestimating the offset is conservative and safe.
+    const rawOffset = gameServerTime - clientNow;
 
-    // Get median RTT to filter out outliers
-    const sortedRTTs = this.samples.map((s) => s.rtt).sort((a, b) => a - b);
-
-    const medianRTT = sortedRTTs[Math.floor(sortedRTTs.length / 2)];
-
-    // Find sample with RTT closest to median
-    let bestSample = this.samples[0];
-    let minDiff = Math.abs(bestSample.rtt - medianRTT);
-
-    for (const sample of this.samples) {
-      const diff = Math.abs(sample.rtt - medianRTT);
-      if (diff < minDiff) {
-        minDiff = diff;
-        bestSample = sample;
-      }
+    this.deltaOffsets.push(rawOffset);
+    if (this.deltaOffsets.length > 30) {
+      this.deltaOffsets.shift();
     }
 
-    // Calculate raw offset: (serverTime - clientTime) - RTT/2
-    const clientMidpoint = bestSample.clientTime + bestSample.rtt / 2;
-    const rawOffset = bestSample.serverTime - clientMidpoint;
+    // Use median to filter outliers (network jitter)
+    const sorted = this.deltaOffsets.slice().sort((a, b) => a - b);
+    const medianOffset = sorted[Math.floor(sorted.length / 2)];
 
-    // Hybrid smoothing: small changes get EMA, large changes snap immediately.
-    // Prevents frame-to-frame jitter while staying responsive to WiFi handoffs.
-    const delta = Math.abs(rawOffset - this.offset);
-    if (this.offset === 0 || delta >= 30) {
-      // First sample or large jump (WiFi handoff, route change): snap
-      this.offset = rawOffset;
+    // Hybrid smoothing: snap on large changes, EMA on small changes
+    if (this.smoothedDeltaOffset === null || Math.abs(medianOffset - this.smoothedDeltaOffset) >= 30) {
+      this.smoothedDeltaOffset = medianOffset;
     } else {
-      // Small change: smooth with EMA (alpha=0.2)
-      this.offset = this.offset * 0.8 + rawOffset * 0.2;
+      this.smoothedDeltaOffset = this.smoothedDeltaOffset * 0.9 + medianOffset * 0.1;
     }
+
+    this.offset = this.smoothedDeltaOffset;
+    netProfiler.recordOffset(this.offset); // TEMP: profiling
   }
 
   getServerTime(): number {
