@@ -1,6 +1,7 @@
 import { NETWORK_CONFIG } from "@coin-pusher/shared";
 import { StateBuffer } from "./StateBuffer";
 import { ClockSync } from "./ClockSync";
+import { netProfiler } from "./NetProfiler"; // TEMP: profiling
 
 export interface InterpolatedCoin {
   id: number;
@@ -98,9 +99,15 @@ export class Interpolator {
 
     const states = this.stateBuffer.getStatesForInterpolation(targetTime);
 
+    // TEMP: profiling — track interpolation mode and buffer state
+    netProfiler.recordFrame();
+    netProfiler.recordBufferSize(this.stateBuffer.getBufferSize());
+
     if (!states) {
+      netProfiler.recordExtrapolation(); // TEMP: profiling
       return this.getExtrapolatedState(targetTime);
     }
+    netProfiler.recordInterpolation(); // TEMP: profiling
 
     const { before, after } = states;
 
