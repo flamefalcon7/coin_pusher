@@ -103,7 +103,12 @@ export class NATSClient {
   }
 
   async connect(url: string = "nats://localhost:4222"): Promise<void> {
-    this.nc = await connect({ servers: url });
+    this.nc = await connect({
+      servers: url,
+      maxReconnectAttempts: -1,
+      reconnectTimeWait: 2_000,
+      waitOnFirstConnect: true,
+    });
     console.log(`Connected to NATS at ${url}`);
     this.monitorConnection();
   }
