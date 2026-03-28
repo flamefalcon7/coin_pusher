@@ -9,7 +9,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "9100:9100"
+      - "${VPC_IP:-10.104.0.2}:9100:9100"
     environment:
       NODE_ENV: production
       NATS_URL: ${NATS_URL}
