@@ -1,5 +1,4 @@
 import { NETWORK_CONFIG } from "@coin-pusher/shared";
-import { netProfiler } from "./NetProfiler"; // TEMP: profiling
 
 interface RTTSample {
   clientTime: number;
@@ -73,7 +72,6 @@ export class ClockSync {
     // extrapolation spikes during the initial seconds.
     const sorted = this.deltaOffsets.slice().sort((a, b) => a - b);
     this.offset = sorted[Math.floor(sorted.length / 2)];
-    netProfiler.recordOffset(this.offset); // TEMP: profiling
   }
 
   getServerTime(): number {

@@ -2,7 +2,6 @@ import type { ServerMessage, ClientMessage } from '@coin-pusher/shared';
 import { GameMessageSchema } from '@coin-pusher/shared';
 import { fromBinary } from '@bufbuild/protobuf';
 import * as msgpack from '@msgpack/msgpack';
-import { netProfiler } from './NetProfiler'; // TEMP: profiling
 
 export type MessageCallback = (message: ServerMessage) => void;
 
@@ -67,7 +66,6 @@ export class WebSocketClient {
           const gm = fromBinary(GameMessageSchema, bytes);
           const msg = gm.msg;
           if (msg.case) {
-            if (msg.case === "stateDelta") netProfiler.recordStateDelta(); // TEMP: profiling
             const converted = this.convertProtoToServerMessage(msg);
             if (converted && this.messageCallback) {
               this.messageCallback(converted);
