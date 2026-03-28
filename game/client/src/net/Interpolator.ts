@@ -25,6 +25,11 @@ export class Interpolator {
   // Track despawned IDs so old buffered states don't re-add them.
   private despawnedIds: Set<number> = new Set();
 
+  // Grace period after world_snapshot: render static positions until buffer
+  // has enough states for interpolation (~266ms = 4 state_deltas at 15Hz).
+  private graceUntil: number = 0;
+  private gracePusherZ: number = 0;
+
   // Reusable lookup map for before-state, cleared & reused each frame
   private lookupMap: Map<number, { id: number; pos: [number, number, number]; rot: [number, number, number, number] }> = new Map();
 
@@ -60,14 +65,19 @@ export class Interpolator {
     }
   }
 
-  /** Clear all known coins (called on reconnect / world_snapshot). */
+  /** Clear all known coins and start grace period (called on reconnect / world_snapshot). */
   clear(): void {
     this.knownCoins.clear();
     this.despawnedIds.clear();
+    // Start grace period: render snapshot positions statically until buffer
+    // accumulates >= 2 states for interpolation. 266ms = ~4 state_deltas at 15Hz.
+    this.graceUntil = Date.now() + 266;
   }
 
-  /** Seed coins from a world snapshot so sleeping coins render immediately. */
-  seedCoins(coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[]): void {
+  /** Seed coins from a world snapshot so sleeping coins render immediately.
+   *  Also stores pusherZ for grace period rendering. */
+  seedCoins(coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[], pusherZ?: number): void {
+    if (pusherZ !== undefined) this.gracePusherZ = pusherZ;
     for (let i = 0, len = coins.length; i < len; i++) {
       const c = coins[i];
       this.knownCoins.set(c.id, {
@@ -92,6 +102,18 @@ export class Interpolator {
   }
 
   getInterpolatedState(): InterpolatedState | null {
+    // Grace period: after world_snapshot, render static positions until
+    // the buffer has enough states for smooth interpolation.
+    if (this.graceUntil > 0) {
+      if (Date.now() < this.graceUntil || this.stateBuffer.getBufferSize() < 2) {
+        // Still in grace period, or buffer not ready yet — render snapshot as-is
+        if (this.knownCoins.size === 0) return null;
+        return this.buildResult(this.gracePusherZ);
+      }
+      // Grace period over and buffer ready — resume normal interpolation
+      this.graceUntil = 0;
+    }
+
     const serverTime = this.clockSync.getServerTime();
     const interpolationDelay = this.getInterpolationDelay();
     const targetTime = serverTime - interpolationDelay;

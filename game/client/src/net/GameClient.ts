@@ -185,14 +185,15 @@ export class GameClient {
               rot: b.rot!,
             };
           });
+        const snapshotPusherZ = message.bodies.find((b) => b.type === "pusher")?.z ?? 0;
         this.stateBuffer.addState({
           serverTime: message.serverTime,
           tick: message.tick,
           updates: snapshotCoins,
-          pusherZ: message.bodies.find((b) => b.type === "pusher")?.z ?? 0,
+          pusherZ: snapshotPusherZ,
         });
         // Seed interpolator so sleeping coins render immediately
-        this.interpolator.seedCoins(snapshotCoins);
+        this.interpolator.seedCoins(snapshotCoins, snapshotPusherZ);
         this._snapshotJustLoaded = true;
         break;
 
