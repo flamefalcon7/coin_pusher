@@ -71,7 +71,7 @@ export class Interpolator {
     this.knownCoins.clear();
     this.despawnedIds.clear();
     // Start grace period: render snapshot positions statically until buffer
-    // accumulates >= 2 states for interpolation. 266ms = ~8 state_deltas at 30Hz.
+    // accumulates >= 2 states for interpolation. 266ms = ~4 state_deltas at 15Hz.
     this.graceUntil = Date.now() + 266;
   }
 
@@ -187,6 +187,7 @@ export class Interpolator {
       }
 
       // Hermite spline interpolation — preserves collision direction changes
+      // Clamped to bounding box of before/after to prevent overshoot (e.g. coins dipping into pusher)
       const dtSec = timeDiff / 1000;
       const t = clampedAlpha;
       const t2 = t * t;
@@ -196,9 +197,12 @@ export class Interpolator {
       const h01 = -2 * t3 + 3 * t2;
       const h11 = t3 - t2;
 
-      coin.pos[0] = h00 * beforeUpdate.pos[0] + h10 * beforeUpdate.vel[0] * dtSec + h01 * afterUpdate.pos[0] + h11 * afterUpdate.vel[0] * dtSec;
-      coin.pos[1] = h00 * beforeUpdate.pos[1] + h10 * beforeUpdate.vel[1] * dtSec + h01 * afterUpdate.pos[1] + h11 * afterUpdate.vel[1] * dtSec;
-      coin.pos[2] = h00 * beforeUpdate.pos[2] + h10 * beforeUpdate.vel[2] * dtSec + h01 * afterUpdate.pos[2] + h11 * afterUpdate.vel[2] * dtSec;
+      for (let axis = 0; axis < 3; axis++) {
+        const raw = h00 * beforeUpdate.pos[axis] + h10 * beforeUpdate.vel[axis] * dtSec + h01 * afterUpdate.pos[axis] + h11 * afterUpdate.vel[axis] * dtSec;
+        const lo = beforeUpdate.pos[axis] < afterUpdate.pos[axis] ? beforeUpdate.pos[axis] : afterUpdate.pos[axis];
+        const hi = beforeUpdate.pos[axis] > afterUpdate.pos[axis] ? beforeUpdate.pos[axis] : afterUpdate.pos[axis];
+        coin.pos[axis] = raw < lo ? lo : raw > hi ? hi : raw;
+      }
 
       coin.vel[0] = afterUpdate.vel[0];
       coin.vel[1] = afterUpdate.vel[1];

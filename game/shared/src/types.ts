@@ -388,7 +388,7 @@ export const PHYSICS_CONFIG = {
   SOLVER_POSITION_ITERATIONS: 3,
   GRAVITY: { x: 0, y: -9.81, z: 0 },
   QUANTIZE_DECIMALS: 3, // Quantize network values to 3 decimal places
-  NETWORK_SEND_INTERVAL: 1, // Send state_delta every physics tick (1 = 30Hz)
+  NETWORK_SEND_INTERVAL: 2, // Send state_delta every 2 physics ticks (2 = 15Hz)
 } as const;
 
 // Pusher configuration
