@@ -120,10 +120,6 @@ export class Coin {
     return this.rigidBody.rotation();
   }
 
-  getLinearVelocity(): { x: number; y: number; z: number } {
-    return this.rigidBody.linvel();
-  }
-
   isSleeping(): boolean {
     return this.rigidBody.isSleeping();
   }

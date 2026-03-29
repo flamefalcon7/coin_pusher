@@ -26,9 +26,6 @@ message CoinUpdate {
   float rot_y = 6;
   float rot_z = 7;
   float rot_w = 8;
-  float vel_x = 9;
-  float vel_y = 10;
-  float vel_z = 11;
 }
 
 message StateDelta {
