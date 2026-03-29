@@ -247,7 +247,7 @@ export class GameLoop {
     const classifiedDespawns: { id: number; zone: string; owner_id: string }[] = [];
     const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
-    // Despawn + state collection on network ticks (30Hz, every physics tick)
+    // Despawn + state collection only on network ticks (15Hz, every 2nd physics tick)
     if (isNetworkTick) {
       this.coins.forEach((coin, id) => {
         // Despawn check — reuse pos for state collection below
@@ -388,7 +388,7 @@ export class GameLoop {
 
     this.tickCount++;
 
-    // 7. Broadcast state delta (30Hz, every physics tick)
+    // 7. Broadcast state delta at 15Hz (every 2nd physics tick)
     if (this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
       const stateDelta: StateDeltaMessage = {
         op: "state_delta",
