@@ -2,6 +2,8 @@ import type { PhysicsWorld } from "../physics/PhysicsWorld.js";
 import type { Pusher } from "../physics/Pusher.js";
 import { Coin } from "../physics/Coin.js";
 import { KeyCoin } from "../physics/KeyCoin.js";
+import { SponsorCoin } from "../physics/SponsorCoin.js";
+import type { SponsorManager } from "./SponsorManager.js";
 import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
@@ -24,7 +26,8 @@ export class GameLoop {
   private coinManager: CoinManager;
   private natsClient: NATSClient;
   private dropScheduler: DropScheduler;
-  private coins: Map<number, Coin | KeyCoin> = new Map();
+  private sponsorManager: SponsorManager;
+  private coins: Map<number, Coin | KeyCoin | SponsorCoin> = new Map();
   private coinOwners: Map<number, string> = new Map(); // coinId → userId
   private keyCoinIds: Set<number> = new Set();
   private running: boolean = false;
@@ -86,7 +89,8 @@ export class GameLoop {
     gameState: GameState,
     coinManager: CoinManager,
     natsClient: NATSClient,
-    dropScheduler: DropScheduler
+    dropScheduler: DropScheduler,
+    sponsorManager: SponsorManager
   ) {
     this.physicsWorld = physicsWorld;
     this.pusher = pusher;
@@ -94,6 +98,18 @@ export class GameLoop {
     this.coinManager = coinManager;
     this.natsClient = natsClient;
     this.dropScheduler = dropScheduler;
+    this.sponsorManager = sponsorManager;
+
+    // Wire up sponsor coin spawn callback so SponsorManager can create
+    // both game state entries and physics bodies
+    this.sponsorManager.setSpawnFn((x, y, sponsorId) => {
+      const coinId = this.coinManager.spawnCoin(x, y, undefined, undefined, "sponsor_coin", sponsorId);
+      if (coinId !== null) {
+        const coin = new SponsorCoin(this.physicsWorld, coinId, x, y, 0);
+        this.addCoin(coin);
+      }
+      return coinId;
+    });
   }
 
   start(): void {
@@ -224,6 +240,9 @@ export class GameLoop {
       });
     }
 
+    // 1b3. Sponsor manager: drain pending quotas (spawns sponsor coins on schedule)
+    this.sponsorManager.tick(this.tickCount);
+
     // 1c. Update tornado / lightning forces (before physics step)
     this.updateTornado();
     this.updateLightning();
@@ -244,7 +263,7 @@ export class GameLoop {
     despawnIds.length = 0;
     const f = GameLoop.Q_FACTOR;
     let sleepingCount = 0;
-    const classifiedDespawns: { id: number; zone: string; owner_id: string }[] = [];
+    const classifiedDespawns: { id: number; zone: string; owner_id: string; sponsor_id?: string }[] = [];
     const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
     // Despawn + state collection only on network ticks (15Hz, every 2nd physics tick)
@@ -268,12 +287,19 @@ export class GameLoop {
             zone = DespawnZone.OTHER;
           }
 
+          // Check if this is a sponsor coin
+          const sponsorId = this.sponsorManager.onCoinDespawn(id);
+
           despawnIds.push(id);
-          classifiedDespawns.push({
+          const despawnEntry: { id: number; zone: string; owner_id: string; sponsor_id?: string } = {
             id,
             zone,
             owner_id: this.coinOwners.get(id) ?? "",
-          });
+          };
+          if (sponsorId) {
+            despawnEntry.sponsor_id = sponsorId;
+          }
+          classifiedDespawns.push(despawnEntry);
           return;
         }
 
@@ -560,7 +586,7 @@ export class GameLoop {
     this.tickCount = 0;
   }
 
-  addCoin(coin: Coin | KeyCoin): void {
+  addCoin(coin: Coin | KeyCoin | SponsorCoin): void {
     this.coins.set(coin.getId(), coin);
   }
 

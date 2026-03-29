@@ -2,7 +2,7 @@
 export const PROTOCOL_VERSION = 1;
 
 // Body types in the physics world
-export type BodyType = "coin" | "key_coin" | "pusher";
+export type BodyType = "coin" | "key_coin" | "sponsor_coin" | "pusher";
 
 // Skill scroll types
 export type SkillScrollType =
@@ -219,7 +219,7 @@ export type SlotMachineCounterMessage = {
 // Server → Client: Coin spawn notification (one-time per coin drop)
 export type CoinSpawnMessage = {
   op: "coin_spawn";
-  coins: { id: number; owner_id: string; is_key_coin?: boolean }[];
+  coins: { id: number; owner_id: string; is_key_coin?: boolean; sponsor_id?: string }[];
 };
 
 // Server → Client: Key coin lucky draw result (broadcast)
@@ -254,6 +254,38 @@ export type MegaspeakerMessage = {
 export type MegaspeakerErrorMessage = {
   op: "megaspeaker_error";
   error: string;
+};
+
+// Server → Client: Sponsor configuration (sent on connect and on config updates)
+export type SponsorConfigMessage = {
+  op: "sponsor_config";
+  sponsors: Array<{
+    id: string;
+    brand_name: string;
+    token_symbol: string;
+    brand_color: string;
+    logo_url: string;
+    ad_image_url: string;
+    placement_tier: "primary" | "secondary" | "tertiary";
+  }>;
+};
+
+// Server → Client: Sponsor token reward notification
+export type SponsorRewardMessage = {
+  op: "sponsor_reward";
+  campaign_id: string;
+  token_symbol: string;
+  amount: string;
+  total_balance: string;
+};
+
+// Server → Client: Bonus drop event announcement
+export type BonusDropMessage = {
+  op: "bonus_drop";
+  sponsor_id: string;
+  sponsor_name: string;
+  token_symbol: string;
+  coin_count: number;
 };
 
 // Server → Client: Idle warning (sent ~5min before disconnect)
@@ -369,7 +401,10 @@ export type ServerMessage =
   | ChestOpenResultMessage
   | MegaspeakerMessage
   | MegaspeakerErrorMessage
-  | IdleWarningMessage;
+  | IdleWarningMessage
+  | SponsorConfigMessage
+  | SponsorRewardMessage
+  | BonusDropMessage;
 
 // Coin spawn parameters (server-side)
 export type CoinSpawnParams = {
@@ -406,6 +441,18 @@ export const KEY_COIN_CONFIG = {
   RADIUS: 0.08, // meters
   THICKNESS: 0.015, // meters
   MASS: 0.015, // kg
+  FRICTION: 0.7,
+  RESTITUTION: 0.3,
+  CCD_DISABLE_VELOCITY: 0.5,
+  CCD_DISABLE_HEIGHT: 0.5,
+  BORDER_RADIUS: 0.001,
+} as const;
+
+// Sponsor coin configuration (same geometry as regular coin)
+export const SPONSOR_COIN_CONFIG = {
+  RADIUS: 0.06, // meters (same as COIN_CONFIG)
+  THICKNESS: 0.012, // meters (same as COIN_CONFIG)
+  MASS: 0.01, // kg (same as COIN_CONFIG)
   FRICTION: 0.7,
   RESTITUTION: 0.3,
   CCD_DISABLE_VELOCITY: 0.5,

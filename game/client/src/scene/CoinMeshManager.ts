@@ -8,7 +8,7 @@ import {
   Matrix,
   DynamicTexture,
 } from "@babylonjs/core";
-import { COIN_CONFIG, KEY_COIN_CONFIG } from "@coin-pusher/shared";
+import { COIN_CONFIG, KEY_COIN_CONFIG, SPONSOR_COIN_CONFIG } from "@coin-pusher/shared";
 import { createToonMaterial } from "./ToonMaterial";
 
 // ── Spiral spawn animation constants ─────────────────────────────────
@@ -52,9 +52,14 @@ export class CoinMeshManager {
   private kcCapacity: number = 200;
   private keyCoinIds: Set<number> = new Set();
 
+  // ── Sponsor coin separate prototypes + thin-instance buffers ────────
+  private sponsorPrototypes: Map<string, Mesh> = new Map();
+  private sponsorBuffers: Map<string, { matrix: Float32Array; indices: Map<number, number>; indexToId: Int32Array; count: number; capacity: number }> = new Map();
+  private coinSponsorLookup: Map<number, string> = new Map(); // coinId -> sponsorId
+
   // ── Spiral spawn animation state ───────────────────────────────────
   private spawnAnims: Map<number, SpawnAnim> = new Map(); // coinId -> anim
-  private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number]; isKeyCoin?: boolean }[] = [];
+  private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number]; isKeyCoin?: boolean; sponsorId?: string }[] = [];
   private batchAnimationUntil: number = 0; // timestamp until which batch animation is allowed
 
   // ── Highlight mesh for owned coins ────────────────────────────────
@@ -214,9 +219,10 @@ export class CoinMeshManager {
     id: number,
     pos: [number, number, number],
     rot: [number, number, number, number],
-    isKeyCoin?: boolean
+    isKeyCoin?: boolean,
+    sponsorId?: string
   ): void {
-    if (this.idToIndex.has(id) || this.kcIdToIndex.has(id)) {
+    if (this.idToIndex.has(id) || this.kcIdToIndex.has(id) || this.coinSponsorLookup.has(id)) {
       console.warn(`Coin ${id} already exists`);
       return;
     }
@@ -226,7 +232,7 @@ export class CoinMeshManager {
     }
 
     // Collect into pending batch — commitNewCoins() decides if animated or instant
-    this.pendingNewCoins.push({ id, pos, rot, isKeyCoin });
+    this.pendingNewCoins.push({ id, pos, rot, isKeyCoin, sponsorId });
   }
 
   /** Allow batch spiral animation for the next `durationMs` milliseconds. */
@@ -243,13 +249,29 @@ export class CoinMeshManager {
     if (batch.length === 0) return;
     this.pendingNewCoins = [];
 
-    // Separate key coins from regular coins for batch handling
-    const regularBatch = batch.filter(c => !c.isKeyCoin);
-    const keyCoinBatch = batch.filter(c => c.isKeyCoin);
+    // Separate key coins, sponsor coins, and regular coins for batch handling
+    const regularBatch: typeof batch = [];
+    const keyCoinBatch: typeof batch = [];
+    const sponsorBatch: typeof batch = [];
+
+    for (const coin of batch) {
+      if (coin.isKeyCoin) {
+        keyCoinBatch.push(coin);
+      } else if (coin.sponsorId && this.sponsorPrototypes.has(coin.sponsorId)) {
+        sponsorBatch.push(coin);
+      } else {
+        regularBatch.push(coin);
+      }
+    }
 
     // Key coins: always instant placement into key coin buffer
     for (const coin of keyCoinBatch) {
       this.allocateKeyCoin(coin.id, coin.pos, coin.rot);
+    }
+
+    // Sponsor coins: instant placement into per-sponsor buffers
+    for (const coin of sponsorBatch) {
+      this.allocateSponsorCoin(coin.id, coin.pos, coin.rot, coin.sponsorId!);
     }
 
     // Regular coins: batch animation only during explicit animation window (admin spawn)
@@ -363,6 +385,19 @@ export class CoinMeshManager {
       return;
     }
 
+    // Check sponsor coin buffers
+    const sponsorId = this.coinSponsorLookup.get(id);
+    if (sponsorId) {
+      const buf = this.sponsorBuffers.get(sponsorId);
+      if (buf) {
+        const sIdx = buf.indices.get(id);
+        if (sIdx !== undefined) {
+          this.writeMatrixToBuffer2(buf.matrix, sIdx, pos, rot);
+          return;
+        }
+      }
+    }
+
     const index = this.idToIndex.get(id);
     if (index === undefined) {
       // Coin doesn't exist yet, add it (as regular coin — key coin status comes from addCoin)
@@ -460,6 +495,13 @@ export class CoinMeshManager {
   }
 
   removeCoin(id: number): void {
+    // Check sponsor coin lookup first
+    const sponsorId = this.coinSponsorLookup.get(id);
+    if (sponsorId) {
+      this.removeSponsorCoin(id, sponsorId);
+      return;
+    }
+
     // Check if it's a key coin
     if (this.keyCoinIds.has(id)) {
       this.removeKeyCoin(id);
@@ -524,6 +566,187 @@ export class CoinMeshManager {
     // Clean up highlight if present
     this.removeHighlight(id);
     this.hlPending.delete(id);
+  }
+
+  // ── Sponsor Coin Methods ──────────────────────────────────────────────
+
+  createSponsorCoinPrototype(sponsorId: string, brandColor: string, logoUrl: string): void {
+    if (this.sponsorPrototypes.has(sponsorId)) return;
+
+    const { RADIUS, THICKNESS } = SPONSOR_COIN_CONFIG;
+    const prototype = MeshBuilder.CreateCylinder(
+      "sponsorCoin_" + sponsorId,
+      {
+        height: THICKNESS,
+        diameter: RADIUS * 2,
+        tessellation: 32,
+      },
+      this.scene
+    );
+
+    const engine = this.scene.getEngine();
+    const isMobile = (engine.getRenderWidth() / engine.getRenderHeight()) < 1.0;
+
+    if (isMobile) {
+      // On mobile: skip DynamicTexture, use flat brand-color material only
+      const mat = createToonMaterial(this.scene, {
+        name: "sponsor_" + sponsorId,
+        baseColor: Color3.FromHexString(brandColor),
+        thinInstances: true,
+        useCelShading: true,
+      });
+      prototype.material = mat;
+      prototype.alwaysSelectAsActiveMesh = true;
+      prototype.thinInstanceEnablePicking = false;
+    } else {
+      // Load logo image, create DynamicTexture after load
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+
+      img.onload = () => {
+        const dt = new DynamicTexture("sponsorTex_" + sponsorId, 256, this.scene, false);
+        const ctx = dt.getContext();
+
+        // White background
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Draw logo centered
+        ctx.drawImage(img, 0, 0, 256, 256);
+
+        dt.update(false);
+        dt.hasAlpha = true;
+
+        // Create toon material AFTER DynamicTexture.update()
+        const mat = createToonMaterial(this.scene, {
+          name: "sponsor_" + sponsorId,
+          baseColor: Color3.FromHexString(brandColor),
+          diffuseTexture: dt,
+          thinInstances: true,
+          useCelShading: true,
+        });
+        prototype.material = mat;
+      };
+
+      img.onerror = () => {
+        console.warn(`Failed to load sponsor logo: ${logoUrl}`);
+        // Fallback: flat brand-color material
+        const mat = createToonMaterial(this.scene, {
+          name: "sponsor_" + sponsorId,
+          baseColor: Color3.FromHexString(brandColor),
+          thinInstances: true,
+          useCelShading: true,
+        });
+        prototype.material = mat;
+      };
+
+      // Assign a temporary material while image loads
+      const tempMat = createToonMaterial(this.scene, {
+        name: "sponsor_temp_" + sponsorId,
+        baseColor: Color3.FromHexString(brandColor),
+        thinInstances: true,
+        useCelShading: true,
+      });
+      prototype.material = tempMat;
+
+      img.src = logoUrl;
+    }
+
+    prototype.alwaysSelectAsActiveMesh = true;
+    prototype.thinInstanceEnablePicking = false;
+
+    this.sponsorPrototypes.set(sponsorId, prototype);
+
+    // Initialize buffer (capacity 100)
+    const capacity = 100;
+    this.sponsorBuffers.set(sponsorId, {
+      matrix: new Float32Array(capacity * 16),
+      indices: new Map(),
+      indexToId: new Int32Array(capacity),
+      count: 0,
+      capacity,
+    });
+  }
+
+  private allocateSponsorCoin(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number],
+    sponsorId: string
+  ): void {
+    const buf = this.sponsorBuffers.get(sponsorId);
+    if (!buf) return;
+
+    if (buf.count >= buf.capacity) {
+      this.resizeSponsorBuffer(sponsorId);
+    }
+
+    const index = buf.count;
+    buf.count++;
+    buf.indices.set(id, index);
+    buf.indexToId[index] = id;
+    this.coinSponsorLookup.set(id, sponsorId);
+
+    this.writeMatrixToBuffer2(buf.matrix, index, pos, rot);
+  }
+
+  private removeSponsorCoin(id: number, sponsorId: string): void {
+    const buf = this.sponsorBuffers.get(sponsorId);
+    if (!buf) return;
+
+    const index = buf.indices.get(id);
+    if (index === undefined) return;
+
+    const lastIndex = buf.count - 1;
+
+    if (index !== lastIndex) {
+      // Swap-and-pop
+      const lastCoinId = buf.indexToId[lastIndex];
+      buf.matrix.copyWithin(index * 16, lastIndex * 16, (lastIndex + 1) * 16);
+      buf.indices.set(lastCoinId, index);
+      buf.indexToId[index] = lastCoinId;
+    }
+
+    buf.indices.delete(id);
+    this.coinSponsorLookup.delete(id);
+    buf.count--;
+
+    // Clean up highlight if present
+    this.removeHighlight(id);
+    this.hlPending.delete(id);
+  }
+
+  private resizeSponsorBuffer(sponsorId: string): void {
+    const buf = this.sponsorBuffers.get(sponsorId);
+    if (!buf) return;
+
+    const newCapacity = buf.capacity * 2;
+    const newMatrix = new Float32Array(newCapacity * 16);
+    newMatrix.set(buf.matrix);
+    buf.matrix = newMatrix;
+
+    const newIndexToId = new Int32Array(newCapacity);
+    newIndexToId.set(buf.indexToId);
+    buf.indexToId = newIndexToId;
+
+    buf.capacity = newCapacity;
+  }
+
+  disposeSponsorPrototypes(): void {
+    for (const [, prototype] of this.sponsorPrototypes) {
+      const mat = prototype.material;
+      if (mat) {
+        // If material has a diffuse texture, null it before dispose
+        if ("getTextureMatrix" in mat) {
+          // ShaderMaterial doesn't have getTextureMatrix, but we can just dispose
+        }
+        mat.dispose();
+      }
+      prototype.dispose();
+    }
+    this.sponsorPrototypes.clear();
+    this.sponsorBuffers.clear();
+    this.coinSponsorLookup.clear();
   }
 
   // ── Highlight Methods ─────────────────────────────────────────────────
@@ -652,6 +875,19 @@ export class CoinMeshManager {
       const kcMatrixData = this.kcBuffer.subarray(0, this.kcActive * 16);
       this.keyCoinPrototype.thinInstanceSetBuffer("matrix", kcMatrixData, 16, false);
     }
+
+    // Sponsor coins (per-sponsor prototype)
+    for (const [sponsorId, prototype] of this.sponsorPrototypes) {
+      const buf = this.sponsorBuffers.get(sponsorId);
+      if (!buf || buf.count === 0) {
+        prototype.thinInstanceSetBuffer("matrix", null);
+        prototype.isVisible = false;
+      } else {
+        prototype.isVisible = true;
+        const sponsorMatrixData = buf.matrix.subarray(0, buf.count * 16);
+        prototype.thinInstanceSetBuffer("matrix", sponsorMatrixData, 16, false);
+      }
+    }
   }
 
   private writeMatrixToBuffer(
@@ -738,11 +974,24 @@ export class CoinMeshManager {
       const off = kcIndex * 16;
       return [this.kcBuffer[off + 12], this.kcBuffer[off + 13], this.kcBuffer[off + 14]];
     }
+    // Check sponsor buffers
+    const sponsorId = this.coinSponsorLookup.get(id);
+    if (sponsorId) {
+      const buf = this.sponsorBuffers.get(sponsorId);
+      if (buf) {
+        const sIdx = buf.indices.get(id);
+        if (sIdx !== undefined) {
+          const off = sIdx * 16;
+          return [buf.matrix[off + 12], buf.matrix[off + 13], buf.matrix[off + 14]];
+        }
+      }
+    }
     return null;
   }
 
   dispose(): void {
     this.clear();
+    this.disposeSponsorPrototypes();
     this.prototypeMesh.material?.dispose();
     this.prototypeMesh.dispose();
     this.keyCoinPrototype.material?.dispose();
@@ -761,6 +1010,12 @@ export class CoinMeshManager {
     this.kcIdToIndex.clear();
     this.keyCoinIds.clear();
     this.kcActive = 0;
+    // Clear sponsor coins
+    this.coinSponsorLookup.clear();
+    for (const [, buf] of this.sponsorBuffers) {
+      buf.indices.clear();
+      buf.count = 0;
+    }
     this.updateInstances();
     // Clear highlights
     this.hlIdToIndex.clear();

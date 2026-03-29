@@ -5,6 +5,9 @@ import type {
   EditorObjectNet,
   SlotSymbol,
   AbilityType,
+  SponsorConfigMessage,
+  BonusDropMessage,
+  SponsorRewardMessage,
 } from "@coin-pusher/shared";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
@@ -28,7 +31,7 @@ export type AbilityEventCallback = (
   username?: string,
 ) => void;
 export type CoinSpawnCallback = (
-  coins: { id: number; owner_id: string; is_key_coin?: boolean }[],
+  coins: { id: number; owner_id: string; is_key_coin?: boolean; sponsor_id?: string }[],
 ) => void;
 export type HeatUpdateCallback = (
   players: {
@@ -74,6 +77,9 @@ export type MegaspeakerCallback = (
 export type MegaspeakerErrorCallback = (error: string) => void;
 export type IdleWarningCallback = () => void;
 export type IdleTimeoutCallback = () => void;
+export type SponsorConfigCallback = (sponsors: SponsorConfigMessage["sponsors"]) => void;
+export type BonusDropCallback = (msg: BonusDropMessage) => void;
+export type SponsorRewardCallback = (msg: SponsorRewardMessage) => void;
 
 export class GameClient {
   private url: string;
@@ -101,6 +107,9 @@ export class GameClient {
   private megaspeakerErrorCallback?: MegaspeakerErrorCallback;
   private idleWarningCallback?: IdleWarningCallback;
   private idleTimeoutCallback?: IdleTimeoutCallback;
+  private sponsorConfigCallback?: SponsorConfigCallback;
+  private bonusDropCallback?: BonusDropCallback;
+  private sponsorRewardCallback?: SponsorRewardCallback;
   private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
@@ -352,6 +361,24 @@ export class GameClient {
         }
         break;
 
+      case "sponsor_config":
+        if (this.sponsorConfigCallback) {
+          this.sponsorConfigCallback(message.sponsors);
+        }
+        break;
+
+      case "bonus_drop":
+        if (this.bonusDropCallback) {
+          this.bonusDropCallback(message);
+        }
+        break;
+
+      case "sponsor_reward":
+        if (this.sponsorRewardCallback) {
+          this.sponsorRewardCallback(message);
+        }
+        break;
+
       case "welcome":
         this.userId = message.user_id;
         this._isSpectator = message.user_id === "";
@@ -599,6 +626,18 @@ export class GameClient {
 
   onIdleTimeout(callback: IdleTimeoutCallback): void {
     this.idleTimeoutCallback = callback;
+  }
+
+  onSponsorConfig(callback: SponsorConfigCallback): void {
+    this.sponsorConfigCallback = callback;
+  }
+
+  onBonusDrop(callback: BonusDropCallback): void {
+    this.bonusDropCallback = callback;
+  }
+
+  onSponsorReward(callback: SponsorRewardCallback): void {
+    this.sponsorRewardCallback = callback;
   }
 
   sendMegaspeaker(message: string): void {

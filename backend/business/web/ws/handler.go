@@ -19,6 +19,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/sponsor"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
@@ -47,6 +48,7 @@ type Handler struct {
 	heat           *heat.HeatEngine
 	inventoryCore  *inventory.Core
 	userCore       *user.Core
+	sponsorCore    *sponsor.Core
 	slotCounts     [numSlots]int64 // atomic — optimistic per-slot pending count
 	coinCount      int64          // atomic — authoritative active coin count from game server
 	allowedOrigins []string
@@ -54,7 +56,7 @@ type Handler struct {
 }
 
 // NewHandler constructs a WS Handler.
-func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, userCore *user.Core, allowedOrigins []string) *Handler {
+func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, userCore *user.Core, sponsorCore *sponsor.Core, allowedOrigins []string) *Handler {
 	h := &Handler{
 		log:            log,
 		hub:            hub,
@@ -65,6 +67,7 @@ func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, g
 		heat:           heat,
 		inventoryCore:  inventoryCore,
 		userCore:       userCore,
+		sponsorCore:    sponsorCore,
 		allowedOrigins: allowedOrigins,
 	}
 	h.upgrader = websocket.Upgrader{
@@ -165,6 +168,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send megaspeaker history.
 	for _, packed := range h.hub.GetMegaspeakerHistory() {
 		c.SendRaw(packed)
+	}
+
+	// Send active sponsor config.
+	if h.sponsorCore != nil {
+		if camps, err := h.sponsorCore.ListActive(context.Background()); err == nil && len(camps) > 0 {
+			type sponsorEntry struct {
+				CampaignID  string `msgpack:"campaign_id"`
+				BrandName   string `msgpack:"brand_name"`
+				BrandColor  string `msgpack:"brand_color"`
+				TokenSymbol string `msgpack:"token_symbol"`
+				LogoURL     string `msgpack:"logo_url"`
+				AdImageURL  string `msgpack:"ad_image_url"`
+			}
+			type sponsorConfigMsg struct {
+				Op       string         `msgpack:"op"`
+				Sponsors []sponsorEntry `msgpack:"sponsors"`
+			}
+			msg := sponsorConfigMsg{Op: "sponsor_config"}
+			for _, camp := range camps {
+				msg.Sponsors = append(msg.Sponsors, sponsorEntry{
+					CampaignID:  camp.CampaignID.String(),
+					BrandName:   camp.BrandName,
+					BrandColor:  camp.BrandColor,
+					TokenSymbol: camp.TokenSymbol,
+					LogoURL:     camp.LogoURL,
+					AdImageURL:  camp.AdImageURL,
+				})
+			}
+			if packed, err := msgpack.Marshal(msg); err == nil {
+				c.SendRaw(packed)
+			}
+		}
 	}
 
 	// Start write pump in a goroutine.

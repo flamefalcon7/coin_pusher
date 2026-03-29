@@ -72,3 +72,24 @@ type NATSBatchInsertCmd struct {
 	SlotID int    `json:"slot_id"`
 	Count  int    `json:"count"`
 }
+
+// NATSSponsorQuota is published to game.{room}.cmd.sponsor_quota.
+type NATSSponsorQuota struct {
+	QuotaID   string `json:"quota_id"`
+	SponsorID string `json:"sponsor_id"`
+	CoinCount int    `json:"coin_count"`
+}
+
+// NATSSponsorQuotaConsumed is received from game.{room}.evt.sponsor_quota_consumed.
+type NATSSponsorQuotaConsumed struct {
+	QuotaID      string `json:"quota_id"`
+	CoinsSpawned int    `json:"coins_spawned"`
+}
+
+// NATSSponsorBonusDrop is published to game.{room}.cmd.sponsor_bonus.
+type NATSSponsorBonusDrop struct {
+	SponsorID   string `json:"sponsor_id"`
+	SponsorName string `json:"sponsor_name"`
+	TokenSymbol string `json:"token_symbol"`
+	CoinCount   int    `json:"coin_count"`
+}
