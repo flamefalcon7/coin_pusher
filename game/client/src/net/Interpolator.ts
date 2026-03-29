@@ -1,6 +1,6 @@
-import { NETWORK_CONFIG } from "@coin-pusher/shared";
 import { StateBuffer } from "./StateBuffer";
 import { ClockSync } from "./ClockSync";
+import { debugConfig } from "./debugConfig";
 
 export interface InterpolatedCoin {
   id: number;
@@ -46,13 +46,13 @@ export class Interpolator {
     const rtt = this.clockSync.getRTT();
 
     const adaptiveDelay = Math.max(
-      NETWORK_CONFIG.INTERPOLATION_DELAY_BASE,
-      rtt * NETWORK_CONFIG.INTERPOLATION_DELAY_MULTIPLIER
+      debugConfig.interpolationDelayBase,
+      rtt * debugConfig.interpolationDelayMultiplier
     );
 
     return Math.max(
-      NETWORK_CONFIG.INTERPOLATION_DELAY_MIN,
-      Math.min(NETWORK_CONFIG.INTERPOLATION_DELAY_MAX, adaptiveDelay)
+      debugConfig.interpolationDelayMin,
+      Math.min(debugConfig.interpolationDelayMax, adaptiveDelay)
     );
   }
 
@@ -186,22 +186,32 @@ export class Interpolator {
         this.knownCoins.set(afterUpdate.id, coin);
       }
 
-      // Hermite spline interpolation — preserves collision direction changes
-      // Clamped to bounding box of before/after to prevent overshoot (e.g. coins dipping into pusher)
-      const dtSec = timeDiff / 1000;
-      const t = clampedAlpha;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      const h00 = 2 * t3 - 3 * t2 + 1;
-      const h10 = t3 - 2 * t2 + t;
-      const h01 = -2 * t3 + 3 * t2;
-      const h11 = t3 - t2;
+      if (debugConfig.useHermite) {
+        // Hermite spline interpolation — preserves collision direction changes
+        const dtSec = timeDiff / 1000;
+        const t = clampedAlpha;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const h00 = 2 * t3 - 3 * t2 + 1;
+        const h10 = t3 - 2 * t2 + t;
+        const h01 = -2 * t3 + 3 * t2;
+        const h11 = t3 - t2;
 
-      for (let axis = 0; axis < 3; axis++) {
-        const raw = h00 * beforeUpdate.pos[axis] + h10 * beforeUpdate.vel[axis] * dtSec + h01 * afterUpdate.pos[axis] + h11 * afterUpdate.vel[axis] * dtSec;
-        const lo = beforeUpdate.pos[axis] < afterUpdate.pos[axis] ? beforeUpdate.pos[axis] : afterUpdate.pos[axis];
-        const hi = beforeUpdate.pos[axis] > afterUpdate.pos[axis] ? beforeUpdate.pos[axis] : afterUpdate.pos[axis];
-        coin.pos[axis] = raw < lo ? lo : raw > hi ? hi : raw;
+        for (let axis = 0; axis < 3; axis++) {
+          const raw = h00 * beforeUpdate.pos[axis] + h10 * beforeUpdate.vel[axis] * dtSec + h01 * afterUpdate.pos[axis] + h11 * afterUpdate.vel[axis] * dtSec;
+          if (debugConfig.hermiteClamp) {
+            const lo = beforeUpdate.pos[axis] < afterUpdate.pos[axis] ? beforeUpdate.pos[axis] : afterUpdate.pos[axis];
+            const hi = beforeUpdate.pos[axis] > afterUpdate.pos[axis] ? beforeUpdate.pos[axis] : afterUpdate.pos[axis];
+            coin.pos[axis] = raw < lo ? lo : raw > hi ? hi : raw;
+          } else {
+            coin.pos[axis] = raw;
+          }
+        }
+      } else {
+        // LERP fallback
+        coin.pos[0] = beforeUpdate.pos[0] + (afterUpdate.pos[0] - beforeUpdate.pos[0]) * clampedAlpha;
+        coin.pos[1] = beforeUpdate.pos[1] + (afterUpdate.pos[1] - beforeUpdate.pos[1]) * clampedAlpha;
+        coin.pos[2] = beforeUpdate.pos[2] + (afterUpdate.pos[2] - beforeUpdate.pos[2]) * clampedAlpha;
       }
 
       coin.vel[0] = afterUpdate.vel[0];
@@ -224,7 +234,7 @@ export class Interpolator {
     const extrapolationTime = targetTime - latestState.serverTime;
     const clampedExtrapolationTime = Math.min(
       extrapolationTime,
-      NETWORK_CONFIG.EXTRAPOLATION_MAX_TIME
+      debugConfig.extrapolationMaxTime
     );
 
     if (extrapolationTime < 0 || clampedExtrapolationTime <= 0) {

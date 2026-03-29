@@ -10,6 +10,7 @@ import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
 import { StateBuffer } from "./StateBuffer";
 import { Interpolator, type InterpolatedState } from "./Interpolator";
+import { maybeCreateDebugPanel, type DebugPanel } from "./DebugPanel";
 
 export type ConnectionStatusCallback = (
   status: "connecting" | "connected" | "disconnected",
@@ -107,6 +108,7 @@ export class GameClient {
   private _snapshotJustLoaded: boolean = false;
   private _snapshotKeyCoinIds: Set<number> | null = null;
   private visibilityHandler: (() => void) | null = null;
+  private debugPanel: DebugPanel | null = null;
 
   constructor(url: string, token?: string) {
     this.url = url;
@@ -114,6 +116,7 @@ export class GameClient {
     this.clockSync = new ClockSync();
     this.stateBuffer = new StateBuffer();
     this.interpolator = new Interpolator(this.stateBuffer, this.clockSync);
+    this.debugPanel = maybeCreateDebugPanel(this.clockSync, this.stateBuffer);
 
     this.setupHandlers();
   }
@@ -393,6 +396,8 @@ export class GameClient {
       document.removeEventListener("visibilitychange", this.visibilityHandler);
       this.visibilityHandler = null;
     }
+    this.debugPanel?.destroy();
+    this.debugPanel = null;
   }
 
   /** Returns true if connected as an unauthenticated spectator. */
