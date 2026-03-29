@@ -8,7 +8,7 @@ export interface SponsorConfig {
   brand_color: string;
   logo_url: string;
   ad_image_url: string;
-  placement_tier: "primary" | "secondary" | "tertiary";
+  placement_tier?: "primary" | "secondary" | "tertiary";
 }
 
 export interface PendingQuota {

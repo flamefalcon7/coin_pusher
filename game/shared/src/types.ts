@@ -33,6 +33,8 @@ export type BodyState = {
   rot?: [number, number, number, number]; // [x, y, z, w] quaternion
   // Pusher properties (only for type="pusher")
   z?: number; // z-axis position for kinematic pusher
+  // Sponsor coin tracking (only for type="sponsor_coin")
+  sponsor_id?: string; // campaign ID for sponsor coins
 };
 
 // Complete world state (sent on connect)
@@ -266,7 +268,7 @@ export type SponsorConfigMessage = {
     brand_color: string;
     logo_url: string;
     ad_image_url: string;
-    placement_tier: "primary" | "secondary" | "tertiary";
+    placement_tier?: "primary" | "secondary" | "tertiary";
   }>;
 };
 

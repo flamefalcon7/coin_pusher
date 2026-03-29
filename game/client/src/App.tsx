@@ -501,6 +501,13 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
           if (snapshotKeyCoinIds) {
             keyCoinIdsRef.current = snapshotKeyCoinIds;
           }
+          // Seed sponsor coin IDs from snapshot body types
+          const snapshotSponsorCoinIds = gameClient.consumeSnapshotSponsorCoinIds();
+          if (snapshotSponsorCoinIds) {
+            for (const [coinId, sponsorId] of snapshotSponsorCoinIds) {
+              sponsorCoinIdsRef.current.set(coinId, sponsorId);
+            }
+          }
         }
 
         // Update pusher position

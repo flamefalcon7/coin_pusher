@@ -72,7 +72,7 @@ export type SponsorConfigCommand = {
     brand_color: string;
     logo_url: string;
     ad_image_url: string;
-    placement_tier: "primary" | "secondary" | "tertiary";
+    placement_tier?: "primary" | "secondary" | "tertiary";
   }[];
 };
 
@@ -309,7 +309,7 @@ export class NATSClient {
                 rotZ: b.rot?.[2] ?? 0,
                 rotW: b.rot?.[3] ?? 0,
                 z: b.z ?? 0,
-                sponsorId: (b as any).sponsor_id ?? "",
+                sponsorId: b.sponsor_id ?? "",
               })),
             },
           },
@@ -426,7 +426,7 @@ export class NATSClient {
             rotZ: b.rot?.[2] ?? 0,
             rotW: b.rot?.[3] ?? 0,
             z: b.z ?? 0,
-            sponsorId: (b as any).sponsor_id ?? "",
+            sponsorId: b.sponsor_id ?? "",
           })),
         },
       },
@@ -523,7 +523,7 @@ export class NATSClient {
 
   // Subscribe to sponsor_config updates (JSON encoded)
   subscribeSponsorConfig(handler: (cmd: SponsorConfigCommand) => void): void {
-    const sub = this.nc!.subscribe(`game.${this.room}.cmd.sponsor_config`);
+    const sub = this.nc!.subscribe(`game.${this.room}.sponsor_config`);
     this.subs.push(sub);
     this.cmdSubs.push(sub);
     (async () => {
@@ -549,7 +549,7 @@ export class NATSClient {
 
   // Subscribe to bonus_drop commands (JSON encoded)
   subscribeBonusDrop(handler: (cmd: BonusDropCommand) => void): void {
-    const sub = this.nc!.subscribe(`game.${this.room}.cmd.bonus_drop`);
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.sponsor_bonus`);
     this.subs.push(sub);
     this.cmdSubs.push(sub);
     (async () => {

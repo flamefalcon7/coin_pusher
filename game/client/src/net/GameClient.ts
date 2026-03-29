@@ -116,6 +116,7 @@ export class GameClient {
   private _isSpectator: boolean = false;
   private _snapshotJustLoaded: boolean = false;
   private _snapshotKeyCoinIds: Set<number> | null = null;
+  private _snapshotSponsorCoinIds: Map<number, string> | null = null;
   private visibilityHandler: (() => void) | null = null;
   private debugPanel: DebugPanel | null = null;
 
@@ -180,16 +181,20 @@ export class GameClient {
         this.interpolator.clear();
         // Initialize state buffer with snapshot
         this.stateBuffer.clear();
-        // Track key coin IDs from snapshot for rendering
+        // Track key coin and sponsor coin IDs from snapshot for rendering
         this._snapshotKeyCoinIds = new Set<number>();
+        this._snapshotSponsorCoinIds = new Map<number, string>();
         const snapshotCoins = message.bodies
           .filter(
             (b) =>
-              (b.type === "coin" || b.type === "key_coin") && b.pos && b.rot,
+              (b.type === "coin" || b.type === "key_coin" || b.type === "sponsor_coin") && b.pos && b.rot,
           )
           .map((b) => {
             if (b.type === "key_coin") {
               this._snapshotKeyCoinIds!.add(b.id);
+            }
+            if (b.type === "sponsor_coin" && b.sponsor_id) {
+              this._snapshotSponsorCoinIds!.set(b.id, b.sponsor_id);
             }
             return {
               id: b.id,
@@ -682,6 +687,13 @@ export class GameClient {
   consumeSnapshotKeyCoinIds(): Set<number> | null {
     const ids = this._snapshotKeyCoinIds;
     this._snapshotKeyCoinIds = null;
+    return ids;
+  }
+
+  /** Returns sponsor coin ID mappings from the last world_snapshot, then clears. */
+  consumeSnapshotSponsorCoinIds(): Map<number, string> | null {
+    const ids = this._snapshotSponsorCoinIds;
+    this._snapshotSponsorCoinIds = null;
     return ids;
   }
 }

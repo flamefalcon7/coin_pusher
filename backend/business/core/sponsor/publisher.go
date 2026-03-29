@@ -29,7 +29,7 @@ func NewPublisher(log *zap.SugaredLogger, nc *nats.Conn, core *Core, room string
 
 // sponsorConfigEntry is a single sponsor in the config message.
 type sponsorConfigEntry struct {
-	CampaignID  string `json:"campaign_id"`
+	ID          string `json:"id"`
 	BrandName   string `json:"brand_name"`
 	BrandColor  string `json:"brand_color"`
 	TokenSymbol string `json:"token_symbol"`
@@ -57,7 +57,7 @@ func (p *Publisher) PublishConfig(ctx context.Context) error {
 
 	for _, camp := range camps {
 		msg.Sponsors = append(msg.Sponsors, sponsorConfigEntry{
-			CampaignID:  camp.CampaignID.String(),
+			ID:          camp.CampaignID.String(),
 			BrandName:   camp.BrandName,
 			BrandColor:  camp.BrandColor,
 			TokenSymbol: camp.TokenSymbol,
