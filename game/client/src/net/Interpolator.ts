@@ -6,6 +6,7 @@ export interface InterpolatedCoin {
   id: number;
   pos: [number, number, number];
   rot: [number, number, number, number];
+  vel: [number, number, number];
 }
 
 export interface InterpolatedState {
@@ -31,7 +32,7 @@ export class Interpolator {
   private gracePusherZ: number = 0;
 
   // Reusable lookup map for before-state, cleared & reused each frame
-  private lookupMap: Map<number, { id: number; pos: [number, number, number]; rot: [number, number, number, number] }> = new Map();
+  private lookupMap: Map<number, { id: number; pos: [number, number, number]; rot: [number, number, number, number]; vel: [number, number, number] }> = new Map();
 
   // Reusable result object to avoid allocation per frame
   private resultState: InterpolatedState = { coins: [], pusherZ: 0 };
@@ -70,7 +71,7 @@ export class Interpolator {
     this.knownCoins.clear();
     this.despawnedIds.clear();
     // Start grace period: render snapshot positions statically until buffer
-    // accumulates >= 2 states for interpolation. 266ms = ~4 state_deltas at 15Hz.
+    // accumulates >= 2 states for interpolation. 266ms = ~8 state_deltas at 30Hz.
     this.graceUntil = Date.now() + 266;
   }
 
@@ -84,6 +85,7 @@ export class Interpolator {
         id: c.id,
         pos: [c.pos[0], c.pos[1], c.pos[2]],
         rot: [c.rot[0], c.rot[1], c.rot[2], c.rot[3]],
+        vel: [0, 0, 0],
       });
     }
   }
@@ -157,11 +159,15 @@ export class Interpolator {
           coin.rot[1] = afterUpdate.rot[1];
           coin.rot[2] = afterUpdate.rot[2];
           coin.rot[3] = afterUpdate.rot[3];
+          coin.vel[0] = afterUpdate.vel[0];
+          coin.vel[1] = afterUpdate.vel[1];
+          coin.vel[2] = afterUpdate.vel[2];
         } else {
           coin = {
             id: afterUpdate.id,
             pos: [afterUpdate.pos[0], afterUpdate.pos[1], afterUpdate.pos[2]],
             rot: [afterUpdate.rot[0], afterUpdate.rot[1], afterUpdate.rot[2], afterUpdate.rot[3]],
+            vel: [afterUpdate.vel[0], afterUpdate.vel[1], afterUpdate.vel[2]],
           };
           this.knownCoins.set(afterUpdate.id, coin);
         }
@@ -175,14 +181,28 @@ export class Interpolator {
           id: afterUpdate.id,
           pos: [0, 0, 0],
           rot: [0, 0, 0, 0],
+          vel: [0, 0, 0],
         };
         this.knownCoins.set(afterUpdate.id, coin);
       }
 
-      // Interpolate position (linear) - mutate in place
-      coin.pos[0] = beforeUpdate.pos[0] + (afterUpdate.pos[0] - beforeUpdate.pos[0]) * clampedAlpha;
-      coin.pos[1] = beforeUpdate.pos[1] + (afterUpdate.pos[1] - beforeUpdate.pos[1]) * clampedAlpha;
-      coin.pos[2] = beforeUpdate.pos[2] + (afterUpdate.pos[2] - beforeUpdate.pos[2]) * clampedAlpha;
+      // Hermite spline interpolation — preserves collision direction changes
+      const dtSec = timeDiff / 1000;
+      const t = clampedAlpha;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1;
+      const h10 = t3 - 2 * t2 + t;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = t3 - t2;
+
+      coin.pos[0] = h00 * beforeUpdate.pos[0] + h10 * beforeUpdate.vel[0] * dtSec + h01 * afterUpdate.pos[0] + h11 * afterUpdate.vel[0] * dtSec;
+      coin.pos[1] = h00 * beforeUpdate.pos[1] + h10 * beforeUpdate.vel[1] * dtSec + h01 * afterUpdate.pos[1] + h11 * afterUpdate.vel[1] * dtSec;
+      coin.pos[2] = h00 * beforeUpdate.pos[2] + h10 * beforeUpdate.vel[2] * dtSec + h01 * afterUpdate.pos[2] + h11 * afterUpdate.vel[2] * dtSec;
+
+      coin.vel[0] = afterUpdate.vel[0];
+      coin.vel[1] = afterUpdate.vel[1];
+      coin.vel[2] = afterUpdate.vel[2];
 
       // Interpolate rotation (SLERP) - write directly into coin.rot
       this.slerpInto(coin.rot, beforeUpdate.rot, afterUpdate.rot, clampedAlpha);
@@ -243,6 +263,7 @@ export class Interpolator {
           id: latestUpdate.id,
           pos: [0, 0, 0],
           rot: [0, 0, 0, 0],
+          vel: [0, 0, 0],
         };
         this.knownCoins.set(latestUpdate.id, coin);
       }
@@ -255,18 +276,25 @@ export class Interpolator {
         coin.rot[1] = latestUpdate.rot[1];
         coin.rot[2] = latestUpdate.rot[2];
         coin.rot[3] = latestUpdate.rot[3];
+        coin.vel[0] = latestUpdate.vel[0];
+        coin.vel[1] = latestUpdate.vel[1];
+        coin.vel[2] = latestUpdate.vel[2];
         continue;
       }
 
-      // Extrapolate position: velocity * time, mutate in place
-      coin.pos[0] = latestUpdate.pos[0] + (latestUpdate.pos[0] - previousUpdate.pos[0]) * invDelta * clampedExtrapolationTime;
-      coin.pos[1] = latestUpdate.pos[1] + (latestUpdate.pos[1] - previousUpdate.pos[1]) * invDelta * clampedExtrapolationTime;
-      coin.pos[2] = latestUpdate.pos[2] + (latestUpdate.pos[2] - previousUpdate.pos[2]) * invDelta * clampedExtrapolationTime;
+      // Extrapolate position using velocity directly (more accurate than position diff)
+      const extSec = clampedExtrapolationTime / 1000;
+      coin.pos[0] = latestUpdate.pos[0] + latestUpdate.vel[0] * extSec;
+      coin.pos[1] = latestUpdate.pos[1] + latestUpdate.vel[1] * extSec;
+      coin.pos[2] = latestUpdate.pos[2] + latestUpdate.vel[2] * extSec;
 
       coin.rot[0] = latestUpdate.rot[0];
       coin.rot[1] = latestUpdate.rot[1];
       coin.rot[2] = latestUpdate.rot[2];
       coin.rot[3] = latestUpdate.rot[3];
+      coin.vel[0] = latestUpdate.vel[0];
+      coin.vel[1] = latestUpdate.vel[1];
+      coin.vel[2] = latestUpdate.vel[2];
     }
 
     const pusherVel =
@@ -278,7 +306,7 @@ export class Interpolator {
 
   /** Merge state updates into knownCoins, skipping despawned IDs. */
   private mergeUpdates(
-    updates: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[]
+    updates: { id: number; pos: [number, number, number]; rot: [number, number, number, number]; vel: [number, number, number] }[]
   ): void {
     for (let i = 0, len = updates.length; i < len; i++) {
       const update = updates[i];
@@ -292,11 +320,15 @@ export class Interpolator {
         coin.rot[1] = update.rot[1];
         coin.rot[2] = update.rot[2];
         coin.rot[3] = update.rot[3];
+        coin.vel[0] = update.vel[0];
+        coin.vel[1] = update.vel[1];
+        coin.vel[2] = update.vel[2];
       } else {
         this.knownCoins.set(update.id, {
           id: update.id,
           pos: [update.pos[0], update.pos[1], update.pos[2]],
           rot: [update.rot[0], update.rot[1], update.rot[2], update.rot[3]],
+          vel: [update.vel[0], update.vel[1], update.vel[2]],
         });
       }
     }

@@ -247,8 +247,7 @@ export class GameLoop {
     const classifiedDespawns: { id: number; zone: string; owner_id: string }[] = [];
     const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
-    // Despawn + state collection only on network ticks (15Hz instead of 30Hz)
-    // Saves ~600 translation() WASM calls per skipped tick
+    // Despawn + state collection on network ticks (30Hz, every physics tick)
     if (isNetworkTick) {
       this.coins.forEach((coin, id) => {
         // Despawn check — reuse pos for state collection below
@@ -285,6 +284,7 @@ export class GameLoop {
         }
 
         const rot = coin.getRotation();
+        const vel = coin.getLinearVelocity();
 
         // Update game state
         this.coinManager.updateCoin(
@@ -306,6 +306,11 @@ export class GameLoop {
             Math.round(rot.y * f) / f,
             Math.round(rot.z * f) / f,
             Math.round(rot.w * f) / f,
+          ],
+          vel: [
+            Math.round(vel.x * f) / f,
+            Math.round(vel.y * f) / f,
+            Math.round(vel.z * f) / f,
           ],
         });
       });
@@ -383,7 +388,7 @@ export class GameLoop {
 
     this.tickCount++;
 
-    // 7. Broadcast state delta at reduced rate (e.g. 15Hz) to halve outbound bandwidth
+    // 7. Broadcast state delta (30Hz, every physics tick)
     if (this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
       const stateDelta: StateDeltaMessage = {
         op: "state_delta",

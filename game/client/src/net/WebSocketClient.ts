@@ -3,6 +3,18 @@ import { GameMessageSchema } from '@coin-pusher/shared';
 import { fromBinary } from '@bufbuild/protobuf';
 import * as msgpack from '@msgpack/msgpack';
 
+// Latency simulator: ?latency=100&jitter=35 → one-way 100ms ± 35ms
+function getLatencyConfig(): { enabled: boolean; delayMs: number; jitterMs: number } {
+  const params = new URLSearchParams(window.location.search);
+  const delay = parseInt(params.get('latency') || '0', 10);
+  const jitter = parseInt(params.get('jitter') || '0', 10);
+  if (delay > 0) {
+    console.log(`🔧 Latency simulator: ${delay}ms ± ${jitter}ms one-way`);
+  }
+  return { enabled: delay > 0, delayMs: delay, jitterMs: jitter };
+}
+const LATENCY_SIM = getLatencyConfig();
+
 export type MessageCallback = (message: ServerMessage) => void;
 
 export class WebSocketClient {
@@ -67,18 +79,14 @@ export class WebSocketClient {
           const msg = gm.msg;
           if (msg.case) {
             const converted = this.convertProtoToServerMessage(msg);
-            if (converted && this.messageCallback) {
-              this.messageCallback(converted);
-            }
+            if (converted) this.deliverMessage(converted);
             return;
           }
         }
 
         // Fallback: msgpack (for pong, welcome, heat_update, reward, batch_insert_ack)
         const message = msgpack.decode(bytes) as ServerMessage;
-        if (this.messageCallback) {
-          this.messageCallback(message);
-        }
+        this.deliverMessage(message);
       } catch (error) {
         console.error('Failed to decode message:', error);
       }
@@ -121,6 +129,7 @@ export class WebSocketClient {
             id: u.id,
             pos: [u.posX, u.posY, u.posZ] as [number, number, number],
             rot: [u.rotX, u.rotY, u.rotZ, u.rotW] as [number, number, number, number],
+            vel: [u.velX, u.velY, u.velZ] as [number, number, number],
           })),
           pusherZ: v.pusherZ,
         };
@@ -238,6 +247,17 @@ export class WebSocketClient {
     }
   }
 
+  private deliverMessage(message: ServerMessage): void {
+    if (!this.messageCallback) return;
+    if (LATENCY_SIM.enabled) {
+      const delay = LATENCY_SIM.delayMs + (Math.random() - 0.5) * 2 * LATENCY_SIM.jitterMs;
+      const cb = this.messageCallback;
+      setTimeout(() => cb(message), Math.max(0, delay));
+    } else {
+      this.messageCallback(message);
+    }
+  }
+
   send(message: ClientMessage): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not connected, cannot send message');
@@ -246,7 +266,13 @@ export class WebSocketClient {
 
     // Use MessagePack for binary encoding (40% smaller than JSON)
     const binary = msgpack.encode(message);
-    this.ws.send(binary);
+    if (LATENCY_SIM.enabled) {
+      const delay = LATENCY_SIM.delayMs + (Math.random() - 0.5) * 2 * LATENCY_SIM.jitterMs;
+      const ws = this.ws;
+      setTimeout(() => ws?.send(binary), Math.max(0, delay));
+    } else {
+      this.ws.send(binary);
+    }
   }
 
   onMessage(callback: MessageCallback): void {
