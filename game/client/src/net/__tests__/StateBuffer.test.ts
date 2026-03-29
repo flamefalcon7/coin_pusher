@@ -5,7 +5,7 @@ function makeState(serverTime: number, tick = 0, pusherZ = 0): BufferedState {
   return {
     serverTime,
     tick,
-    updates: [{ id: 1, pos: [0, 0, 0] as [number, number, number], rot: [0, 0, 0, 1] as [number, number, number, number] }],
+    updates: [{ id: 1, pos: [0, 0, 0] as [number, number, number], rot: [0, 0, 0, 1] as [number, number, number, number], vel: [0, 0, 0] as [number, number, number] }],
     pusherZ,
   };
 }

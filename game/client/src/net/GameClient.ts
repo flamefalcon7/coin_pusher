@@ -183,6 +183,7 @@ export class GameClient {
               id: b.id,
               pos: b.pos!,
               rot: b.rot!,
+              vel: [0, 0, 0] as [number, number, number],
             };
           });
         const snapshotPusherZ = message.bodies.find((b) => b.type === "pusher")?.z ?? 0;

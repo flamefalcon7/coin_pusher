@@ -31,6 +31,14 @@ export class StateBuffer {
   }
 
   addState(state: BufferedState): void {
+    // Drop out-of-order states — jitter can reorder messages, and
+    // binary search assumes monotonic serverTime in the ring buffer.
+    if (this.count > 0) {
+      const newestIdx = (this.head - 1 + this.capacity) % this.capacity;
+      const newest = this.buffer[newestIdx];
+      if (newest && state.serverTime <= newest.serverTime) return;
+    }
+
     this.buffer[this.head] = state;
     this.head = (this.head + 1) % this.capacity;
     if (this.count < this.capacity) {
