@@ -207,9 +207,29 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
-	// sponsor_config: broadcast sponsor configuration to all WS clients.
+	// sponsor_config: JSON from backend → re-encode as msgpack for WS clients.
 	sub, err = rl.nc.Subscribe(TopicSponsorConfig(rl.room), func(msg *nats.Msg) {
-		rl.hub.Broadcast(msg.Data)
+		var cfg struct {
+			Op       string `json:"op"        msgpack:"op"`
+			Sponsors []struct {
+				ID          string `json:"id"           msgpack:"id"`
+				BrandName   string `json:"brand_name"   msgpack:"brand_name"`
+				BrandColor  string `json:"brand_color"  msgpack:"brand_color"`
+				TokenSymbol string `json:"token_symbol" msgpack:"token_symbol"`
+				LogoURL     string `json:"logo_url"     msgpack:"logo_url"`
+				AdImageURL  string `json:"ad_image_url" msgpack:"ad_image_url"`
+			} `json:"sponsors" msgpack:"sponsors"`
+		}
+		if err := json.Unmarshal(msg.Data, &cfg); err != nil {
+			rl.log.Errorw("sponsor_config json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(cfg)
+		if err != nil {
+			rl.log.Errorw("sponsor_config msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.Broadcast(packed)
 	})
 	if err != nil {
 		return err
@@ -243,23 +263,36 @@ func (rl *Relay) Start() error {
 
 	// sponsor_reward: JSON from backend → re-encode as msgpack for target user.
 	sub, err = rl.nc.Subscribe("game."+rl.room+".sponsor_reward", func(msg *nats.Msg) {
-		var notify struct {
-			Op          string  `json:"op"           msgpack:"op"`
-			UserID      string  `json:"user_id"      msgpack:"user_id"`
-			SponsorName string  `json:"sponsor_name" msgpack:"sponsor_name"`
-			TokenSymbol string  `json:"token_symbol" msgpack:"token_symbol"`
-			Amount      float64 `json:"amount"       msgpack:"amount"`
+		var incoming struct {
+			Op          string `json:"op"`
+			UserID      string `json:"user_id"`
+			CampaignID  string `json:"campaign_id"`
+			TokenSymbol string `json:"token_symbol"`
+			Amount      string `json:"amount"`
 		}
-		if err := json.Unmarshal(msg.Data, &notify); err != nil {
+		if err := json.Unmarshal(msg.Data, &incoming); err != nil {
 			rl.log.Errorw("sponsor_reward json decode error", "error", err)
 			return
 		}
-		packed, err := msgpack.Marshal(notify)
+		// Re-encode as msgpack matching client SponsorRewardMessage type.
+		packed, err := msgpack.Marshal(struct {
+			Op          string `msgpack:"op"`
+			CampaignID  string `msgpack:"campaign_id"`
+			TokenSymbol string `msgpack:"token_symbol"`
+			Amount      string `msgpack:"amount"`
+			TotalBalance string `msgpack:"total_balance"`
+		}{
+			Op:           "sponsor_reward",
+			CampaignID:   incoming.CampaignID,
+			TokenSymbol:  incoming.TokenSymbol,
+			Amount:       incoming.Amount,
+			TotalBalance: incoming.Amount, // v1: total_balance equals amount per flush
+		})
 		if err != nil {
 			rl.log.Errorw("sponsor_reward msgpack encode error", "error", err)
 			return
 		}
-		rl.hub.SendToUser(notify.UserID, packed)
+		rl.hub.SendToUser(incoming.UserID, packed)
 	})
 	if err != nil {
 		return err

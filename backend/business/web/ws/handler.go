@@ -174,7 +174,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.sponsorCore != nil {
 		if camps, err := h.sponsorCore.ListActive(context.Background()); err == nil && len(camps) > 0 {
 			type sponsorEntry struct {
-				CampaignID  string `msgpack:"campaign_id"`
+				ID          string `msgpack:"id"`
 				BrandName   string `msgpack:"brand_name"`
 				BrandColor  string `msgpack:"brand_color"`
 				TokenSymbol string `msgpack:"token_symbol"`
@@ -188,7 +188,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			msg := sponsorConfigMsg{Op: "sponsor_config"}
 			for _, camp := range camps {
 				msg.Sponsors = append(msg.Sponsors, sponsorEntry{
-					CampaignID:  camp.CampaignID.String(),
+					ID:          camp.CampaignID.String(),
 					BrandName:   camp.BrandName,
 					BrandColor:  camp.BrandColor,
 					TokenSymbol: camp.TokenSymbol,
