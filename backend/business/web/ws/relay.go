@@ -207,6 +207,65 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// sponsor_config: broadcast sponsor configuration to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicSponsorConfig(rl.room), func(msg *nats.Msg) {
+		rl.hub.Broadcast(msg.Data)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// sponsor_bonus: broadcast sponsor bonus drop announcements to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicSponsorBonusDrop(rl.room), func(msg *nats.Msg) {
+		var drop struct {
+			Op          string `json:"op"           msgpack:"op"`
+			SponsorID   string `json:"sponsor_id"   msgpack:"sponsor_id"`
+			SponsorName string `json:"sponsor_name" msgpack:"sponsor_name"`
+			TokenSymbol string `json:"token_symbol" msgpack:"token_symbol"`
+			CoinCount   int    `json:"coin_count"   msgpack:"coin_count"`
+		}
+		if err := json.Unmarshal(msg.Data, &drop); err != nil {
+			rl.log.Errorw("sponsor_bonus json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(drop)
+		if err != nil {
+			rl.log.Errorw("sponsor_bonus msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.Broadcast(packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// sponsor_reward: JSON from backend → re-encode as msgpack for target user.
+	sub, err = rl.nc.Subscribe("game."+rl.room+".sponsor_reward", func(msg *nats.Msg) {
+		var notify struct {
+			Op          string  `json:"op"           msgpack:"op"`
+			UserID      string  `json:"user_id"      msgpack:"user_id"`
+			SponsorName string  `json:"sponsor_name" msgpack:"sponsor_name"`
+			TokenSymbol string  `json:"token_symbol" msgpack:"token_symbol"`
+			Amount      float64 `json:"amount"       msgpack:"amount"`
+		}
+		if err := json.Unmarshal(msg.Data, &notify); err != nil {
+			rl.log.Errorw("sponsor_reward json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(notify)
+		if err != nil {
+			rl.log.Errorw("sponsor_reward msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.SendToUser(notify.UserID, packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	rl.log.Infow("nats relay started", "room", rl.room)
 	return nil
 }

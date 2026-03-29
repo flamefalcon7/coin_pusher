@@ -1,9 +1,12 @@
 import type { BodyState, BodyType, WorldState } from "@coin-pusher/shared";
 import { PROTOCOL_VERSION } from "@coin-pusher/shared";
 
+// Extended BodyState with sponsor tracking (for serialization to protobuf)
+export type BodyStateWithSponsor = BodyState & { sponsor_id?: string };
+
 export class GameState {
   private nextBodyId: number = 1; // ID 0 reserved for pusher
-  private bodies: Map<number, BodyState> = new Map();
+  private bodies: Map<number, BodyStateWithSponsor> = new Map();
   private tick: number = 0;
   private pusherZ: number = 0;
 
@@ -26,7 +29,8 @@ export class GameState {
     y: number,
     z: number,
     rotation?: [number, number, number, number],
-    bodyType: BodyType = "coin"
+    bodyType: BodyType = "coin",
+    sponsorId?: string
   ): void {
     // Default rotation: 90 degrees around X-axis (coin standing up)
     const rot: [number, number, number, number] = rotation || [
@@ -35,12 +39,16 @@ export class GameState {
       0,
       Math.SQRT1_2,
     ];
-    this.bodies.set(id, {
+    const body: BodyStateWithSponsor = {
       id,
       type: bodyType,
       pos: [x, y, z],
       rot,
-    });
+    };
+    if (sponsorId) {
+      body.sponsor_id = sponsorId;
+    }
+    this.bodies.set(id, body);
   }
 
   updateCoinState(
@@ -49,7 +57,7 @@ export class GameState {
     rot: [number, number, number, number]
   ): void {
     const body = this.bodies.get(id);
-    if (body && (body.type === "coin" || body.type === "key_coin")) {
+    if (body && (body.type === "coin" || body.type === "key_coin" || body.type === "sponsor_coin")) {
       body.pos = pos;
       body.rot = rot;
     }

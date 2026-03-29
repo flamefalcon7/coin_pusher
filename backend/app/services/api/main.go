@@ -31,6 +31,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/gamegrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/inventorygrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/progressgrp"
+	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/sponsorgrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/usergrp"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
@@ -39,6 +40,8 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/sponsor"
+	sponsordb "github.com/flamefalcon/coin-pusher/backend/business/core/sponsor/stores/sponsordb"
 	inventorydb "github.com/flamefalcon/coin-pusher/backend/business/core/inventory/stores/inventorydb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/progress"
 	progressdb "github.com/flamefalcon/coin-pusher/backend/business/core/progress/stores/progressdb"
@@ -269,7 +272,15 @@ func run() error {
 		}
 	}
 
-	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, wsOrigins)
+	// Sponsor domain.
+	sponsorStore := sponsordb.NewStore(db)
+	sponsorCore := sponsor.NewCore(
+		db,
+		sponsorStore,
+		func(dbtx database.DBTX) sponsor.Storer { return sponsordb.NewStore(dbtx) },
+	)
+
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, sponsorCore, wsOrigins)
 
 	// Subscribe to slot_status from game server for cap enforcement.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
@@ -278,7 +289,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, sponsorCore, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -912,6 +923,7 @@ func buildAPIMux(
 	inventoryCore *inventory.Core,
 	depositCore *deposit.Core,
 	progressCore *progress.Core,
+	sponsorCore *sponsor.Core,
 	nc *nats.Conn,
 	wsHandler *ws.Handler,
 ) *chi.Mux {
@@ -990,6 +1002,31 @@ func buildAPIMux(
 		r.Put("/v1/admin/progress/{id}", mid.Errors(log, progGrp.UpdateProgress))
 		r.Get("/v1/admin/progress", mid.Errors(log, progGrp.ListAllProgress))
 		r.Get("/v1/admin/progress/{id}/users", mid.Errors(log, progGrp.ListUserProgressByProgressID))
+	})
+
+	// Sponsor routes — mix of public and JWT-protected.
+	sponsorGrp := sponsorgrp.New(sponsorCore, log)
+	mux.Route("/v1/sponsor", func(r chi.Router) {
+		// Public endpoints.
+		r.Get("/campaigns", mid.Errors(log, sponsorGrp.List))
+		r.Get("/campaign/{id}", mid.Errors(log, sponsorGrp.GetByID))
+
+		// JWT-protected endpoints.
+		r.Group(func(r chi.Router) {
+			r.Use(mid.Authenticate(a))
+			r.Post("/campaign", mid.Errors(log, sponsorGrp.Create))
+			r.Post("/campaign/{id}/upload", mid.Errors(log, sponsorGrp.Upload))
+			r.Get("/balances", mid.Errors(log, sponsorGrp.GetBalances))
+		})
+	})
+
+	// Static file server for sponsor uploads with security headers.
+	uploadsFS := http.StripPrefix("/uploads/sponsors/", http.FileServer(http.Dir("./uploads/sponsors")))
+	mux.Get("/uploads/sponsors/*", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self'")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		uploadsFS.ServeHTTP(w, r)
 	})
 
 	// Game-secret-protected
