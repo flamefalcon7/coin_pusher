@@ -46,8 +46,6 @@ export class DebugPanel {
     this.addSlider("Delay Min", "interpolationDelayMin", 0, 300, 1, "ms");
     this.addSlider("Delay Max", "interpolationDelayMax", 100, 1000, 10, "ms");
     this.addSlider("Extrap Max", "extrapolationMaxTime", 0, 500, 5, "ms");
-    this.addToggle("Hermite", "useHermite");
-    this.addToggle("Hermite Clamp", "hermiteClamp");
 
     // Reset button
     const resetBtn = document.createElement("button");
@@ -69,18 +67,12 @@ export class DebugPanel {
       debugConfig.interpolationDelayMin = 100;
       debugConfig.interpolationDelayMax = 500;
       debugConfig.extrapolationMaxTime = 150;
-      debugConfig.useHermite = true;
-      debugConfig.hermiteClamp = true;
       // Refresh all inputs
       this.container.querySelectorAll<HTMLInputElement>("input[data-key]").forEach((input) => {
         const key = input.dataset.key as keyof typeof debugConfig;
-        if (input.type === "checkbox") {
-          input.checked = debugConfig[key] as boolean;
-        } else {
-          input.value = String(debugConfig[key]);
-          const valSpan = input.parentElement?.querySelector(".val") as HTMLSpanElement;
-          if (valSpan) valSpan.textContent = String(debugConfig[key]);
-        }
+        input.value = String(debugConfig[key]);
+        const valSpan = input.parentElement?.querySelector(".val") as HTMLSpanElement;
+        if (valSpan) valSpan.textContent = String(debugConfig[key]);
       });
     };
     this.container.appendChild(resetBtn);
@@ -148,31 +140,6 @@ export class DebugPanel {
     this.container.appendChild(row);
   }
 
-  private addToggle(label: string, key: keyof typeof debugConfig): void {
-    const row = document.createElement("div");
-    Object.assign(row.style, {
-      marginBottom: "6px",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-    });
-
-    const labelEl = document.createElement("span");
-    labelEl.textContent = label;
-    row.appendChild(labelEl);
-
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = debugConfig[key] as boolean;
-    input.dataset.key = key;
-    input.onchange = () => {
-      (debugConfig as any)[key] = input.checked;
-    };
-
-    row.appendChild(input);
-    this.container.appendChild(row);
-  }
-
   private startStatsLoop(): void {
     const update = () => {
       const rtt = this.clockSync.getRTT();
@@ -186,7 +153,7 @@ export class DebugPanel {
       this.statsEl.innerHTML = [
         `RTT: ${rtt}ms | Offset: ${offset.toFixed(0)}ms`,
         `Buffer: ${bufSize} | Delay: ${delay.toFixed(0)}ms`,
-        `Mode: ${debugConfig.useHermite ? "Hermite" : "LERP"}${debugConfig.hermiteClamp ? "+clamp" : ""}`,
+        `Mode: LERP`,
       ].join("<br>");
       this.rafId = requestAnimationFrame(update);
     };

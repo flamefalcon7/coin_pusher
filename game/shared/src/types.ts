@@ -48,7 +48,6 @@ export type StateUpdate = {
   id: number;
   pos: [number, number, number];
   rot: [number, number, number, number];
-  vel: [number, number, number];
 };
 
 // Despawn zone classification

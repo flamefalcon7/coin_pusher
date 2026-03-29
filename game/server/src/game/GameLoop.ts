@@ -284,7 +284,6 @@ export class GameLoop {
         }
 
         const rot = coin.getRotation();
-        const vel = coin.getLinearVelocity();
 
         // Update game state
         this.coinManager.updateCoin(
@@ -306,11 +305,6 @@ export class GameLoop {
             Math.round(rot.y * f) / f,
             Math.round(rot.z * f) / f,
             Math.round(rot.w * f) / f,
-          ],
-          vel: [
-            Math.round(vel.x * f) / f,
-            Math.round(vel.y * f) / f,
-            Math.round(vel.z * f) / f,
           ],
         });
       });

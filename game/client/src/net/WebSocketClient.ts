@@ -129,7 +129,6 @@ export class WebSocketClient {
             id: u.id,
             pos: [u.posX, u.posY, u.posZ] as [number, number, number],
             rot: [u.rotX, u.rotY, u.rotZ, u.rotW] as [number, number, number, number],
-            vel: [u.velX, u.velY, u.velZ] as [number, number, number],
           })),
           pusherZ: v.pusherZ,
         };

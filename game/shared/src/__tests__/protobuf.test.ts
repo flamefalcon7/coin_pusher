@@ -18,8 +18,8 @@ describe("protobuf roundtrip", () => {
           serverTime: 1708000000000,
           tick: 42,
           updates: [
-            { id: 1, posX: 0.123, posY: 0.456, posZ: 0.789, rotX: 0.1, rotY: 0.2, rotZ: 0.3, rotW: 0.9, velX: 0.5, velY: -1.2, velZ: 0.0 },
-            { id: 2, posX: -0.5, posY: 1.0, posZ: 0.0, rotX: 0.0, rotY: 0.0, rotZ: 0.0, rotW: 1.0, velX: 0.0, velY: -2.0, velZ: 0.1 },
+            { id: 1, posX: 0.123, posY: 0.456, posZ: 0.789, rotX: 0.1, rotY: 0.2, rotZ: 0.3, rotW: 0.9 },
+            { id: 2, posX: -0.5, posY: 1.0, posZ: 0.0, rotX: 0.0, rotY: 0.0, rotZ: 0.0, rotW: 1.0 },
           ],
           pusherZ: 0.15,
         },
@@ -37,11 +37,8 @@ describe("protobuf roundtrip", () => {
     expect(v.updates[0].posX).toBeCloseTo(0.123, 3);
     expect(v.updates[0].posY).toBeCloseTo(0.456, 3);
     expect(v.updates[0].rotW).toBeCloseTo(0.9, 3);
-    expect(v.updates[0].velX).toBeCloseTo(0.5, 3);
-    expect(v.updates[0].velY).toBeCloseTo(-1.2, 3);
     expect(v.updates[1].posX).toBeCloseTo(-0.5, 3);
     expect(v.updates[1].rotW).toBeCloseTo(1.0, 3);
-    expect(v.updates[1].velY).toBeCloseTo(-2.0, 3);
     expect(v.pusherZ).toBeCloseTo(0.15, 3);
   });
 
@@ -252,9 +249,6 @@ describe("protobuf byte size", () => {
             rotY: Math.random() * 0.5,
             rotZ: Math.random() * 0.5,
             rotW: 0.866,
-            velX: (Math.random() - 0.5) * 2,
-            velY: (Math.random() - 0.5) * 4,
-            velZ: (Math.random() - 0.5) * 2,
           })),
           pusherZ: 0.1,
         },
@@ -274,11 +268,11 @@ describe("protobuf byte size", () => {
     const envelopeSize = emptyBytes.length;
     const perCoinBytes = (bytes.length - envelopeSize) / 100;
 
-    // Per-coin: 1 varint id + 10 floats (5 bytes each) + length prefix ≈ 54 bytes
-    // (pos×3 + rot×4 + vel×3 = 10 floats)
-    expect(perCoinBytes).toBeLessThan(58);
+    // Per-coin: 1 varint id + 7 floats (5 bytes each) + length prefix ≈ 39 bytes
+    // (pos×3 + rot×4 = 7 floats)
+    expect(perCoinBytes).toBeLessThan(42);
     // Total must be reasonable for 100 coins
-    expect(bytes.length).toBeLessThan(5800);
+    expect(bytes.length).toBeLessThan(4200);
   });
 });
 
@@ -290,7 +284,7 @@ describe("mixed-format detection", () => {
         value: {
           serverTime: Date.now(),
           tick: 1,
-          updates: [{ id: 1, posX: 0.1, posY: 0.2, posZ: 0.3, rotX: 0, rotY: 0, rotZ: 0, rotW: 1, velX: 0, velY: -1, velZ: 0 }],
+          updates: [{ id: 1, posX: 0.1, posY: 0.2, posZ: 0.3, rotX: 0, rotY: 0, rotZ: 0, rotW: 1 }],
           pusherZ: 0,
         },
       },
