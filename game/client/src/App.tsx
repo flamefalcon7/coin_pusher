@@ -27,6 +27,8 @@ import { DepositPage } from "./pages/DepositPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
 import { ProgressPage } from "./pages/ProgressPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { SponsorPage } from "./pages/SponsorPage";
+import { AdminSponsorsPage } from "./pages/AdminSponsorsPage";
 
 import { SceneManager } from "./scene/SceneManager";
 import { BonusDropVFX } from "./scene/BonusDropVFX";
@@ -976,6 +978,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   const showWithdrawPage = location.pathname === '/withdraw';
   const showProgressPage = location.pathname === '/progress';
   const showProfilePage = location.pathname === '/profile';
+  const showSponsorPage = location.pathname === '/sponsor';
+  const showAdminSponsors = location.pathname === '/admin/sponsors';
 
   const handleCashBalanceChange = useCallback((newBalance: string) => {
     setBalanceCash(newBalance);
@@ -989,7 +993,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       {isSpectator ? (
         <SpectatorBanner onConnectWallet={onRequestLogin} />
       ) : (
-        <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} onLogout={onAuthFailure} />
+        <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} role={account?.role} onLogout={onAuthFailure} />
       )}
 
       {sponsorBalances.length > 0 && <SponsorBalances balances={sponsorBalances} />}
@@ -1227,6 +1231,14 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
           apiUrl={API_URL}
           address={address}
         />
+      )}
+
+      {!isSpectator && showSponsorPage && (
+        <SponsorPage token={token!} apiUrl={API_URL} />
+      )}
+
+      {!isSpectator && showAdminSponsors && (
+        <AdminSponsorsPage token={token!} apiUrl={API_URL} />
       )}
 
       {/* MegaspeakerPanel — read-only for spectators (disable send) */}

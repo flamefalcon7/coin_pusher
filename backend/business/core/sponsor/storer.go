@@ -17,6 +17,8 @@ type Storer interface {
 	CreditBalance(ctx context.Context, campaignID, accountID uuid.UUID, amount decimal.Decimal) error
 	CreateRewardLog(ctx context.Context, log RewardLog) error
 	QueryBalancesByAccount(ctx context.Context, accountID uuid.UUID) ([]SponsorBalance, error)
+	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
+	QueryByAccount(ctx context.Context, accountID uuid.UUID) ([]Campaign, error)
 	CreateQuota(ctx context.Context, entry QuotaEntry) error
 	ConsumeQuota(ctx context.Context, quotaID uuid.UUID, coinsSpawned int) error
 	QueryStaleQuotas(ctx context.Context, olderThan time.Time) ([]QuotaEntry, error)

@@ -91,6 +91,39 @@ func (c *Core) ListActive(ctx context.Context) ([]Campaign, error) {
 	return camps, nil
 }
 
+// ListByAccount returns all campaigns created by the given account.
+func (c *Core) ListByAccount(ctx context.Context, accountID uuid.UUID) ([]Campaign, error) {
+	camps, err := c.storer.QueryByAccount(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("listing campaigns by account %s: %w", accountID, err)
+	}
+	return camps, nil
+}
+
+// Pause sets a campaign's status to "paused".
+func (c *Core) Pause(ctx context.Context, campaignID uuid.UUID) error {
+	if err := c.storer.UpdateStatus(ctx, campaignID, StatusPaused); err != nil {
+		return fmt.Errorf("pausing campaign %s: %w", campaignID, err)
+	}
+	return nil
+}
+
+// Resume sets a campaign's status to "active".
+func (c *Core) Resume(ctx context.Context, campaignID uuid.UUID) error {
+	if err := c.storer.UpdateStatus(ctx, campaignID, StatusActive); err != nil {
+		return fmt.Errorf("resuming campaign %s: %w", campaignID, err)
+	}
+	return nil
+}
+
+// Expire sets a campaign's status to "expired".
+func (c *Core) Expire(ctx context.Context, campaignID uuid.UUID) error {
+	if err := c.storer.UpdateStatus(ctx, campaignID, StatusExpired); err != nil {
+		return fmt.Errorf("expiring campaign %s: %w", campaignID, err)
+	}
+	return nil
+}
+
 // DecrementPool atomically reduces pool_remaining and returns the new remaining value.
 func (c *Core) DecrementPool(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) (decimal.Decimal, error) {
 	remaining, err := c.storer.DecrementPool(ctx, campaignID, amount)

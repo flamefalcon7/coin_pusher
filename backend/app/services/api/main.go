@@ -1131,7 +1131,17 @@ func buildAPIMux(
 			r.Post("/campaign", mid.Errors(log, sponsorGrp.Create))
 			r.Post("/campaign/{id}/upload", mid.Errors(log, sponsorGrp.Upload))
 			r.Get("/balances", mid.Errors(log, sponsorGrp.GetBalances))
+			r.Get("/campaigns/mine", mid.Errors(log, sponsorGrp.ListMine))
 		})
+	})
+
+	// Admin sponsor routes — JWT + admin role required.
+	mux.Group(func(r chi.Router) {
+		r.Use(mid.Authenticate(a))
+		r.Use(mid.RequireAdmin())
+		r.Put("/v1/admin/sponsor/campaign/{id}/pause", mid.Errors(log, sponsorGrp.Pause))
+		r.Put("/v1/admin/sponsor/campaign/{id}/resume", mid.Errors(log, sponsorGrp.Resume))
+		r.Delete("/v1/admin/sponsor/campaign/{id}", mid.Errors(log, sponsorGrp.Remove))
 	})
 
 	// Static file server for sponsor uploads with security headers.

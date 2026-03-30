@@ -143,6 +143,26 @@
   border-color: var(--accent-pink);
 }
 
+.player-info-sponsor {
+  color: var(--accent-green);
+  border-color: rgba(107, 191, 89, 0.3);
+}
+
+.player-info-sponsor:hover {
+  opacity: 1;
+  border-color: var(--accent-green);
+}
+
+.player-info-admin-sponsors {
+  color: var(--accent-orange);
+  border-color: rgba(232, 150, 32, 0.3);
+}
+
+.player-info-admin-sponsors:hover {
+  opacity: 1;
+  border-color: var(--accent-orange);
+}
+
 .player-info-logout {
   padding: 2px 8px;
   border: 1px solid rgba(245, 230, 184, 0.2);

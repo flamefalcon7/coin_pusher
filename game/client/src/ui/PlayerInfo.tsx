@@ -8,6 +8,7 @@ interface PlayerInfoProps {
   balanceCash: string;
   displayName: string | null;
   address: string;
+  role?: string;
   onLogout: () => void;
 }
 
@@ -24,7 +25,7 @@ function truncAddr(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-export function PlayerInfo({ balancePlay, balanceCash, displayName, address, onLogout }: PlayerInfoProps) {
+export function PlayerInfo({ balancePlay, balanceCash, displayName, address, role, onLogout }: PlayerInfoProps) {
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -82,6 +83,10 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, onL
         <Link to="/progress" className="player-info-action-btn player-info-missions">Missions</Link>
         <Link to="/deposit" className="player-info-action-btn player-info-deposit">Deposit</Link>
         <Link to="/withdraw" className="player-info-action-btn player-info-withdraw">Withdraw</Link>
+        <Link to="/sponsor" className="player-info-action-btn player-info-sponsor">Sponsor</Link>
+        {role === 'admin' && (
+          <Link to="/admin/sponsors" className="player-info-action-btn player-info-admin-sponsors">Admin: Sponsors</Link>
+        )}
         <button className="player-info-logout" onClick={onLogout}>
           Logout
         </button>
