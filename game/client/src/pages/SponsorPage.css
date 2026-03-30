@@ -1,0 +1,379 @@
+.sponsor-page {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-deep);
+  overflow-y: auto;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  color: var(--text-color);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.sponsor-header {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.sponsor-back-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.sponsor-back-link:hover {
+  opacity: 1;
+}
+
+.sponsor-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-purple);
+}
+
+/* ── Loading / Error ─────────────────────────────────────────────────── */
+
+.sponsor-loading {
+  margin-top: 80px;
+  font-size: 16px;
+  color: rgba(245, 230, 184, 0.5);
+  animation: sponsorPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sponsorPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.sponsor-error {
+  margin-top: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.sponsor-error p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--accent-pink);
+}
+
+.sponsor-retry-btn {
+  padding: 8px 24px;
+  border: 1px solid var(--accent-pink);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-pink);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sponsor-retry-btn:hover {
+  background: rgba(232, 57, 107, 0.15);
+}
+
+/* ── Sections ────────────────────────────────────────────────────────── */
+
+.sponsor-sections {
+  width: 100%;
+  max-width: 480px;
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Section heading ─────────────────────────────────────────────────── */
+
+.sponsor-section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+.sponsor-empty {
+  font-size: 13px;
+  color: rgba(245, 230, 184, 0.4);
+  text-align: center;
+  padding: 16px;
+}
+
+/* ── Card container ──────────────────────────────────────────────────── */
+
+.sponsor-card {
+  padding: 16px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: sponsorCardIn 0.35s ease-out;
+}
+
+@keyframes sponsorCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Form ────────────────────────────────────────────────────────────── */
+
+.sponsor-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sponsor-form-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sponsor-input {
+  padding: 8px 12px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(26, 14, 46, 0.6);
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.sponsor-input:focus {
+  border-color: var(--accent-purple);
+}
+
+.sponsor-input::placeholder {
+  color: rgba(245, 230, 184, 0.25);
+}
+
+.sponsor-select {
+  padding: 8px 12px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(26, 14, 46, 0.6);
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  appearance: none;
+}
+
+.sponsor-select:focus {
+  border-color: var(--accent-purple);
+}
+
+.sponsor-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sponsor-color-input {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sponsor-color-hex {
+  font-size: 13px;
+  color: rgba(245, 230, 184, 0.6);
+  font-family: monospace;
+}
+
+.sponsor-inline-error {
+  font-size: 11px;
+  color: var(--accent-pink);
+  font-weight: 600;
+}
+
+.sponsor-submit-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.sponsor-submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.sponsor-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Image upload ────────────────────────────────────────────────────── */
+
+.sponsor-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  border: 2px dashed rgba(245, 230, 184, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sponsor-upload-area:hover,
+.sponsor-upload-area--drag {
+  border-color: var(--accent-teal);
+  background: rgba(78, 205, 196, 0.05);
+}
+
+.sponsor-upload-area-text {
+  font-size: 13px;
+  color: rgba(245, 230, 184, 0.5);
+  text-align: center;
+}
+
+.sponsor-upload-hint {
+  font-size: 11px;
+  color: rgba(245, 230, 184, 0.3);
+}
+
+.sponsor-upload-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 8px;
+  background: rgba(26, 14, 46, 0.4);
+}
+
+.sponsor-upload-preview img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.sponsor-upload-preview-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sponsor-upload-preview-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+  word-break: break-all;
+}
+
+.sponsor-upload-preview-size {
+  font-size: 11px;
+  color: rgba(245, 230, 184, 0.4);
+}
+
+.sponsor-upload-remove {
+  padding: 4px 10px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-pink);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.sponsor-upload-remove:hover {
+  opacity: 1;
+}
+
+/* ── Success toast ───────────────────────────────────────────────────── */
+
+.sponsor-success {
+  font-size: 13px;
+  color: var(--accent-green);
+  font-weight: 700;
+  text-align: center;
+  padding: 8px;
+}
+
+/* ── Balance rows ────────────────────────────────────────────────────── */
+
+.sponsor-balance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sponsor-balance-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 14px;
+  background: rgba(26, 14, 46, 0.4);
+  border-radius: 8px;
+}
+
+.sponsor-balance-symbol {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.6);
+  text-transform: uppercase;
+}
+
+.sponsor-balance-amount {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-green);
+}
+
+/* ── Campaign list ───────────────────────────────────────────────────── */
+
+.sponsor-campaign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .sponsor-header {
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px 16px;
+  }
+}

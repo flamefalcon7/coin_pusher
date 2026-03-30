@@ -139,6 +139,38 @@ func (s *Store) QueryBalancesByAccount(ctx context.Context, accountID uuid.UUID)
 	return bals, nil
 }
 
+// UpdateStatus sets the status of a campaign.
+func (s *Store) UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error {
+	const q = `UPDATE sponsor_campaigns SET status = $1, updated_at = now() WHERE campaign_id = $2`
+
+	res, err := s.db.ExecContext(ctx, q, status, campaignID)
+	if err != nil {
+		return fmt.Errorf("updating campaign status: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrNotFound, 404)
+	}
+
+	return nil
+}
+
+// QueryByAccount returns all campaigns created by the given account.
+func (s *Store) QueryByAccount(ctx context.Context, accountID uuid.UUID) ([]sponsor.Campaign, error) {
+	const q = `SELECT * FROM sponsor_campaigns WHERE created_by = $1 ORDER BY created_at DESC`
+
+	var camps []sponsor.Campaign
+	if err := s.db.SelectContext(ctx, &camps, q, accountID); err != nil {
+		return nil, fmt.Errorf("selecting campaigns by account %s: %w", accountID, err)
+	}
+
+	return camps, nil
+}
+
 // CreateQuota inserts a new quota entry.
 func (s *Store) CreateQuota(ctx context.Context, entry sponsor.QuotaEntry) error {
 	const q = `

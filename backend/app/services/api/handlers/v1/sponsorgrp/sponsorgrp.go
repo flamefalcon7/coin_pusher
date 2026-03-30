@@ -271,6 +271,74 @@ func (r readerAt) ReadAt(p []byte, off int64) (n int, err error) {
 	return
 }
 
+// ListMine handles GET /v1/sponsor/campaigns/mine.
+func (g *Group) ListMine(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	claims, ok := mid.GetClaims(ctx)
+	if !ok {
+		return v1.NewAuthError()
+	}
+	accountID, err := uuid.Parse(claims.AccountID)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid account id"), http.StatusBadRequest)
+	}
+
+	camps, err := g.sponsor.ListByAccount(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("listing my campaigns: %w", err)
+	}
+
+	if camps == nil {
+		camps = []sponsor.Campaign{}
+	}
+
+	return v1.Respond(w, http.StatusOK, camps)
+}
+
+// Pause handles PUT /v1/admin/sponsor/campaign/{id}/pause.
+func (g *Group) Pause(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	idStr := chi.URLParam(r, "id")
+	campaignID, err := uuid.Parse(idStr)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid campaign id"), http.StatusBadRequest)
+	}
+
+	if err := g.sponsor.Pause(ctx, campaignID); err != nil {
+		return fmt.Errorf("pausing campaign: %w", err)
+	}
+
+	return v1.Respond(w, http.StatusOK, map[string]string{"status": "paused"})
+}
+
+// Resume handles PUT /v1/admin/sponsor/campaign/{id}/resume.
+func (g *Group) Resume(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	idStr := chi.URLParam(r, "id")
+	campaignID, err := uuid.Parse(idStr)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid campaign id"), http.StatusBadRequest)
+	}
+
+	if err := g.sponsor.Resume(ctx, campaignID); err != nil {
+		return fmt.Errorf("resuming campaign: %w", err)
+	}
+
+	return v1.Respond(w, http.StatusOK, map[string]string{"status": "active"})
+}
+
+// Remove handles DELETE /v1/admin/sponsor/campaign/{id}.
+func (g *Group) Remove(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	idStr := chi.URLParam(r, "id")
+	campaignID, err := uuid.Parse(idStr)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid campaign id"), http.StatusBadRequest)
+	}
+
+	if err := g.sponsor.Expire(ctx, campaignID); err != nil {
+		return fmt.Errorf("removing campaign: %w", err)
+	}
+
+	return v1.Respond(w, http.StatusOK, map[string]string{"status": "expired"})
+}
+
 // GetBalances handles GET /v1/sponsor/balances.
 func (g *Group) GetBalances(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	claims, ok := mid.GetClaims(ctx)
