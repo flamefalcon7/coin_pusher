@@ -24,6 +24,7 @@ type mockStorer struct {
 	queryBalancesByAccountFn func(ctx context.Context, accountID uuid.UUID) ([]SponsorBalance, error)
 	updateStatusFn          func(ctx context.Context, campaignID uuid.UUID, status string) error
 	queryByAccountFn        func(ctx context.Context, accountID uuid.UUID) ([]Campaign, error)
+	restorePoolFn           func(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) error
 	createQuotaFn           func(ctx context.Context, entry QuotaEntry) error
 	consumeQuotaFn          func(ctx context.Context, quotaID uuid.UUID, coinsSpawned int) error
 	queryStaleQuotasFn      func(ctx context.Context, olderThan time.Time) ([]QuotaEntry, error)
@@ -91,6 +92,13 @@ func (m *mockStorer) QueryByAccount(ctx context.Context, accountID uuid.UUID) ([
 		return m.queryByAccountFn(ctx, accountID)
 	}
 	return nil, nil
+}
+
+func (m *mockStorer) RestorePool(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) error {
+	if m.restorePoolFn != nil {
+		return m.restorePoolFn(ctx, campaignID, amount)
+	}
+	return nil
 }
 
 func (m *mockStorer) CreateQuota(ctx context.Context, entry QuotaEntry) error {
@@ -682,12 +690,11 @@ func TestReconcileStaleQuotas(t *testing.T) {
 					}
 					return nil
 				},
-				decrementPoolFn: func(ctx context.Context, id uuid.UUID, amount decimal.Decimal) (decimal.Decimal, error) {
-					// Should receive negative amount (restoring pool).
-					if !amount.Equal(tokenAmount.Neg()) {
-						t.Errorf("amount = %s, want %s (negative for restore)", amount, tokenAmount.Neg())
+				restorePoolFn: func(ctx context.Context, id uuid.UUID, amount decimal.Decimal) error {
+					if !amount.Equal(tokenAmount) {
+						t.Errorf("amount = %s, want %s", amount, tokenAmount)
 					}
-					return decimal.Zero, nil
+					return nil
 				},
 			},
 			wantErr: false,
