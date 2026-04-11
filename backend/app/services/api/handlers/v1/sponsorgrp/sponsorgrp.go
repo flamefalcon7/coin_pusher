@@ -97,8 +97,8 @@ func (g *Group) Create(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		TokenDecimals: req.TokenDecimals,
 		BrandColor:    req.BrandColor,
 		BrandName:     req.BrandName,
-		LogoURL:       req.LogoURL,
-		AdImageURL:    req.AdImageURL,
+		LogoURL:       "", // URLs only set via /upload endpoint
+		AdImageURL:    "", // URLs only set via /upload endpoint
 		PoolTotal:     poolTotal,
 		RewardPerCoin: rewardPerCoin,
 	}
@@ -153,7 +153,10 @@ func (g *Group) Upload(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return v1.NewAuthError()
 	}
-	_ = claims // used for auth gate
+	accountID, err := uuid.Parse(claims.AccountID)
+	if err != nil {
+		return v1.NewRequestError(fmt.Errorf("invalid account id"), http.StatusBadRequest)
+	}
 
 	idStr := chi.URLParam(r, "id")
 	campaignID, err := uuid.Parse(idStr)
@@ -161,9 +164,13 @@ func (g *Group) Upload(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		return v1.NewRequestError(fmt.Errorf("invalid campaign id"), http.StatusBadRequest)
 	}
 
-	// Verify campaign exists.
-	if _, err := g.sponsor.Get(ctx, campaignID); err != nil {
+	// Verify campaign exists and belongs to the current user.
+	camp, err := g.sponsor.Get(ctx, campaignID)
+	if err != nil {
 		return err
+	}
+	if camp.CreatedBy != accountID {
+		return v1.NewRequestError(fmt.Errorf("forbidden: not campaign owner"), http.StatusForbidden)
 	}
 
 	// Limit request body to 512KB.

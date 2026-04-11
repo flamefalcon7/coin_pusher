@@ -233,10 +233,7 @@ func (c *Core) ReconcileStaleQuotas(ctx context.Context, olderThan time.Duration
 				return fmt.Errorf("refunding quota %s: %w", q.QuotaID, err)
 			}
 			// Return the unused token amount back to the campaign pool.
-			// DecrementPool with a negative amount effectively increments.
-			// Instead, we use a dedicated approach: negate the amount.
-			negAmount := q.TokenAmount.Neg()
-			if _, err := s.DecrementPool(ctx, q.CampaignID, negAmount); err != nil {
+			if err := s.RestorePool(ctx, q.CampaignID, q.TokenAmount); err != nil {
 				return fmt.Errorf("restoring pool for quota %s: %w", q.QuotaID, err)
 			}
 			return nil

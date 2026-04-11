@@ -212,12 +212,13 @@ func (rl *Relay) Start() error {
 		var cfg struct {
 			Op       string `json:"op"        msgpack:"op"`
 			Sponsors []struct {
-				ID          string `json:"id"           msgpack:"id"`
-				BrandName   string `json:"brand_name"   msgpack:"brand_name"`
-				BrandColor  string `json:"brand_color"  msgpack:"brand_color"`
-				TokenSymbol string `json:"token_symbol" msgpack:"token_symbol"`
-				LogoURL     string `json:"logo_url"     msgpack:"logo_url"`
-				AdImageURL  string `json:"ad_image_url" msgpack:"ad_image_url"`
+				ID            string  `json:"id"              msgpack:"id"`
+				BrandName     string  `json:"brand_name"      msgpack:"brand_name"`
+				BrandColor    string  `json:"brand_color"     msgpack:"brand_color"`
+				TokenSymbol   string  `json:"token_symbol"    msgpack:"token_symbol"`
+				LogoURL       string  `json:"logo_url"        msgpack:"logo_url"`
+				AdImageURL    string  `json:"ad_image_url"    msgpack:"ad_image_url"`
+				PlacementTier *string `json:"placement_tier,omitempty" msgpack:"placement_tier,omitempty"`
 			} `json:"sponsors" msgpack:"sponsors"`
 		}
 		if err := json.Unmarshal(msg.Data, &cfg); err != nil {
@@ -264,11 +265,12 @@ func (rl *Relay) Start() error {
 	// sponsor_reward: JSON from backend → re-encode as msgpack for target user.
 	sub, err = rl.nc.Subscribe("game."+rl.room+".sponsor_reward", func(msg *nats.Msg) {
 		var incoming struct {
-			Op          string `json:"op"`
-			UserID      string `json:"user_id"`
-			CampaignID  string `json:"campaign_id"`
-			TokenSymbol string `json:"token_symbol"`
-			Amount      string `json:"amount"`
+			Op           string `json:"op"`
+			UserID       string `json:"user_id"`
+			CampaignID   string `json:"campaign_id"`
+			TokenSymbol  string `json:"token_symbol"`
+			Amount       string `json:"amount"`
+			TotalBalance string `json:"total_balance"`
 		}
 		if err := json.Unmarshal(msg.Data, &incoming); err != nil {
 			rl.log.Errorw("sponsor_reward json decode error", "error", err)
@@ -276,17 +278,17 @@ func (rl *Relay) Start() error {
 		}
 		// Re-encode as msgpack matching client SponsorRewardMessage type.
 		packed, err := msgpack.Marshal(struct {
-			Op          string `msgpack:"op"`
-			CampaignID  string `msgpack:"campaign_id"`
-			TokenSymbol string `msgpack:"token_symbol"`
-			Amount      string `msgpack:"amount"`
+			Op           string `msgpack:"op"`
+			CampaignID   string `msgpack:"campaign_id"`
+			TokenSymbol  string `msgpack:"token_symbol"`
+			Amount       string `msgpack:"amount"`
 			TotalBalance string `msgpack:"total_balance"`
 		}{
 			Op:           "sponsor_reward",
 			CampaignID:   incoming.CampaignID,
 			TokenSymbol:  incoming.TokenSymbol,
 			Amount:       incoming.Amount,
-			TotalBalance: incoming.Amount, // v1: total_balance equals amount per flush
+			TotalBalance: incoming.TotalBalance,
 		})
 		if err != nil {
 			rl.log.Errorw("sponsor_reward msgpack encode error", "error", err)

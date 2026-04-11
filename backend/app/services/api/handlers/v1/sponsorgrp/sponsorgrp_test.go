@@ -33,6 +33,7 @@ type mockStorer struct {
 	queryBalancesByAccountFn func(ctx context.Context, accountID uuid.UUID) ([]sponsor.SponsorBalance, error)
 	updateStatusFn          func(ctx context.Context, campaignID uuid.UUID, status string) error
 	queryByAccountFn        func(ctx context.Context, accountID uuid.UUID) ([]sponsor.Campaign, error)
+	restorePoolFn           func(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) error
 	createQuotaFn           func(ctx context.Context, entry sponsor.QuotaEntry) error
 	consumeQuotaFn          func(ctx context.Context, quotaID uuid.UUID, coinsSpawned int) error
 	queryStaleQuotasFn      func(ctx context.Context, olderThan time.Time) ([]sponsor.QuotaEntry, error)
@@ -100,6 +101,13 @@ func (m *mockStorer) QueryByAccount(ctx context.Context, accountID uuid.UUID) ([
 		return m.queryByAccountFn(ctx, accountID)
 	}
 	return nil, nil
+}
+
+func (m *mockStorer) RestorePool(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) error {
+	if m.restorePoolFn != nil {
+		return m.restorePoolFn(ctx, campaignID, amount)
+	}
+	return nil
 }
 
 func (m *mockStorer) CreateQuota(ctx context.Context, entry sponsor.QuotaEntry) error {

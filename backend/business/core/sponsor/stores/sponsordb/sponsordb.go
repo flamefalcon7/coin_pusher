@@ -225,6 +225,32 @@ func (s *Store) QueryStaleQuotas(ctx context.Context, olderThan time.Time) ([]sp
 	return entries, nil
 }
 
+// RestorePool atomically increments pool_remaining (for quota refunds) and
+// restores status to 'active' if the campaign was 'depleted'.
+func (s *Store) RestorePool(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) error {
+	const q = `
+		UPDATE sponsor_campaigns
+		SET pool_remaining = LEAST(pool_remaining + $1, pool_total),
+		    status = CASE WHEN status = 'depleted' THEN 'active' ELSE status END,
+		    updated_at = now()
+		WHERE campaign_id = $2`
+
+	res, err := s.db.ExecContext(ctx, q, amount, campaignID)
+	if err != nil {
+		return fmt.Errorf("restoring pool: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("campaign %s not found", campaignID)
+	}
+
+	return nil
+}
+
 // RefundQuota marks a quota entry as refunded.
 func (s *Store) RefundQuota(ctx context.Context, quotaID uuid.UUID) error {
 	const q = `

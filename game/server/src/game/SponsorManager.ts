@@ -31,6 +31,9 @@ export type SpawnSponsorCoinFn = (
 /** Spawn interval for tick-based quota draining: ~150 ticks at 30Hz = ~5 seconds. */
 const QUOTA_SPAWN_INTERVAL_TICKS = 150;
 
+/** Maximum coins per bonus drop to prevent resource exhaustion. */
+const MAX_BONUS_DROP_COINS = 100;
+
 /** Slot X positions for sponsor coin spawns (matches SLOT_CONFIG.POSITIONS). */
 const SPONSOR_SLOT_POSITIONS = [-0.4, -0.2, 0, 0.2, 0.4];
 
@@ -91,7 +94,8 @@ export class SponsorManager {
    * These are event-driven bonus drops, not quota-based.
    */
   onBonusDrop(msg: { sponsor_id: string; coin_count: number }): void {
-    const { sponsor_id, coin_count } = msg;
+    const { sponsor_id } = msg;
+    const coin_count = Math.min(msg.coin_count, MAX_BONUS_DROP_COINS);
     console.log(`Bonus drop: sponsor=${sponsor_id} count=${coin_count}`);
 
     for (let i = 0; i < coin_count; i++) {

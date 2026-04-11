@@ -440,6 +440,10 @@ func run() error {
 	}
 	sponsorRewardAccum := make(map[sponsorRewardKey]decimal.Decimal)
 
+	// In-memory cache of active campaign data to avoid N+1 DB queries in despawn handler.
+	var sponsorCacheMu sync.RWMutex
+	sponsorCampaignCache := make(map[uuid.UUID]sponsor.Campaign)
+
 	// Subscribe to coin_despawn events from game server.
 	despawnSub, err := nc.Subscribe(ws.TopicCoinDespawn("main"), func(msg *nats.Msg) {
 		var evt struct {
@@ -491,11 +495,19 @@ func run() error {
 				continue
 			}
 
-			// Look up reward_per_coin for this campaign.
-			camp, err := sponsorCore.Get(context.Background(), campaignID)
-			if err != nil {
-				log.Errorw("sponsor coin despawn: campaign lookup failed", "campaign_id", campaignIDStr, "error", err)
-				continue
+			// Look up reward_per_coin from cache (refreshed by sponsor_config).
+			sponsorCacheMu.RLock()
+			camp, cached := sponsorCampaignCache[campaignID]
+			sponsorCacheMu.RUnlock()
+			if !cached {
+				camp, err = sponsorCore.Get(context.Background(), campaignID)
+				if err != nil {
+					log.Errorw("sponsor coin despawn: campaign lookup failed", "campaign_id", campaignIDStr, "error", err)
+					continue
+				}
+				sponsorCacheMu.Lock()
+				sponsorCampaignCache[campaignID] = camp
+				sponsorCacheMu.Unlock()
 			}
 
 			totalReward := camp.RewardPerCoin.Mul(decimal.NewFromInt(int64(count)))
@@ -621,6 +633,9 @@ func run() error {
 
 		flushEpoch := time.Now().Unix() / 10 // 10s buckets for deterministic ref_key
 
+		// Per-flush campaign cache to avoid N+1 queries.
+		campaignCache := make(map[uuid.UUID]sponsor.Campaign)
+
 		for key, amount := range batch {
 			if amount.IsZero() {
 				continue
@@ -632,26 +647,51 @@ func run() error {
 					"account_id", key.AccountID,
 					"amount", amount.String(),
 					"error", err)
-			}
-
-			// Publish sponsor_reward notification to player via NATS -> relay -> WS.
-			camp, err := sponsorCore.Get(context.Background(), key.CampaignID)
-			if err != nil {
-				log.Errorw("sponsor reward: campaign lookup for notify", "error", err)
 				continue
 			}
+
+			// Query actual cumulative balance for this player+campaign.
+			var totalBalance string
+			bals, err := sponsorCore.GetBalances(context.Background(), key.AccountID)
+			if err != nil {
+				log.Errorw("sponsor reward: balance lookup for notify", "error", err)
+				totalBalance = amount.String() // fallback to flush amount
+			} else {
+				for _, b := range bals {
+					if b.CampaignID == key.CampaignID {
+						totalBalance = b.Balance.String()
+						break
+					}
+				}
+				if totalBalance == "" {
+					totalBalance = amount.String()
+				}
+			}
+
+			// Look up campaign for token symbol (use cache below).
+			camp, ok := campaignCache[key.CampaignID]
+			if !ok {
+				camp, err = sponsorCore.Get(context.Background(), key.CampaignID)
+				if err != nil {
+					log.Errorw("sponsor reward: campaign lookup for notify", "error", err)
+					continue
+				}
+				campaignCache[key.CampaignID] = camp
+			}
 			notifyMsg := struct {
-				Op          string `json:"op"`
-				UserID      string `json:"user_id"`
-				CampaignID  string `json:"campaign_id"`
-				TokenSymbol string `json:"token_symbol"`
-				Amount      string `json:"amount"`
+				Op           string `json:"op"`
+				UserID       string `json:"user_id"`
+				CampaignID   string `json:"campaign_id"`
+				TokenSymbol  string `json:"token_symbol"`
+				Amount       string `json:"amount"`
+				TotalBalance string `json:"total_balance"`
 			}{
-				Op:          "sponsor_reward",
-				UserID:      key.AccountID.String(),
-				CampaignID:  key.CampaignID.String(),
-				TokenSymbol: camp.TokenSymbol,
-				Amount:      amount.String(),
+				Op:           "sponsor_reward",
+				UserID:       key.AccountID.String(),
+				CampaignID:   key.CampaignID.String(),
+				TokenSymbol:  camp.TokenSymbol,
+				Amount:       amount.String(),
+				TotalBalance: totalBalance,
 			}
 			data, err := json.Marshal(notifyMsg)
 			if err != nil {
