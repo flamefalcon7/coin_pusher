@@ -155,9 +155,16 @@ func (c *Core) DecrementCashBalance(ctx context.Context, accountID uuid.UUID, am
 // then draws the remainder from balance_cash. Returns the amounts actually
 // debited from each currency plus the resulting balances.
 //
-// Must be called from within a transaction (caller provides a tx-bound Core
-// via execTx pattern) so the FOR UPDATE read and subsequent balance writes are
-// atomic against concurrent mutations.
+// **CONTRACT: This MUST be called from within an accounting.execTx transaction.**
+// The function issues two sequential UpdateBalance writes (one PLAY, one CASH).
+// Atomicity across those writes — specifically, rollback of the first write if
+// the second fails — relies entirely on the caller's enclosing transaction. If
+// you call this with a non-tx storer, a mid-sequence failure will leave the
+// account in a partial-debit state with NO rollback and a silent fund leak.
+//
+// Current callers: only accounting.Core.ProcessGameInsert, which wraps this in
+// execTx. Do not introduce new callers outside that pattern without threading
+// a transaction through.
 //
 // Returns ErrInsufficientFund (wrapped) if balance_play + balance_cash < amount.
 // When amount is zero, returns (0, 0, currentPlay, currentCash) with no writes.

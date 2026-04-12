@@ -623,6 +623,64 @@ func TestDecrementForInsert(t *testing.T) {
 	}
 }
 
+// TestDecrementForInsert_PartialFailureLeavesPlayDebited documents (and pins)
+// the contract that DecrementForInsert relies on its caller's enclosing
+// transaction for atomicity. When the second UpdateBalance (CASH) fails after
+// the first (PLAY) has already written, this primitive returns the error but
+// does NOT itself rollback the play debit. It is the caller's execTx that must
+// observe the error and roll the whole transaction back.
+//
+// If the contract ever changes — e.g., a future maintainer unconditionally
+// unexports this primitive, or an alternate caller is added that doesn't wrap
+// it in a transaction — this test will either need deletion or a strengthening
+// assertion about internal rollback. It exists so such a change is a loud
+// edit, not a silent one.
+func TestDecrementForInsert_PartialFailureLeavesPlayDebited(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	// Start: play=10, cash=5. Insert 12 → playDeb=10, cashDeb=2.
+	play := decimal.NewFromInt(10)
+	cash := decimal.NewFromInt(5)
+
+	storer := &mockStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (Account, error) {
+			return Account{ID: accountID, BalancePlay: play, BalanceCash: cash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			switch currency {
+			case CurrencyPlay:
+				play = play.Add(delta)
+				return play, nil
+			case CurrencyCash:
+				// Simulate lock-wait-timeout / transient DB failure on the second leg.
+				return decimal.Zero, errors.New("simulated cash update failure")
+			}
+			return decimal.Zero, errors.New("unexpected currency")
+		},
+	}
+
+	core := NewCore(storer)
+	_, _, _, _, err := core.DecrementForInsert(
+		context.Background(), accountID, decimal.NewFromInt(12),
+	)
+	if err == nil {
+		t.Fatal("expected error from cash-leg failure, got nil")
+	}
+
+	// Contract: PLAY leg has been written (no internal rollback). In production
+	// the enclosing execTx observes err != nil and rolls the whole tx back —
+	// the DB is the safety net, not this primitive. Assert on the in-memory
+	// mock state to make this visible.
+	if !play.Equal(decimal.NewFromInt(0)) {
+		t.Errorf("play leg should have been written before cash leg failure; "+
+			"got play=%s, want 0 (10 - 10)", play)
+	}
+	if !cash.Equal(decimal.NewFromInt(5)) {
+		t.Errorf("cash leg must not have been written on failure; got cash=%s, want 5", cash)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // GenerateNonce
 // ---------------------------------------------------------------------------
