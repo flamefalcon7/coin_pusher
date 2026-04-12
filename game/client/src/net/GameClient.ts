@@ -5,6 +5,9 @@ import type {
   EditorObjectNet,
   SlotSymbol,
   AbilityType,
+  SponsorConfigMessage,
+  BonusDropMessage,
+  SponsorRewardMessage,
 } from "@coin-pusher/shared";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
@@ -28,7 +31,7 @@ export type AbilityEventCallback = (
   username?: string,
 ) => void;
 export type CoinSpawnCallback = (
-  coins: { id: number; owner_id: string; is_key_coin?: boolean }[],
+  coins: { id: number; owner_id: string; is_key_coin?: boolean; sponsor_id?: string }[],
 ) => void;
 export type HeatUpdateCallback = (
   players: {
@@ -74,6 +77,9 @@ export type MegaspeakerCallback = (
 export type MegaspeakerErrorCallback = (error: string) => void;
 export type IdleWarningCallback = () => void;
 export type IdleTimeoutCallback = () => void;
+export type SponsorConfigCallback = (sponsors: SponsorConfigMessage["sponsors"]) => void;
+export type BonusDropCallback = (msg: BonusDropMessage) => void;
+export type SponsorRewardCallback = (msg: SponsorRewardMessage) => void;
 
 export class GameClient {
   private url: string;
@@ -101,12 +107,16 @@ export class GameClient {
   private megaspeakerErrorCallback?: MegaspeakerErrorCallback;
   private idleWarningCallback?: IdleWarningCallback;
   private idleTimeoutCallback?: IdleTimeoutCallback;
+  private sponsorConfigCallback?: SponsorConfigCallback;
+  private bonusDropCallback?: BonusDropCallback;
+  private sponsorRewardCallback?: SponsorRewardCallback;
   private authFailureCallback?: () => void;
   private pendingPingTime: number = 0;
   private userId: string = "";
   private _isSpectator: boolean = false;
   private _snapshotJustLoaded: boolean = false;
   private _snapshotKeyCoinIds: Set<number> | null = null;
+  private _snapshotSponsorCoinIds: Map<number, string> | null = null;
   private visibilityHandler: (() => void) | null = null;
   private debugPanel: DebugPanel | null = null;
 
@@ -171,16 +181,20 @@ export class GameClient {
         this.interpolator.clear();
         // Initialize state buffer with snapshot
         this.stateBuffer.clear();
-        // Track key coin IDs from snapshot for rendering
+        // Track key coin and sponsor coin IDs from snapshot for rendering
         this._snapshotKeyCoinIds = new Set<number>();
+        this._snapshotSponsorCoinIds = new Map<number, string>();
         const snapshotCoins = message.bodies
           .filter(
             (b) =>
-              (b.type === "coin" || b.type === "key_coin") && b.pos && b.rot,
+              (b.type === "coin" || b.type === "key_coin" || b.type === "sponsor_coin") && b.pos && b.rot,
           )
           .map((b) => {
             if (b.type === "key_coin") {
               this._snapshotKeyCoinIds!.add(b.id);
+            }
+            if (b.type === "sponsor_coin" && b.sponsor_id) {
+              this._snapshotSponsorCoinIds!.set(b.id, b.sponsor_id);
             }
             return {
               id: b.id,
@@ -349,6 +363,24 @@ export class GameClient {
       case "idle_warning":
         if (this.idleWarningCallback) {
           this.idleWarningCallback();
+        }
+        break;
+
+      case "sponsor_config":
+        if (this.sponsorConfigCallback) {
+          this.sponsorConfigCallback(message.sponsors);
+        }
+        break;
+
+      case "bonus_drop":
+        if (this.bonusDropCallback) {
+          this.bonusDropCallback(message);
+        }
+        break;
+
+      case "sponsor_reward":
+        if (this.sponsorRewardCallback) {
+          this.sponsorRewardCallback(message);
         }
         break;
 
@@ -601,6 +633,18 @@ export class GameClient {
     this.idleTimeoutCallback = callback;
   }
 
+  onSponsorConfig(callback: SponsorConfigCallback): void {
+    this.sponsorConfigCallback = callback;
+  }
+
+  onBonusDrop(callback: BonusDropCallback): void {
+    this.bonusDropCallback = callback;
+  }
+
+  onSponsorReward(callback: SponsorRewardCallback): void {
+    this.sponsorRewardCallback = callback;
+  }
+
   sendMegaspeaker(message: string): void {
     this.wsClient.send({ op: "megaspeaker", message } as ClientMessage);
   }
@@ -643,6 +687,13 @@ export class GameClient {
   consumeSnapshotKeyCoinIds(): Set<number> | null {
     const ids = this._snapshotKeyCoinIds;
     this._snapshotKeyCoinIds = null;
+    return ids;
+  }
+
+  /** Returns sponsor coin ID mappings from the last world_snapshot, then clears. */
+  consumeSnapshotSponsorCoinIds(): Map<number, string> | null {
+    const ids = this._snapshotSponsorCoinIds;
+    this._snapshotSponsorCoinIds = null;
     return ids;
   }
 }

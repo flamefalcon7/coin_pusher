@@ -20,14 +20,18 @@ import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
 import { TargetingHint } from "./ui/TargetingHint";
 import { IdleWarningBanner, IdleTimeoutOverlay } from "./ui/IdleOverlay";
 import { PlayerInfo } from "./ui/PlayerInfo";
+import { SponsorBalances } from "./ui/SponsorBalances";
 import { TutorialOverlay, shouldShowTutorial } from "./ui/TutorialOverlay";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
 import { ProgressPage } from "./pages/ProgressPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { SponsorPage } from "./pages/SponsorPage";
+import { AdminSponsorsPage } from "./pages/AdminSponsorsPage";
 
 import { SceneManager } from "./scene/SceneManager";
+import { BonusDropVFX } from "./scene/BonusDropVFX";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
 import { GameClient } from "./net/GameClient";
 import { SLOT_CONFIG, RATE_LIMIT_CONFIG, type EditorObjectNet } from "@coin-pusher/shared";
@@ -150,6 +154,10 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   const abilityToastIdRef = useRef(0);
   // Track which coin IDs are key coins for rendering
   const keyCoinIdsRef = useRef<Set<number>>(new Set());
+  // Track which coin IDs are sponsor coins (coinId -> sponsorId)
+  const sponsorCoinIdsRef = useRef<Map<number, string>>(new Map());
+  const bonusDropVFXRef = useRef<BonusDropVFX | null>(null);
+  const [sponsorBalances, setSponsorBalances] = useState<Array<{ campaign_id: string; token_symbol: string; balance: string }>>([]);
   const lastRequestedAmount = useRef(0);
   const [balance, _setBalance] = useState<string>(account?.balance_play ?? "0");
   const [balanceCash, _setBalanceCash] = useState<string>(account?.balance_cash ?? "0");
@@ -287,6 +295,9 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
         if (coin.is_key_coin) {
           keyCoinIdsRef.current.add(coin.id);
         }
+        if (coin.sponsor_id) {
+          sponsorCoinIdsRef.current.set(coin.id, coin.sponsor_id);
+        }
       }
     });
 
@@ -390,6 +401,29 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       setIdleTimeout(true);
     });
 
+    // Sponsor message handlers
+    gameClient.onSponsorConfig((sponsors) => {
+      sceneManager.updateSponsorConfig(sponsors);
+    });
+
+    const bonusVFX = new BonusDropVFX();
+    bonusDropVFXRef.current = bonusVFX;
+    gameClient.onBonusDrop((msg) => {
+      bonusVFX.showBonusDrop(msg.sponsor_name, msg.token_symbol, "#4ECDC4", msg.coin_count);
+    });
+
+    gameClient.onSponsorReward((msg) => {
+      setSponsorBalances((prev) => {
+        const idx = prev.findIndex(b => b.campaign_id === msg.campaign_id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { campaign_id: msg.campaign_id, token_symbol: msg.token_symbol, balance: msg.total_balance };
+          return updated;
+        }
+        return [...prev, { campaign_id: msg.campaign_id, token_symbol: msg.token_symbol, balance: msg.total_balance }];
+      });
+    });
+
     // Connect to server
     gameClient.connect();
 
@@ -469,6 +503,13 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
           if (snapshotKeyCoinIds) {
             keyCoinIdsRef.current = snapshotKeyCoinIds;
           }
+          // Seed sponsor coin IDs from snapshot body types
+          const snapshotSponsorCoinIds = gameClient.consumeSnapshotSponsorCoinIds();
+          if (snapshotSponsorCoinIds) {
+            for (const [coinId, sponsorId] of snapshotSponsorCoinIds) {
+              sponsorCoinIdsRef.current.set(coinId, sponsorId);
+            }
+          }
         }
 
         // Update pusher position
@@ -483,9 +524,14 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
           currentCoinIds.add(coin.id);
 
           if (!knownCoins.has(coin.id)) {
-            // New coin — check if it's a key coin
+            // New coin — check if it's a key coin or sponsor coin
             const isKeyCoin = keyCoinIdsRef.current.has(coin.id);
-            sceneManager.addCoin(coin.id, coin.pos, coin.rot, isKeyCoin);
+            const sponsorId = sponsorCoinIdsRef.current.get(coin.id);
+            if (sponsorId) {
+              sceneManager.addCoinWithSponsor(coin.id, coin.pos, coin.rot, isKeyCoin, sponsorId);
+            } else {
+              sceneManager.addCoin(coin.id, coin.pos, coin.rot, isKeyCoin);
+            }
             knownCoins.add(coin.id);
             // Skip sound for snapshot coins (bulk load on connect/reconnect)
             if (!isSnapshotFrame) {
@@ -505,6 +551,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
             sceneManager.removeCoinWithEffect(id);
             knownCoins.delete(id);
             keyCoinIdsRef.current.delete(id);
+            sponsorCoinIdsRef.current.delete(id);
             despawnCount++;
           }
         }
@@ -536,6 +583,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       editorManager.dispose();
       gameClient.dispose();
       sceneManager.dispose();
+      bonusDropVFXRef.current?.dispose();
+      bonusDropVFXRef.current = null;
     };
   }, []);
 
@@ -929,6 +978,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   const showWithdrawPage = location.pathname === '/withdraw';
   const showProgressPage = location.pathname === '/progress';
   const showProfilePage = location.pathname === '/profile';
+  const showSponsorPage = location.pathname === '/sponsor';
+  const showAdminSponsors = location.pathname === '/admin/sponsors';
 
   const handleCashBalanceChange = useCallback((newBalance: string) => {
     setBalanceCash(newBalance);
@@ -942,8 +993,10 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       {isSpectator ? (
         <SpectatorBanner onConnectWallet={onRequestLogin} />
       ) : (
-        <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} onLogout={onAuthFailure} />
+        <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} role={account?.role} onLogout={onAuthFailure} />
       )}
+
+      {sponsorBalances.length > 0 && <SponsorBalances balances={sponsorBalances} />}
 
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
 
@@ -1178,6 +1231,14 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
           apiUrl={API_URL}
           address={address}
         />
+      )}
+
+      {!isSpectator && showSponsorPage && (
+        <SponsorPage token={token!} apiUrl={API_URL} />
+      )}
+
+      {!isSpectator && showAdminSponsors && (
+        <AdminSponsorsPage token={token!} apiUrl={API_URL} />
       )}
 
       {/* MegaspeakerPanel — read-only for spectators (disable send) */}

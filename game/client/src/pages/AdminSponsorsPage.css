@@ -1,0 +1,296 @@
+.admin-sponsors-page {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-deep);
+  overflow-y: auto;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  color: var(--text-color);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.admin-sponsors-header {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.admin-sponsors-back-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.admin-sponsors-back-link:hover {
+  opacity: 1;
+}
+
+.admin-sponsors-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-purple);
+}
+
+/* ── Loading / Error ─────────────────────────────────────────────────── */
+
+.admin-sponsors-loading {
+  margin-top: 80px;
+  font-size: 16px;
+  color: rgba(245, 230, 184, 0.5);
+  animation: adminSponsorsPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes adminSponsorsPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.admin-sponsors-error {
+  margin-top: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-sponsors-error p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--accent-pink);
+}
+
+.admin-sponsors-retry-btn {
+  padding: 8px 24px;
+  border: 1px solid var(--accent-pink);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-pink);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.admin-sponsors-retry-btn:hover {
+  background: rgba(232, 57, 107, 0.15);
+}
+
+/* ── Sections ────────────────────────────────────────────────────────── */
+
+.admin-sponsors-sections {
+  width: 100%;
+  max-width: 480px;
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Stats bar ───────────────────────────────────────────────────────── */
+
+.admin-sponsors-stats {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 12px;
+  flex-wrap: wrap;
+  animation: adminSponsorsCardIn 0.35s ease-out;
+}
+
+@keyframes adminSponsorsCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.admin-sponsors-stat {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.6);
+}
+
+.admin-sponsors-stat-count {
+  font-weight: 700;
+  color: var(--text-color);
+  margin-left: 4px;
+}
+
+/* ── Filter bar ──────────────────────────────────────────────────────── */
+
+.admin-sponsors-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-sponsors-filter-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(245, 230, 184, 0.6);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.admin-sponsors-filter-btn:hover {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.admin-sponsors-filter-btn--active {
+  background: var(--accent-teal);
+  border-color: var(--accent-teal);
+  color: #1A0E2E;
+}
+
+/* ── Campaign list ───────────────────────────────────────────────────── */
+
+.admin-sponsors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-sponsors-empty {
+  font-size: 13px;
+  color: rgba(245, 230, 184, 0.4);
+  text-align: center;
+  padding: 16px;
+}
+
+/* ── Action buttons ──────────────────────────────────────────────────── */
+
+.admin-sponsors-action-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.admin-sponsors-action-btn:hover:not(:disabled) {
+  opacity: 0.85;
+  transform: scale(1.02);
+}
+
+.admin-sponsors-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-sponsors-action-btn--pause {
+  background: var(--accent-orange);
+  color: #1A0E2E;
+}
+
+.admin-sponsors-action-btn--resume {
+  background: var(--accent-green);
+  color: #1A0E2E;
+}
+
+.admin-sponsors-action-btn--remove {
+  background: var(--accent-pink);
+  color: #fff;
+}
+
+/* ── Confirm dialog ──────────────────────────────────────────────────── */
+
+.admin-sponsors-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 14, 46, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.admin-sponsors-confirm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 28px;
+  border-radius: 12px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.12);
+  max-width: 320px;
+  width: 90%;
+}
+
+.admin-sponsors-confirm-text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color);
+  text-align: center;
+}
+
+.admin-sponsors-confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-sponsors-confirm-cancel {
+  padding: 8px 20px;
+  border: 1px solid rgba(245, 230, 184, 0.2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-color);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.admin-sponsors-confirm-cancel:hover {
+  opacity: 0.8;
+}
+
+.admin-sponsors-confirm-yes {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-pink);
+  color: #fff;
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.admin-sponsors-confirm-yes:hover {
+  opacity: 0.85;
+}
+
+@media (max-width: 480px) {
+  .admin-sponsors-header {
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px 16px;
+  }
+
+  .admin-sponsors-stats {
+    gap: 10px;
+  }
+}

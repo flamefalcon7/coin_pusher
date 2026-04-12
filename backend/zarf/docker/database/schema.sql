@@ -277,3 +277,70 @@ CREATE TABLE IF NOT EXISTS account_progress (
 
 CREATE INDEX IF NOT EXISTS idx_account_progress_disbursable
     ON account_progress(status, achieved_at) WHERE status = 'achieved';
+
+-- ==========================================================================
+-- 13. sponsor_campaigns (permissionless sponsor ad campaigns)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS sponsor_campaigns (
+    campaign_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_by     UUID NOT NULL REFERENCES accounts(account_id),
+    chain          TEXT NOT NULL,
+    token_address  TEXT NOT NULL,
+    token_symbol   TEXT NOT NULL CHECK (token_symbol ~ '^[A-Z0-9]{1,10}$'),
+    token_decimals INT NOT NULL CHECK (token_decimals BETWEEN 0 AND 18),
+    brand_color    TEXT NOT NULL CHECK (brand_color ~ '^#[0-9A-Fa-f]{6}$'),
+    brand_name     TEXT NOT NULL CHECK (length(brand_name) BETWEEN 1 AND 32),
+    logo_url       TEXT NOT NULL,
+    ad_image_url   TEXT NOT NULL,
+    pool_total     NUMERIC(38,18) NOT NULL CHECK (pool_total > 0),
+    pool_remaining NUMERIC(38,18) NOT NULL CHECK (pool_remaining >= 0),
+    reward_per_coin NUMERIC(38,18) NOT NULL CHECK (reward_per_coin > 0),
+    status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'depleted', 'paused', 'expired')),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT min_campaign_coins CHECK (pool_total / reward_per_coin >= 100)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sponsor_campaigns_status ON sponsor_campaigns(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sponsor_campaigns_token ON sponsor_campaigns(chain, token_address) WHERE status = 'active';
+
+-- ==========================================================================
+-- 14. sponsor_quota_ledger (quota allocations from campaign pools)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS sponsor_quota_ledger (
+    quota_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id    UUID NOT NULL REFERENCES sponsor_campaigns(campaign_id),
+    coin_count     INT NOT NULL CHECK (coin_count > 0),
+    coins_spawned  INT NOT NULL DEFAULT 0,
+    token_amount   NUMERIC(38,18) NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued', 'consumed', 'refunded')),
+    issued_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    consumed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_sponsor_quota_ledger_status ON sponsor_quota_ledger(status, issued_at);
+
+-- ==========================================================================
+-- 15. sponsor_balances (per-account per-campaign token balances)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS sponsor_balances (
+    account_id    UUID NOT NULL REFERENCES accounts(account_id),
+    campaign_id   UUID NOT NULL REFERENCES sponsor_campaigns(campaign_id),
+    balance       NUMERIC(38,18) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (account_id, campaign_id)
+);
+
+-- ==========================================================================
+-- 16. sponsor_reward_logs (individual reward distribution events)
+-- ==========================================================================
+CREATE TABLE IF NOT EXISTS sponsor_reward_logs (
+    log_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id    UUID NOT NULL REFERENCES accounts(account_id),
+    campaign_id   UUID NOT NULL REFERENCES sponsor_campaigns(campaign_id),
+    amount        NUMERIC(38,18) NOT NULL CHECK (amount > 0),
+    ref_key       TEXT NOT NULL UNIQUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sponsor_reward_logs_account ON sponsor_reward_logs(account_id, campaign_id, created_at DESC);
