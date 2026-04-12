@@ -704,10 +704,25 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	// P1-14: Check publish error; refund balance if NATS is unreachable.
 	if err := h.nc.Publish(TopicBatchInsert(h.room), data); err != nil {
 		h.log.Errorw("nats publish batch_insert failed, refunding", "error", err, "user_id", c.userID, "count", accepted)
-		refundKey := uuid.NewString()
-		// Reverse the exact play/cash split the insert applied.
-		playDeb, _ := decimal.NewFromString(result.PlayDebited)
-		cashDeb, _ := decimal.NewFromString(result.CashDebited)
+		// Reverse the exact play/cash split the insert applied. Parse failures
+		// are fatal — a silent zero-refund would permanently lose funds.
+		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
+		if parseErr != nil {
+			h.log.Errorw("refund aborted — play_debited unparseable",
+				"raw", result.PlayDebited, "error", parseErr, "user_id", c.userID)
+			metrics.BatchInsertRefundFailures.Inc()
+			return
+		}
+		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
+		if parseErr != nil {
+			h.log.Errorw("refund aborted — cash_debited unparseable",
+				"raw", result.CashDebited, "error", parseErr, "user_id", c.userID)
+			metrics.BatchInsertRefundFailures.Inc()
+			return
+		}
+		// Deterministic refund reference ID: <insert-ref>:refund. Enables
+		// idempotency guard in ProcessGameInsertRefund (see Unit 2).
+		refundKey := refKey + ":refund"
 		if _, refundErr := h.gameCore.RefundBatchInsert(context.Background(), userID, playDeb, cashDeb, refundKey); refundErr != nil {
 			h.log.Errorw("refund after nats failure also failed", "error", refundErr, "user_id", c.userID)
 			metrics.BatchInsertRefundFailures.Inc()

@@ -41,7 +41,10 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 	if m.queryByReferenceFn != nil {
 		return m.queryByReferenceFn(ctx, actionType, referenceID)
 	}
-	return AccountingLog{}, nil
+	// Default: no prior entry. Refund idempotency guard treats nil-error as
+	// "already processed" — returning ErrNotFound matches the real storer's
+	// miss semantics so tests that don't override see a clean slate.
+	return AccountingLog{}, v1.NewNotFoundError()
 }
 
 func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
@@ -541,5 +544,80 @@ func TestProcessGameReward(t *testing.T) {
 	}
 	if !updatedDelta.Equal(amount) {
 		t.Errorf("delta = %s, want %s", updatedDelta, amount)
+	}
+}
+
+// TestProcessGameInsertRefund_Idempotent verifies that a replay of
+// ProcessGameInsertRefund with the same referenceID is a no-op: no double
+// credit, no additional ledger entries. Mirrors ProcessDeposit's TOCTOU-safe
+// idempotency pattern (docs/security-audit.md P0-8).
+func TestProcessGameInsertRefund_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	referenceID := "insert-ref-42:refund"
+
+	// Simulate: an earlier refund already wrote a ledger entry for this ref.
+	// QueryByReference returns a non-nil log (no error). Post-refund balance
+	// is play=5, cash=10. No new writes should occur on replay.
+	existingLog := AccountingLog{
+		LogID:       uuid.New(),
+		AccountID:   accountID,
+		ActionType:  ActionGameInsertRefund,
+		Amount:      decimal.NewFromInt(2),
+		Currency:    CurrencyPlay,
+		ReferenceID: referenceID,
+	}
+
+	var createCalls int
+	var incrementCalls int
+
+	userStr := &mockUserStorer{
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, _ string, _ decimal.Decimal) (decimal.Decimal, error) {
+			incrementCalls++
+			return decimal.Zero, nil
+		},
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{
+				BalancePlay: decimal.NewFromInt(5),
+				BalanceCash: decimal.NewFromInt(10),
+			}, nil
+		},
+	}
+	acctStr := &mockAcctStorer{
+		queryByReferenceFn: func(_ context.Context, action, ref string) (AccountingLog, error) {
+			if action == ActionGameInsertRefund && ref == referenceID {
+				return existingLog, nil
+			}
+			return AccountingLog{}, v1.NewNotFoundError()
+		},
+		createFn: func(_ context.Context, _ AccountingLog) error {
+			createCalls++
+			return nil
+		},
+	}
+
+	userCore := user.NewCore(userStr)
+	core := NewCore(nil, acctStr, userCore, nil, nil)
+
+	newPlay, newCash, err := core.ProcessGameInsertRefund(
+		context.Background(), accountID,
+		decimal.NewFromInt(2), decimal.NewFromInt(3),
+		referenceID,
+	)
+	if err != nil {
+		t.Fatalf("idempotent replay should succeed, got error: %v", err)
+	}
+	if incrementCalls != 0 {
+		t.Errorf("expected zero balance increments on replay, got %d", incrementCalls)
+	}
+	if createCalls != 0 {
+		t.Errorf("expected zero ledger writes on replay, got %d", createCalls)
+	}
+	if !newPlay.Equal(decimal.NewFromInt(5)) {
+		t.Errorf("replay newPlay = %s, want 5", newPlay)
+	}
+	if !newCash.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("replay newCash = %s, want 10", newCash)
 	}
 }
