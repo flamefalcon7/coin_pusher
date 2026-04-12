@@ -50,6 +50,7 @@ logs/
 .shared/
 .agents/
 .cursor/
+.context/
 
 # Go build artifacts
 backend/api
