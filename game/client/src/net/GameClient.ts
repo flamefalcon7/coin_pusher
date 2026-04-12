@@ -50,6 +50,8 @@ export type BatchInsertAckCallback = (
   error?: string,
   balancePlay?: string,
   balanceCash?: string,
+  playDebited?: string,
+  cashDebited?: string,
 ) => void;
 export type RewardCallback = (
   userId: string,
@@ -312,6 +314,8 @@ export class GameClient {
             message.error,
             message.balance_play,
             message.balance_cash,
+            message.play_debited,
+            message.cash_debited,
           );
         }
         break;

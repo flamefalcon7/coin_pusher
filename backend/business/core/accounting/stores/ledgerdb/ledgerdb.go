@@ -64,9 +64,15 @@ func (s *Store) QueryByAccountID(ctx context.Context, accountID uuid.UUID, page,
 // GAME_INSERT under the same reference_id). Use QueryAllByReference when the
 // full split is needed.
 func (s *Store) QueryByReference(ctx context.Context, actionType, referenceID string) (accounting.AccountingLog, error) {
+	// ORDER BY created_at ASC makes the "first row" deterministic when the
+	// same reference_id has multiple rows (split insert/refund writes one
+	// PLAY + one CASH entry). Idempotency callers only need existence, but
+	// a deterministic pick removes a latent footgun for any future caller
+	// that reads the returned row's data.
 	const q = `
 		SELECT * FROM accounting_logs
 		WHERE action_type = $1 AND reference_id = $2
+		ORDER BY created_at ASC, currency ASC
 		LIMIT 1`
 
 	var log accounting.AccountingLog

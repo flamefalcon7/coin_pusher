@@ -417,12 +417,65 @@ func TestRefundBatchInsert_IdempotentReplay(t *testing.T) {
 
 	// Exercises the full WS/HTTP refund-split path at the game.Core layer:
 	// insert splits, refund applies exact split with deterministic key, and
-	// a retried refund with the same key is a no-op. Covers the contract
-	// under which the handler layers call RefundBatchInsert on NATS failure.
-	core, accountID, snapshot := newTestCoreWithBalances(t, decimal.NewFromInt(2), decimal.NewFromInt(10))
+	// a retried refund with the same key is a no-op. The in-memory mock is
+	// wired to simulate a persisted ledger row after the first refund so the
+	// idempotency guard in ProcessGameInsertRefund actually fires and the
+	// balance-invariant assertion pins the contract.
+	accountID := uuid.New()
+	curPlay := decimal.NewFromInt(2)
+	curCash := decimal.NewFromInt(10)
 
-	insertRef := "insert-ref-unit4"
-	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, insertRef)
+	// Track whether the first refund's ledger entries have landed; once set,
+	// QueryByReference returns a persisted row and the idempotency guard
+	// short-circuits the second call.
+	var refundPersisted bool
+	var refundRef = "insert-ref-unit4" + accounting.RefundKeySuffix
+	// Track credit writes so we can assert the replay issues zero increments.
+	var creditCalls int
+
+	userStr := &mockUserStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: curPlay, BalanceCash: curCash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			if delta.Sign() > 0 {
+				creditCalls++
+			}
+			switch currency {
+			case user.CurrencyPlay:
+				newBal := curPlay.Add(delta)
+				if newBal.IsNegative() {
+					return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), curPlay)
+				}
+				curPlay = newBal
+				return curPlay, nil
+			case user.CurrencyCash:
+				newBal := curCash.Add(delta)
+				if newBal.IsNegative() {
+					return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), curCash)
+				}
+				curCash = newBal
+				return curCash, nil
+			}
+			return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), decimal.Zero)
+		},
+	}
+	acctStr := &mockAcctStorer{
+		queryByReferenceFn: func(_ context.Context, action, ref string) (accounting.AccountingLog, error) {
+			// Simulate the real storer: once the refund entries exist, a
+			// second refund attempt's idempotency guard must see a hit.
+			if refundPersisted && action == accounting.ActionGameInsertRefund && ref == refundRef {
+				return accounting.AccountingLog{ActionType: action, ReferenceID: ref}, nil
+			}
+			return accounting.AccountingLog{}, v1.NewNotFoundError()
+		},
+	}
+
+	userCore := user.NewCore(userStr)
+	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
+	core := NewCore(userCore, acctCore)
+
+	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "insert-ref-unit4")
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -436,8 +489,9 @@ func TestRefundBatchInsert_IdempotentReplay(t *testing.T) {
 		t.Fatalf("expected split (2, 3), got (%s, %s)", playDeb, cashDeb)
 	}
 
-	// First refund via deterministic <insert>:refund key.
-	refundRef := insertRef + ":refund"
+	creditCalls = 0 // reset after insert's debits
+
+	// First refund: mock reports no prior entry → guard falls through, credits apply.
 	r1, err := core.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, refundRef)
 	if err != nil {
 		t.Fatalf("first refund: %v", err)
@@ -445,24 +499,33 @@ func TestRefundBatchInsert_IdempotentReplay(t *testing.T) {
 	if !r1.Success {
 		t.Fatalf("first refund failed: %s", r1.Error)
 	}
-	p, c := snapshot()
-	if !p.Equal(decimal.NewFromInt(2)) || !c.Equal(decimal.NewFromInt(10)) {
-		t.Errorf("after first refund balances = (%s, %s), want (2, 10)", p, c)
+	if !curPlay.Equal(decimal.NewFromInt(2)) || !curCash.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("after first refund balances = (%s, %s), want (2, 10)", curPlay, curCash)
+	}
+	firstRefundCredits := creditCalls
+	if firstRefundCredits != 2 {
+		t.Errorf("first refund should issue 2 credit writes (play + cash), got %d", firstRefundCredits)
 	}
 
-	// Second refund with the same key (simulated handler retry). Must be a
-	// no-op: balances unchanged, no error. This path exercises the
-	// idempotency guard added in Unit 2. Note: the in-memory mock doesn't
-	// persist ledger rows, so a true idempotency test lives at the
-	// accounting layer (TestProcessGameInsertRefund_Idempotent). Here we
-	// verify that issuing the refund twice doesn't explode, which is the
-	// contract the handler relies on for retry safety.
+	// Flip the switch: subsequent QueryByReference sees the "persisted" row.
+	refundPersisted = true
+	creditCalls = 0
+
+	// Second refund with the same key. The idempotency guard in
+	// ProcessGameInsertRefund must see the existing row and short-circuit:
+	// zero credit writes, balances unchanged.
 	r2, err := core.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, refundRef)
 	if err != nil {
 		t.Fatalf("second refund (replay): %v", err)
 	}
 	if !r2.Success {
-		t.Errorf("second refund failed: %s", r2.Error)
+		t.Fatalf("replay reported failure: %s", r2.Error)
+	}
+	if creditCalls != 0 {
+		t.Errorf("idempotent replay should issue zero credit writes, got %d", creditCalls)
+	}
+	if !curPlay.Equal(decimal.NewFromInt(2)) || !curCash.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("after replay balances = (%s, %s), want (2, 10) — the guard was bypassed", curPlay, curCash)
 	}
 }
 

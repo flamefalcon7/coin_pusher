@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/shopspring/decimal"
 
+	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
@@ -18,6 +20,11 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
+
+// refundTxTimeout bounds the refund transaction when run on context.Background()
+// (decoupled from the request ctx so cancellation of the caller can't abort
+// the refund, but still bounded so a stuck DB can't leak goroutines).
+const refundTxTimeout = 10 * time.Second
 
 // Group holds the handler dependencies.
 type Group struct {
@@ -124,23 +131,28 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	// P1-14: Check publish error; refund balance if NATS is unreachable.
 	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
 		// Reverse the exact split the insert applied so the ledger refund
-		// entries mirror the insert entries per-currency.
+		// entries mirror the insert entries per-currency. Raw field values
+		// are not echoed in the returned error — they could reflect
+		// server-internal decimal formatting state.
 		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
 		if parseErr != nil {
 			metrics.BatchInsertRefundFailures.Inc()
-			return fmt.Errorf("nats publish failed; cannot refund — play_debited unparseable %q: publish=%w, parse=%v",
-				result.PlayDebited, err, parseErr)
+			return fmt.Errorf("nats publish failed; cannot refund — play_debited unparseable: publish=%w, parse=%v",
+				err, parseErr)
 		}
 		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
 		if parseErr != nil {
 			metrics.BatchInsertRefundFailures.Inc()
-			return fmt.Errorf("nats publish failed; cannot refund — cash_debited unparseable %q: publish=%w, parse=%v",
-				result.CashDebited, err, parseErr)
+			return fmt.Errorf("nats publish failed; cannot refund — cash_debited unparseable: publish=%w, parse=%v",
+				err, parseErr)
 		}
-		// Use context.Background() so the refund survives request cancellation —
-		// the client's deadline has no bearing on our obligation to restore funds.
-		refundKey := refKey + ":refund"
-		if _, refundErr := g.game.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, refundKey); refundErr != nil {
+		// Decouple the refund tx from the request ctx (client cancellation
+		// must not abort the refund), but cap the wall-clock window so a
+		// stuck DB can't leak goroutines under a sustained outage.
+		refundCtx, cancel := context.WithTimeout(context.Background(), refundTxTimeout)
+		defer cancel()
+		refundKey := refKey + accounting.RefundKeySuffix
+		if _, refundErr := g.game.RefundBatchInsert(refundCtx, accountID, playDeb, cashDeb, refundKey); refundErr != nil {
 			metrics.BatchInsertRefundFailures.Inc()
 			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
 		}
