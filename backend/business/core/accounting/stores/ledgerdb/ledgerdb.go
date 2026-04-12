@@ -60,10 +60,14 @@ func (s *Store) QueryByAccountID(ctx context.Context, accountID uuid.UUID, page,
 }
 
 // QueryByReference finds an accounting log by action type and reference ID.
+// Returns the first row when multiple rows share the reference (e.g., a split
+// GAME_INSERT under the same reference_id). Use QueryAllByReference when the
+// full split is needed.
 func (s *Store) QueryByReference(ctx context.Context, actionType, referenceID string) (accounting.AccountingLog, error) {
 	const q = `
 		SELECT * FROM accounting_logs
-		WHERE action_type = $1 AND reference_id = $2`
+		WHERE action_type = $1 AND reference_id = $2
+		LIMIT 1`
 
 	var log accounting.AccountingLog
 	if err := s.db.GetContext(ctx, &log, q, actionType, referenceID); err != nil {
@@ -74,6 +78,24 @@ func (s *Store) QueryByReference(ctx context.Context, actionType, referenceID st
 	}
 
 	return log, nil
+}
+
+// QueryAllByReference returns every accounting log row matching (action_type,
+// reference_id). Intended for audit/refund correlation callers that need the
+// full per-currency split (e.g., a GAME_INSERT that wrote one PLAY + one CASH
+// entry under the same reference_id).
+func (s *Store) QueryAllByReference(ctx context.Context, actionType, referenceID string) ([]accounting.AccountingLog, error) {
+	const q = `
+		SELECT * FROM accounting_logs
+		WHERE action_type = $1 AND reference_id = $2
+		ORDER BY created_at ASC, currency ASC`
+
+	var logs []accounting.AccountingLog
+	if err := s.db.SelectContext(ctx, &logs, q, actionType, referenceID); err != nil {
+		return nil, fmt.Errorf("selecting accounting logs by reference: %w", err)
+	}
+
+	return logs, nil
 }
 
 // SumByActionSince returns the sum of amounts for a given action type since the given time.

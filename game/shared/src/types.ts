@@ -1,5 +1,7 @@
 // Protocol version - increment when making breaking changes
-export const PROTOCOL_VERSION = 1;
+// v2: batch_insert_ack replaced `balance` with `balance_play` + `balance_cash`
+//     and added `play_debited` + `cash_debited` (unified-wallet feature).
+export const PROTOCOL_VERSION = 2;
 
 // Body types in the physics world
 export type BodyType = "coin" | "key_coin" | "sponsor_coin" | "pusher";

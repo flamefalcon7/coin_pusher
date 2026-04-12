@@ -112,6 +112,10 @@ func (m *mockAcctStorer) QueryByReference(_ context.Context, _, _ string) (accou
 	return accounting.AccountingLog{}, nil
 }
 
+func (m *mockAcctStorer) QueryAllByReference(_ context.Context, _, _ string) ([]accounting.AccountingLog, error) {
+	return nil, nil
+}
+
 func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
 	return decimal.Zero, nil
 }

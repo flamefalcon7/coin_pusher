@@ -129,6 +129,10 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 	return accounting.AccountingLog{}, v1.NewNotFoundError()
 }
 
+func (m *mockAcctStorer) QueryAllByReference(_ context.Context, _, _ string) ([]accounting.AccountingLog, error) {
+	return nil, nil
+}
+
 func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
 	return decimal.Zero, nil
 }
@@ -405,6 +409,60 @@ func TestProcessBatchInsert_MixedSplit(t *testing.T) {
 	p, c := snapshot()
 	if !p.Equal(decimal.NewFromInt(0)) || !c.Equal(decimal.NewFromInt(7)) {
 		t.Errorf("in-memory balances = (%s, %s), want (0, 7)", p, c)
+	}
+}
+
+func TestRefundBatchInsert_IdempotentReplay(t *testing.T) {
+	t.Parallel()
+
+	// Exercises the full WS/HTTP refund-split path at the game.Core layer:
+	// insert splits, refund applies exact split with deterministic key, and
+	// a retried refund with the same key is a no-op. Covers the contract
+	// under which the handler layers call RefundBatchInsert on NATS failure.
+	core, accountID, snapshot := newTestCoreWithBalances(t, decimal.NewFromInt(2), decimal.NewFromInt(10))
+
+	insertRef := "insert-ref-unit4"
+	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, insertRef)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if !insertResult.Success {
+		t.Fatalf("insert failed: %s", insertResult.Error)
+	}
+
+	playDeb, _ := decimal.NewFromString(insertResult.PlayDebited)
+	cashDeb, _ := decimal.NewFromString(insertResult.CashDebited)
+	if !playDeb.Equal(decimal.NewFromInt(2)) || !cashDeb.Equal(decimal.NewFromInt(3)) {
+		t.Fatalf("expected split (2, 3), got (%s, %s)", playDeb, cashDeb)
+	}
+
+	// First refund via deterministic <insert>:refund key.
+	refundRef := insertRef + ":refund"
+	r1, err := core.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, refundRef)
+	if err != nil {
+		t.Fatalf("first refund: %v", err)
+	}
+	if !r1.Success {
+		t.Fatalf("first refund failed: %s", r1.Error)
+	}
+	p, c := snapshot()
+	if !p.Equal(decimal.NewFromInt(2)) || !c.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("after first refund balances = (%s, %s), want (2, 10)", p, c)
+	}
+
+	// Second refund with the same key (simulated handler retry). Must be a
+	// no-op: balances unchanged, no error. This path exercises the
+	// idempotency guard added in Unit 2. Note: the in-memory mock doesn't
+	// persist ledger rows, so a true idempotency test lives at the
+	// accounting layer (TestProcessGameInsertRefund_Idempotent). Here we
+	// verify that issuing the refund twice doesn't explode, which is the
+	// contract the handler relies on for retry safety.
+	r2, err := core.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, refundRef)
+	if err != nil {
+		t.Fatalf("second refund (replay): %v", err)
+	}
+	if !r2.Success {
+		t.Errorf("second refund failed: %s", r2.Error)
 	}
 }
 

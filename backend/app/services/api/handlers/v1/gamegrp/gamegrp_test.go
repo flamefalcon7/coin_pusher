@@ -127,6 +127,10 @@ func (m *mockAcctStorer) QueryByAccountID(ctx context.Context, accountID uuid.UU
 	return nil, nil
 }
 
+func (m *mockAcctStorer) QueryAllByReference(_ context.Context, _, _ string) ([]accounting.AccountingLog, error) {
+	return nil, nil
+}
+
 func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, referenceID string) (accounting.AccountingLog, error) {
 	if m.queryByReferenceFn != nil {
 		return m.queryByReferenceFn(ctx, actionType, referenceID)

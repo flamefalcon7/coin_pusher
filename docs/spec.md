@@ -306,8 +306,8 @@ Right wall exit → wheel drops key coins onto platform
 Real money (USDC)          In-game economy                    Real money (USDC)
 ─────────────────     ────────────────────────────────     ─────────────────────
                       ┌─────────┐
-Deposit (multi-chain) │ Deposit │ ← can only be spent inserting coins
-        ──────────────│ Chips   │   (cannot withdraw)
+Deposit (multi-chain) │ Deposit │ ← spent inserting coins (not withdrawable;
+        ──────────────│ Chips   │    consumed first during play-first draw)
                       └────┬────┘
                            │ insert coins
                            ▼
@@ -334,19 +334,25 @@ Deposit (multi-chain) │ Deposit │ ← can only be spent inserting coins
              Withdraw as USDC
 ```
 
-### 3.2 Two-Chip System
+### 3.2 Two-Chip System (Unified Wallet)
 
 | Chip Type | Source | Can Insert | Can Withdraw |
 |---|---|---|---|
-| **Deposit Chips** | USDC deposit | Yes | No |
-| **Reward Chips** | Front-edge coin drops | No (insert uses deposit chips) | Yes |
+| **Deposit Chips** (`balance_play`) | USDC deposit | Yes | No |
+| **Reward Chips** (`balance_cash`) | Front-edge coin drops, progress rewards, chest rewards | Yes (play-first draw) | Yes |
 
-**Why separate?**
-- Prevents instant deposit → withdraw arbitrage
-- Players must actually play (push coins through physics) to generate withdrawable value
-- House edge is enforced by physics: not all deposited coins make it to the front edge
+**Unified wallet UI.** The client displays a single `Balance` total (sum of both chips) with a `Withdrawable` sub-indicator showing the reward-chip portion. Internally the two balances remain distinct for accounting integrity.
 
-Reward chips **can be re-invested** (inserted back into the game). This creates a compounding loop — a lucky streak can sustain play without additional deposits, which keeps players engaged longer. The house edge still applies on every cycle through the physics, so compounding doesn't break the math.
+**Play-first draw order.** An insert debits `balance_play` first; only once it is exhausted does the insert draw from `balance_cash`. This protects the user's withdrawable balance from being silently consumed when they have deposit chips available, and makes the economic model intuitive: "my bought-in coins get spent before my winnings."
+
+**Why separate the two types?**
+- Prevents instant deposit → withdraw arbitrage — the withdraw endpoint only accepts `balance_cash`.
+- Players must actually play (push coins through physics) to generate withdrawable value.
+- House edge is enforced by physics: not all deposited coins make it to the front edge.
+
+**Compounding.** Reward chips can be re-invested (inserted back into the game) once deposit chips are exhausted. A lucky streak can sustain play without additional deposits, which keeps players engaged longer. The house edge still applies on every cycle through the physics, so compounding doesn't break the math.
+
+**Ledger integrity.** Every insert writes one ledger entry per currency actually debited (one `GAME_INSERT` row for PLAY + one for CASH when split), all sharing the same `reference_id` so the split is auditable. Refunds mirror the split exactly and are idempotent by deterministic `<insert-ref>:refund` key.
 
 ### 3.3 Where the House Edge Lives
 
