@@ -79,7 +79,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
       return;
     }
     if (amountNum < 10) {
-      setError('Minimum withdrawal is 10 Cash Coins (1 USDC).');
+      setError('Minimum withdrawal is 10 (1 USDC).');
       return;
     }
     if (amountNum > cashNum) {
@@ -155,7 +155,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
       </div>
 
       <div className="withdraw-balance-banner">
-        Available: <span className="withdraw-balance-amount">{formatAmount(balanceCash)} Cash Coins</span>
+        Withdrawable balance: <span className="withdraw-balance-amount">{formatAmount(balanceCash)}</span>
       </div>
 
       <div className="withdraw-card">
@@ -171,7 +171,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
           autoComplete="off"
         />
 
-        <label className="withdraw-label">Amount (Cash Coins)</label>
+        <label className="withdraw-label">Amount</label>
         <div className="withdraw-amount-row">
           <input
             className="withdraw-input withdraw-amount-input"
@@ -188,7 +188,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
 
         <div className="withdraw-fee-row">
           <span>Fee</span>
-          <span>{WITHDRAW_FEE_USDC.toFixed(2)} USDC ({WITHDRAW_FEE_CASH} Cash Coins)</span>
+          <span>{WITHDRAW_FEE_USDC.toFixed(2)} USDC ({WITHDRAW_FEE_CASH})</span>
         </div>
         <div className="withdraw-fee-row withdraw-receive">
           <span>You receive</span>
@@ -217,7 +217,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
           <div className="withdraw-history-list">
             {withdrawals.map(w => (
               <div key={w.withdrawal_id} className="withdraw-history-row">
-                <span className="withdraw-history-amount">{formatAmount(w.amount)} Cash</span>
+                <span className="withdraw-history-amount">{formatAmount(w.amount)}</span>
                 <span className={`withdraw-history-status status-${w.status}`}>
                   {statusIcon(w.status)} {w.status}
                 </span>

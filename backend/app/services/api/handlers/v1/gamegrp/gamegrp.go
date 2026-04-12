@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
@@ -58,10 +59,16 @@ type BatchInsertRequest struct {
 }
 
 // BatchInsertResponse is the response for batch insert.
+//
+// BalancePlay and BalanceCash are the post-insert balances. A single insert
+// may draw from one or both currencies (play-first, cash-fallback); both
+// values are returned so the client can render a unified wallet total plus a
+// separate "withdrawable" sub-indicator.
 type BatchInsertResponse struct {
-	Queued    int     `json:"queued"`
-	HeatShare float64 `json:"heat_share"`
-	Balance   string  `json:"balance"`
+	Queued      int     `json:"queued"`
+	HeatShare   float64 `json:"heat_share"`
+	BalancePlay string  `json:"balance_play"`
+	BalanceCash string  `json:"balance_cash"`
 }
 
 // BatchInsert handles POST /v1/game/batch-insert.
@@ -111,7 +118,11 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	// P1-14: Check publish error; refund balance if NATS is unreachable.
 	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
 		refundKey := uuid.NewString()
-		if _, refundErr := g.game.RefundBatchInsert(ctx, accountID, req.Count, refundKey); refundErr != nil {
+		// Reverse the exact split the insert applied so the ledger refund
+		// entries mirror the insert entries per-currency.
+		playDeb, _ := decimal.NewFromString(result.PlayDebited)
+		cashDeb, _ := decimal.NewFromString(result.CashDebited)
+		if _, refundErr := g.game.RefundBatchInsert(ctx, accountID, playDeb, cashDeb, refundKey); refundErr != nil {
 			metrics.BatchInsertRefundFailures.Inc()
 			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
 		}
@@ -121,8 +132,9 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	share := g.heat.GetShareForUser(accountID)
 
 	return v1.Respond(w, http.StatusOK, BatchInsertResponse{
-		Queued:    req.Count,
-		HeatShare: share,
-		Balance:   result.BalancePlay,
+		Queued:      req.Count,
+		HeatShare:   share,
+		BalancePlay: result.BalancePlay,
+		BalanceCash: result.BalanceCash,
 	})
 }

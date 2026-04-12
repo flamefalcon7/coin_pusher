@@ -140,25 +140,52 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 
 func newTestCore(t *testing.T, balance decimal.Decimal) (*Core, uuid.UUID) {
 	t.Helper()
+	// Backwards-compat helper — treats `balance` as play balance, cash=0.
+	core, id, _ := newTestCoreWithBalances(t, balance, decimal.Zero)
+	return core, id
+}
+
+// newTestCoreWithBalances builds a Core whose in-memory account starts with
+// the given play and cash balances. The returned snapshot func returns the
+// current in-memory (play, cash) state so tests can assert post-conditions
+// without mocking every layer.
+func newTestCoreWithBalances(t *testing.T, play, cash decimal.Decimal) (*Core, uuid.UUID, func() (decimal.Decimal, decimal.Decimal)) {
+	t.Helper()
 
 	accountID := uuid.New()
-	currentBalance := balance
+	curPlay := play
+	curCash := cash
 
 	userStr := &mockUserStorer{
-		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
-			newBal := currentBalance.Add(delta)
-			if newBal.IsNegative() {
-				return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), currentBalance)
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: curPlay, BalanceCash: curCash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			switch currency {
+			case user.CurrencyPlay:
+				newBal := curPlay.Add(delta)
+				if newBal.IsNegative() {
+					return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), curPlay)
+				}
+				curPlay = newBal
+				return curPlay, nil
+			case user.CurrencyCash:
+				newBal := curCash.Add(delta)
+				if newBal.IsNegative() {
+					return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), curCash)
+				}
+				curCash = newBal
+				return curCash, nil
 			}
-			currentBalance = newBal
-			return currentBalance, nil
+			return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), decimal.Zero)
 		},
 	}
 	acctStr := &mockAcctStorer{}
 
 	userCore := user.NewCore(userStr)
 	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
-	return NewCore(userCore, acctCore), accountID
+	snapshot := func() (decimal.Decimal, decimal.Decimal) { return curPlay, curCash }
+	return NewCore(userCore, acctCore), accountID, snapshot
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +370,76 @@ func TestProcessBatchInsert_ZeroCount(t *testing.T) {
 
 	if result.Success {
 		t.Error("Success = true for zero count, want false")
+	}
+}
+
+func TestProcessBatchInsert_MixedSplit(t *testing.T) {
+	t.Parallel()
+
+	// play=2, cash=10; insert 5 → play-first draws 2 from play + 3 from cash.
+	core, accountID, snapshot := newTestCoreWithBalances(t, decimal.NewFromInt(2), decimal.NewFromInt(10))
+
+	result, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "ref-mixed")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error=%q", result.Error)
+	}
+	if result.BalancePlay != "0" {
+		t.Errorf("BalancePlay = %q, want 0", result.BalancePlay)
+	}
+	if result.BalanceCash != "7" {
+		t.Errorf("BalanceCash = %q, want 7", result.BalanceCash)
+	}
+	if result.PlayDebited != "2" {
+		t.Errorf("PlayDebited = %q, want 2", result.PlayDebited)
+	}
+	if result.CashDebited != "3" {
+		t.Errorf("CashDebited = %q, want 3", result.CashDebited)
+	}
+
+	p, c := snapshot()
+	if !p.Equal(decimal.NewFromInt(0)) || !c.Equal(decimal.NewFromInt(7)) {
+		t.Errorf("in-memory balances = (%s, %s), want (0, 7)", p, c)
+	}
+}
+
+func TestRefundBatchInsert_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Start at play=2, cash=10. Insert 5 (play-first). Then refund exact split.
+	core, accountID, snapshot := newTestCoreWithBalances(t, decimal.NewFromInt(2), decimal.NewFromInt(10))
+
+	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "ref-roundtrip")
+	if err != nil {
+		t.Fatalf("insert error: %v", err)
+	}
+	if !insertResult.Success {
+		t.Fatalf("insert failed: %s", insertResult.Error)
+	}
+
+	playDeb, _ := decimal.NewFromString(insertResult.PlayDebited)
+	cashDeb, _ := decimal.NewFromString(insertResult.CashDebited)
+
+	refundResult, err := core.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, "refund-ref-roundtrip")
+	if err != nil {
+		t.Fatalf("refund error: %v", err)
+	}
+	if !refundResult.Success {
+		t.Fatalf("refund failed: %s", refundResult.Error)
+	}
+
+	// Both balances must be restored to their pre-insert values.
+	p, c := snapshot()
+	if !p.Equal(decimal.NewFromInt(2)) {
+		t.Errorf("play after roundtrip = %s, want 2", p)
+	}
+	if !c.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("cash after roundtrip = %s, want 10", c)
+	}
+	if refundResult.BalancePlay != "2" || refundResult.BalanceCash != "10" {
+		t.Errorf("refund result balances = (%s, %s), want (2, 10)", refundResult.BalancePlay, refundResult.BalanceCash)
 	}
 }
 

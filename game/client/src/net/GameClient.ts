@@ -48,7 +48,8 @@ export type WheelCounterCallback = (counter: number) => void;
 export type BatchInsertAckCallback = (
   queued: number,
   error?: string,
-  balance?: string,
+  balancePlay?: string,
+  balanceCash?: string,
 ) => void;
 export type RewardCallback = (
   userId: string,
@@ -309,7 +310,8 @@ export class GameClient {
           this.batchInsertAckCallback(
             message.queued,
             message.error,
-            message.balance,
+            message.balance_play,
+            message.balance_cash,
           );
         }
         break;

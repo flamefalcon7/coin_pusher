@@ -20,6 +20,21 @@ function fmt(raw: string): string {
   }) : raw;
 }
 
+function fmtTotal(play: string, cash: string): string {
+  const p = parseFloat(play);
+  const c = parseFloat(cash);
+  const total = (Number.isFinite(p) ? p : 0) + (Number.isFinite(c) ? c : 0);
+  return total.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+const WALLET_INFO_TEXT =
+  "Your balance is the sum of play coins and withdrawable rewards. " +
+  "Inserting coins consumes play coins first; once play coins are empty, " +
+  "withdrawable rewards are used. Only the withdrawable balance can be withdrawn.";
+
 function truncAddr(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -53,10 +68,10 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, rol
       <div className="player-info player-info--collapsed" onClick={() => setCollapsed(false)}>
         <div className="player-info-balances">
           <span className="player-info-balance">
-            <span className="player-info-label">Play</span> {fmt(balancePlay)}
+            <span className="player-info-label">Balance</span> {fmtTotal(balancePlay, balanceCash)}
           </span>
           <span className="player-info-balance player-info-cash">
-            <span className="player-info-label">Cash</span> {fmt(balanceCash)}
+            <span className="player-info-label">Withdrawable</span> {fmt(balanceCash)}
           </span>
           <span className="player-info-expand">▾</span>
         </div>
@@ -72,10 +87,10 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, rol
       <div className="player-info-name">{displayName ?? truncAddr(address)}</div>
       <div className="player-info-balances">
         <span className="player-info-balance">
-          <span className="player-info-label">Play <InfoTip text="Chips for inserting coins. Deposit USDC to get more." position="bottom" /></span> {fmt(balancePlay)}
+          <span className="player-info-label">Balance <InfoTip text={WALLET_INFO_TEXT} position="bottom" /></span> {fmtTotal(balancePlay, balanceCash)}
         </span>
         <span className="player-info-balance player-info-cash">
-          <span className="player-info-label">Cash <InfoTip text="Withdrawable rewards. Earned when coins fall off the front edge." position="bottom" /></span> {fmt(balanceCash)}
+          <span className="player-info-label">Withdrawable</span> {fmt(balanceCash)}
         </span>
       </div>
       <div className="player-info-actions">
