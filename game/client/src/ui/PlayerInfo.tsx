@@ -35,6 +35,10 @@ const WALLET_INFO_TEXT =
   "Inserting coins consumes play coins first; once play coins are empty, " +
   "withdrawable rewards are used. Only the withdrawable balance can be withdrawn.";
 
+const WITHDRAWABLE_INFO_TEXT =
+  "Rewards earned when coins fall off the front edge. " +
+  "Only this portion of your balance can be withdrawn.";
+
 function truncAddr(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -90,7 +94,7 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, rol
           <span className="player-info-label">Balance <InfoTip text={WALLET_INFO_TEXT} position="bottom" /></span> {fmtTotal(balancePlay, balanceCash)}
         </span>
         <span className="player-info-balance player-info-cash">
-          <span className="player-info-label">Withdrawable</span> {fmt(balanceCash)}
+          <span className="player-info-label">Withdrawable <InfoTip text={WITHDRAWABLE_INFO_TEXT} position="bottom" /></span> {fmt(balanceCash)}
         </span>
       </div>
       <div className="player-info-actions">
