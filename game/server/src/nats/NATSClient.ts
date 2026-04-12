@@ -64,6 +64,29 @@ export type FillPlatformCommand = {
   user_id: string;
 };
 
+export type SponsorConfigCommand = {
+  sponsors: {
+    id: string;
+    brand_name: string;
+    token_symbol: string;
+    brand_color: string;
+    logo_url: string;
+    ad_image_url: string;
+    placement_tier?: "primary" | "secondary" | "tertiary";
+  }[];
+};
+
+export type SponsorQuotaCommand = {
+  quota_id: string;
+  sponsor_id: string;
+  coin_count: number;
+};
+
+export type BonusDropCommand = {
+  sponsor_id: string;
+  coin_count: number;
+};
+
 export type UpdateSceneObjectsCommand = {
   user_id: string;
   objects: {
@@ -286,6 +309,7 @@ export class NATSClient {
                 rotZ: b.rot?.[2] ?? 0,
                 rotW: b.rot?.[3] ?? 0,
                 z: b.z ?? 0,
+                sponsorId: b.sponsor_id ?? "",
               })),
             },
           },
@@ -402,6 +426,7 @@ export class NATSClient {
             rotZ: b.rot?.[2] ?? 0,
             rotW: b.rot?.[3] ?? 0,
             z: b.z ?? 0,
+            sponsorId: b.sponsor_id ?? "",
           })),
         },
       },
@@ -410,7 +435,7 @@ export class NATSClient {
   }
 
   // Publish classified coin despawn events (JSON encoded, for backend processing)
-  publishCoinDespawn(data: { coins: { id: number; zone: string; owner_id: string }[]; tick: number }): void {
+  publishCoinDespawn(data: { coins: { id: number; zone: string; owner_id: string; sponsor_id?: string }[]; tick: number }): void {
     this.trackedPublish(`game.${this.room}.evt.coin_despawn`, sc.encode(JSON.stringify(data)));
   }
 
@@ -424,6 +449,7 @@ export class NATSClient {
             id: c.id,
             ownerId: c.owner_id,
             isKeyCoin: c.is_key_coin ?? false,
+            sponsorId: c.sponsor_id ?? "",
           })),
         },
       },
@@ -493,6 +519,50 @@ export class NATSClient {
         handler(cmd);
       }
     })();
+  }
+
+  // Subscribe to sponsor_config updates (JSON encoded)
+  subscribeSponsorConfig(handler: (cmd: SponsorConfigCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.sponsor_config`);
+    this.subs.push(sub);
+    this.cmdSubs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as SponsorConfigCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to sponsor_quota commands (JSON encoded)
+  subscribeSponsorQuota(handler: (cmd: SponsorQuotaCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.sponsor_quota`);
+    this.subs.push(sub);
+    this.cmdSubs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as SponsorQuotaCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Subscribe to bonus_drop commands (JSON encoded)
+  subscribeBonusDrop(handler: (cmd: BonusDropCommand) => void): void {
+    const sub = this.nc!.subscribe(`game.${this.room}.cmd.sponsor_bonus`);
+    this.subs.push(sub);
+    this.cmdSubs.push(sub);
+    (async () => {
+      for await (const msg of sub) {
+        const cmd = JSON.parse(sc.decode(msg.data)) as BonusDropCommand;
+        handler(cmd);
+      }
+    })();
+  }
+
+  // Publish sponsor quota consumed event (JSON encoded, for backend processing)
+  publishSponsorQuotaConsumed(data: { quota_id: string; coins_spawned: number }): void {
+    this.trackedPublish(`game.${this.room}.evt.sponsor_quota_consumed`, sc.encode(JSON.stringify(data)));
   }
 
   /** Unsubscribe from all command subscriptions (stop accepting new game commands). */

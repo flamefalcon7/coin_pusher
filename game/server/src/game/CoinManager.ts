@@ -14,7 +14,8 @@ export class CoinManager {
     y?: number,
     z?: number,
     rotation?: [number, number, number, number],
-    bodyType?: BodyType
+    bodyType?: BodyType,
+    sponsorId?: string
   ): number | null {
     // Validate x position
     if (
@@ -30,7 +31,7 @@ export class CoinManager {
     const spawnY = y ?? COIN_CONFIG.SPAWN_HEIGHT;
     const spawnZ = z ?? 0;
 
-    this.gameState.addCoin(id, spawnX, spawnY, spawnZ, rotation, bodyType);
+    this.gameState.addCoin(id, spawnX, spawnY, spawnZ, rotation, bodyType, sponsorId);
 
     return id;
   }

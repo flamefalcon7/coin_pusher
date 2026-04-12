@@ -149,13 +149,14 @@ export class WebSocketClient {
           serverTime: v.serverTime,
           tick: v.tick,
           bodies: v.bodies.map((b) => {
-            const isCoinType = b.type === "coin" || b.type === "key_coin";
+            const isCoinType = b.type === "coin" || b.type === "key_coin" || b.type === "sponsor_coin";
             return {
               id: b.id,
-              type: b.type as "coin" | "key_coin" | "pusher",
+              type: b.type as "coin" | "key_coin" | "sponsor_coin" | "pusher",
               pos: isCoinType ? [b.posX, b.posY, b.posZ] as [number, number, number] : undefined,
               rot: isCoinType ? [b.rotX, b.rotY, b.rotZ, b.rotW] as [number, number, number, number] : undefined,
               z: b.type === "pusher" ? b.z : undefined,
+              sponsor_id: b.sponsorId || undefined,
             };
           }),
         };
@@ -191,6 +192,7 @@ export class WebSocketClient {
             id: c.id,
             owner_id: c.ownerId,
             is_key_coin: c.isKeyCoin || undefined,
+            sponsor_id: c.sponsorId || undefined,
           })),
         };
       }

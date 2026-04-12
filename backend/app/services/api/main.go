@@ -31,6 +31,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/gamegrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/inventorygrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/progressgrp"
+	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/sponsorgrp"
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/usergrp"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
@@ -39,6 +40,8 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/sponsor"
+	sponsordb "github.com/flamefalcon/coin-pusher/backend/business/core/sponsor/stores/sponsordb"
 	inventorydb "github.com/flamefalcon/coin-pusher/backend/business/core/inventory/stores/inventorydb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/progress"
 	progressdb "github.com/flamefalcon/coin-pusher/backend/business/core/progress/stores/progressdb"
@@ -269,7 +272,15 @@ func run() error {
 		}
 	}
 
-	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, wsOrigins)
+	// Sponsor domain.
+	sponsorStore := sponsordb.NewStore(db)
+	sponsorCore := sponsor.NewCore(
+		db,
+		sponsorStore,
+		func(dbtx database.DBTX) sponsor.Storer { return sponsordb.NewStore(dbtx) },
+	)
+
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, sponsorCore, wsOrigins)
 
 	// Subscribe to slot_status from game server for cap enforcement.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
@@ -278,7 +289,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, sponsorCore, nc, wsHandler)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -422,13 +433,25 @@ func run() error {
 	rewardAccum := make(map[uuid.UUID]float64)
 	notifyAccum := make(map[uuid.UUID]float64)
 
+	// Sponsor reward accumulator (keyed by campaignID -> accountID -> amount).
+	type sponsorRewardKey struct {
+		CampaignID uuid.UUID
+		AccountID  uuid.UUID
+	}
+	sponsorRewardAccum := make(map[sponsorRewardKey]decimal.Decimal)
+
+	// In-memory cache of active campaign data to avoid N+1 DB queries in despawn handler.
+	var sponsorCacheMu sync.RWMutex
+	sponsorCampaignCache := make(map[uuid.UUID]sponsor.Campaign)
+
 	// Subscribe to coin_despawn events from game server.
 	despawnSub, err := nc.Subscribe(ws.TopicCoinDespawn("main"), func(msg *nats.Msg) {
 		var evt struct {
 			Coins []struct {
-				ID      int    `json:"id"`
-				Zone    string `json:"zone"`
-				OwnerID string `json:"owner_id"`
+				ID        int    `json:"id"`
+				Zone      string `json:"zone"`
+				OwnerID   string `json:"owner_id"`
+				SponsorID string `json:"sponsor_id,omitempty"`
 			} `json:"coins"`
 			Tick int `json:"tick"`
 		}
@@ -437,28 +460,70 @@ func run() error {
 			return
 		}
 
-		// Count front-edge coins — only those pay out to players.
-		frontCount := 0
+		// Separate regular front-edge coins from sponsor front-edge coins.
+		regularFrontCount := 0
+		sponsorFrontCounts := make(map[string]int) // campaignID -> count
+
 		for _, c := range evt.Coins {
 			if c.Zone == "front" {
-				frontCount++
+				if c.SponsorID != "" {
+					sponsorFrontCounts[c.SponsorID]++
+				} else {
+					regularFrontCount++
+				}
 			}
 		}
-		if frontCount == 0 {
-			return
+
+		// Handle regular coin rewards via heat distribution.
+		if regularFrontCount > 0 {
+			dist := heatEngine.DistributeFrontEdgeDrop(regularFrontCount)
+			if dist != nil {
+				rewardMu.Lock()
+				for uid, amount := range dist {
+					rewardAccum[uid] += amount
+					notifyAccum[uid] += amount
+				}
+				rewardMu.Unlock()
+			}
 		}
 
-		dist := heatEngine.DistributeFrontEdgeDrop(frontCount)
-		if dist == nil {
-			return
-		}
+		// Handle sponsor coin rewards: distribute sponsor tokens via heat shares.
+		for campaignIDStr, count := range sponsorFrontCounts {
+			campaignID, err := uuid.Parse(campaignIDStr)
+			if err != nil {
+				log.Errorw("sponsor coin despawn: invalid campaign_id", "campaign_id", campaignIDStr)
+				continue
+			}
 
-		rewardMu.Lock()
-		for uid, amount := range dist {
-			rewardAccum[uid] += amount
-			notifyAccum[uid] += amount
+			// Look up reward_per_coin from cache (refreshed by sponsor_config).
+			sponsorCacheMu.RLock()
+			camp, cached := sponsorCampaignCache[campaignID]
+			sponsorCacheMu.RUnlock()
+			if !cached {
+				camp, err = sponsorCore.Get(context.Background(), campaignID)
+				if err != nil {
+					log.Errorw("sponsor coin despawn: campaign lookup failed", "campaign_id", campaignIDStr, "error", err)
+					continue
+				}
+				sponsorCacheMu.Lock()
+				sponsorCampaignCache[campaignID] = camp
+				sponsorCacheMu.Unlock()
+			}
+
+			totalReward := camp.RewardPerCoin.Mul(decimal.NewFromInt(int64(count)))
+			shares := heatEngine.GetShares()
+			if len(shares) == 0 {
+				continue
+			}
+
+			rewardMu.Lock()
+			for _, ps := range shares {
+				playerAmount := totalReward.Mul(decimal.NewFromFloat(ps.Share))
+				key := sponsorRewardKey{CampaignID: campaignID, AccountID: ps.UserID}
+				sponsorRewardAccum[key] = sponsorRewardAccum[key].Add(playerAmount)
+			}
+			rewardMu.Unlock()
 		}
-		rewardMu.Unlock()
 	})
 	if err != nil {
 		return fmt.Errorf("subscribing to coin_despawn: %w", err)
@@ -550,6 +615,104 @@ func run() error {
 				}
 				metrics.WorkerDuration.WithLabelValues("reward_notify").Observe(time.Since(workerStart).Seconds())
 			case <-stopNotify:
+				return
+			}
+		}
+	}()
+
+	// Sponsor reward flush — 10s interval, distributes sponsor tokens.
+	flushSponsorRewards := func() {
+		rewardMu.Lock()
+		batch := sponsorRewardAccum
+		sponsorRewardAccum = make(map[sponsorRewardKey]decimal.Decimal)
+		rewardMu.Unlock()
+
+		if len(batch) == 0 {
+			return
+		}
+
+		flushEpoch := time.Now().Unix() / 10 // 10s buckets for deterministic ref_key
+
+		// Per-flush campaign cache to avoid N+1 queries.
+		campaignCache := make(map[uuid.UUID]sponsor.Campaign)
+
+		for key, amount := range batch {
+			if amount.IsZero() {
+				continue
+			}
+			refKey := fmt.Sprintf("sponsor:%s:%s:%d", key.CampaignID, key.AccountID, flushEpoch)
+			if err := sponsorCore.DistributeReward(context.Background(), key.CampaignID, key.AccountID, amount, refKey); err != nil {
+				log.Errorw("sponsor reward flush error",
+					"campaign_id", key.CampaignID,
+					"account_id", key.AccountID,
+					"amount", amount.String(),
+					"error", err)
+				continue
+			}
+
+			// Query actual cumulative balance for this player+campaign.
+			var totalBalance string
+			bals, err := sponsorCore.GetBalances(context.Background(), key.AccountID)
+			if err != nil {
+				log.Errorw("sponsor reward: balance lookup for notify", "error", err)
+				totalBalance = amount.String() // fallback to flush amount
+			} else {
+				for _, b := range bals {
+					if b.CampaignID == key.CampaignID {
+						totalBalance = b.Balance.String()
+						break
+					}
+				}
+				if totalBalance == "" {
+					totalBalance = amount.String()
+				}
+			}
+
+			// Look up campaign for token symbol (use cache below).
+			camp, ok := campaignCache[key.CampaignID]
+			if !ok {
+				camp, err = sponsorCore.Get(context.Background(), key.CampaignID)
+				if err != nil {
+					log.Errorw("sponsor reward: campaign lookup for notify", "error", err)
+					continue
+				}
+				campaignCache[key.CampaignID] = camp
+			}
+			notifyMsg := struct {
+				Op           string `json:"op"`
+				UserID       string `json:"user_id"`
+				CampaignID   string `json:"campaign_id"`
+				TokenSymbol  string `json:"token_symbol"`
+				Amount       string `json:"amount"`
+				TotalBalance string `json:"total_balance"`
+			}{
+				Op:           "sponsor_reward",
+				UserID:       key.AccountID.String(),
+				CampaignID:   key.CampaignID.String(),
+				TokenSymbol:  camp.TokenSymbol,
+				Amount:       amount.String(),
+				TotalBalance: totalBalance,
+			}
+			data, err := json.Marshal(notifyMsg)
+			if err != nil {
+				log.Errorw("sponsor_reward marshal error", "error", err)
+				continue
+			}
+			if err := nc.Publish("game.main.sponsor_reward", data); err != nil {
+				log.Errorw("sponsor_reward publish error", "error", err)
+			}
+		}
+	}
+
+	stopSponsorFlush := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				flushSponsorRewards()
+			case <-stopSponsorFlush:
 				return
 			}
 		}
@@ -848,6 +1011,7 @@ func run() error {
 		close(stopHeat)
 		close(stopFlush)
 		close(stopNotify)
+		close(stopSponsorFlush)
 		close(stopNoncePurge)
 		close(stopExpire)
 		close(stopRTP)
@@ -855,6 +1019,7 @@ func run() error {
 		// Flush remaining accumulated rewards to DB before exit.
 		log.Infow("flushing remaining rewards")
 		flushRewards()
+		flushSponsorRewards()
 
 		// Stop NATS relay first.
 		relay.Stop()
@@ -912,6 +1077,7 @@ func buildAPIMux(
 	inventoryCore *inventory.Core,
 	depositCore *deposit.Core,
 	progressCore *progress.Core,
+	sponsorCore *sponsor.Core,
 	nc *nats.Conn,
 	wsHandler *ws.Handler,
 ) *chi.Mux {
@@ -990,6 +1156,41 @@ func buildAPIMux(
 		r.Put("/v1/admin/progress/{id}", mid.Errors(log, progGrp.UpdateProgress))
 		r.Get("/v1/admin/progress", mid.Errors(log, progGrp.ListAllProgress))
 		r.Get("/v1/admin/progress/{id}/users", mid.Errors(log, progGrp.ListUserProgressByProgressID))
+	})
+
+	// Sponsor routes — mix of public and JWT-protected.
+	sponsorGrp := sponsorgrp.New(sponsorCore, log)
+	mux.Route("/v1/sponsor", func(r chi.Router) {
+		// Public endpoints.
+		r.Get("/campaigns", mid.Errors(log, sponsorGrp.List))
+		r.Get("/campaign/{id}", mid.Errors(log, sponsorGrp.GetByID))
+
+		// JWT-protected endpoints.
+		r.Group(func(r chi.Router) {
+			r.Use(mid.Authenticate(a))
+			r.Post("/campaign", mid.Errors(log, sponsorGrp.Create))
+			r.Post("/campaign/{id}/upload", mid.Errors(log, sponsorGrp.Upload))
+			r.Get("/balances", mid.Errors(log, sponsorGrp.GetBalances))
+			r.Get("/campaigns/mine", mid.Errors(log, sponsorGrp.ListMine))
+		})
+	})
+
+	// Admin sponsor routes — JWT + admin role required.
+	mux.Group(func(r chi.Router) {
+		r.Use(mid.Authenticate(a))
+		r.Use(mid.RequireAdmin())
+		r.Put("/v1/admin/sponsor/campaign/{id}/pause", mid.Errors(log, sponsorGrp.Pause))
+		r.Put("/v1/admin/sponsor/campaign/{id}/resume", mid.Errors(log, sponsorGrp.Resume))
+		r.Delete("/v1/admin/sponsor/campaign/{id}", mid.Errors(log, sponsorGrp.Remove))
+	})
+
+	// Static file server for sponsor uploads with security headers.
+	uploadsFS := http.StripPrefix("/uploads/sponsors/", http.FileServer(http.Dir("./uploads/sponsors")))
+	mux.Get("/uploads/sponsors/*", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self'")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		uploadsFS.ServeHTTP(w, r)
 	})
 
 	// Game-secret-protected

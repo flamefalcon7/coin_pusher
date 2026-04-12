@@ -207,6 +207,100 @@ func (rl *Relay) Start() error {
 	}
 	rl.subs = append(rl.subs, sub)
 
+	// sponsor_config: JSON from backend → re-encode as msgpack for WS clients.
+	sub, err = rl.nc.Subscribe(TopicSponsorConfig(rl.room), func(msg *nats.Msg) {
+		var cfg struct {
+			Op       string `json:"op"        msgpack:"op"`
+			Sponsors []struct {
+				ID            string  `json:"id"              msgpack:"id"`
+				BrandName     string  `json:"brand_name"      msgpack:"brand_name"`
+				BrandColor    string  `json:"brand_color"     msgpack:"brand_color"`
+				TokenSymbol   string  `json:"token_symbol"    msgpack:"token_symbol"`
+				LogoURL       string  `json:"logo_url"        msgpack:"logo_url"`
+				AdImageURL    string  `json:"ad_image_url"    msgpack:"ad_image_url"`
+				PlacementTier *string `json:"placement_tier,omitempty" msgpack:"placement_tier,omitempty"`
+			} `json:"sponsors" msgpack:"sponsors"`
+		}
+		if err := json.Unmarshal(msg.Data, &cfg); err != nil {
+			rl.log.Errorw("sponsor_config json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(cfg)
+		if err != nil {
+			rl.log.Errorw("sponsor_config msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.Broadcast(packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// sponsor_bonus: broadcast sponsor bonus drop announcements to all WS clients.
+	sub, err = rl.nc.Subscribe(TopicSponsorBonusDrop(rl.room), func(msg *nats.Msg) {
+		var drop struct {
+			Op          string `json:"op"           msgpack:"op"`
+			SponsorID   string `json:"sponsor_id"   msgpack:"sponsor_id"`
+			SponsorName string `json:"sponsor_name" msgpack:"sponsor_name"`
+			TokenSymbol string `json:"token_symbol" msgpack:"token_symbol"`
+			CoinCount   int    `json:"coin_count"   msgpack:"coin_count"`
+		}
+		if err := json.Unmarshal(msg.Data, &drop); err != nil {
+			rl.log.Errorw("sponsor_bonus json decode error", "error", err)
+			return
+		}
+		packed, err := msgpack.Marshal(drop)
+		if err != nil {
+			rl.log.Errorw("sponsor_bonus msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.Broadcast(packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
+	// sponsor_reward: JSON from backend → re-encode as msgpack for target user.
+	sub, err = rl.nc.Subscribe("game."+rl.room+".sponsor_reward", func(msg *nats.Msg) {
+		var incoming struct {
+			Op           string `json:"op"`
+			UserID       string `json:"user_id"`
+			CampaignID   string `json:"campaign_id"`
+			TokenSymbol  string `json:"token_symbol"`
+			Amount       string `json:"amount"`
+			TotalBalance string `json:"total_balance"`
+		}
+		if err := json.Unmarshal(msg.Data, &incoming); err != nil {
+			rl.log.Errorw("sponsor_reward json decode error", "error", err)
+			return
+		}
+		// Re-encode as msgpack matching client SponsorRewardMessage type.
+		packed, err := msgpack.Marshal(struct {
+			Op           string `msgpack:"op"`
+			CampaignID   string `msgpack:"campaign_id"`
+			TokenSymbol  string `msgpack:"token_symbol"`
+			Amount       string `msgpack:"amount"`
+			TotalBalance string `msgpack:"total_balance"`
+		}{
+			Op:           "sponsor_reward",
+			CampaignID:   incoming.CampaignID,
+			TokenSymbol:  incoming.TokenSymbol,
+			Amount:       incoming.Amount,
+			TotalBalance: incoming.TotalBalance,
+		})
+		if err != nil {
+			rl.log.Errorw("sponsor_reward msgpack encode error", "error", err)
+			return
+		}
+		rl.hub.SendToUser(incoming.UserID, packed)
+	})
+	if err != nil {
+		return err
+	}
+	rl.subs = append(rl.subs, sub)
+
 	rl.log.Infow("nats relay started", "room", rl.room)
 	return nil
 }

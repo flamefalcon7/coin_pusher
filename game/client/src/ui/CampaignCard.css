@@ -1,0 +1,158 @@
+/* ── Campaign Card ──────────────────────────────────────────────────── */
+
+.campaign-card {
+  padding: 16px;
+  background: var(--panel-color);
+  border: 1px solid rgba(245, 230, 184, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: campaignCardIn 0.35s ease-out;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.campaign-card:hover {
+  border-color: rgba(245, 230, 184, 0.2);
+}
+
+@keyframes campaignCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Header row ─────────────────────────────────────────────────────── */
+
+.campaign-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.campaign-card-color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(245, 230, 184, 0.15);
+}
+
+.campaign-card-brand {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.campaign-card-symbol {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.5);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.campaign-card-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.campaign-card-status--active {
+  background: var(--accent-green);
+  color: #1A0E2E;
+}
+
+.campaign-card-status--depleted {
+  background: var(--accent-orange);
+  color: #1A0E2E;
+}
+
+.campaign-card-status--paused {
+  background: rgba(255, 255, 255, 0.3);
+  color: #1A0E2E;
+}
+
+.campaign-card-status--expired {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(245, 230, 184, 0.5);
+}
+
+/* ── Pool progress bar ──────────────────────────────────────────────── */
+
+.campaign-card-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.campaign-card-pool-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.45);
+}
+
+.campaign-card-pool-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(245, 230, 184, 0.08);
+  overflow: hidden;
+}
+
+.campaign-card-pool-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent-teal);
+  transition: width 0.4s ease-out;
+}
+
+/* ── Expanded details ───────────────────────────────────────────────── */
+
+.campaign-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(245, 230, 184, 0.06);
+}
+
+.campaign-card-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.campaign-card-detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 230, 184, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.campaign-card-detail-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+  word-break: break-all;
+  text-align: right;
+  max-width: 60%;
+}
+
+/* ── Actions slot ───────────────────────────────────────────────────── */
+
+.campaign-card-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}

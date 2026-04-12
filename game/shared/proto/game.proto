@@ -51,6 +51,7 @@ message BodyState {
   float rot_z = 8;
   float rot_w = 9;
   float z = 10;
+  string sponsor_id = 11;
 }
 
 message WorldSnapshot {
@@ -84,6 +85,7 @@ message CoinSpawnEntry {
   uint32 id = 1;
   string owner_id = 2;
   bool is_key_coin = 3;
+  string sponsor_id = 6;
 }
 
 message KeyCoinDraw {

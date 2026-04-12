@@ -11,6 +11,8 @@ import { PostProcessing } from "./PostProcessing";
 import { VFXManager } from "./VFXManager";
 import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
+import { SponsorAdPlacements } from "./SponsorAdPlacements";
+import type { SponsorConfigMessage } from "@coin-pusher/shared";
 
 // All toon material names to track
 const TOON_MAT_NAMES = [
@@ -36,6 +38,7 @@ export class SceneManager {
   private postProcessing: PostProcessing;
   private vfxManager: VFXManager;
   private targetingReticle: TargetingReticle;
+  private sponsorAdPlacements: SponsorAdPlacements;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -75,6 +78,18 @@ export class SceneManager {
     this.pusherMesh = new PusherMesh(this.scene);
     this.coinManager = new CoinMeshManager(this.scene);
     this.soundManager = new SoundManager();
+
+    // Initialize sponsor ad placements
+    this.sponsorAdPlacements = new SponsorAdPlacements(this.scene);
+    const backWallGroupForAds = this.staticMeshes.getBackWallGroup();
+    if (backWallGroupForAds) {
+      this.sponsorAdPlacements.createBackWallAd(backWallGroupForAds);
+    }
+    const leftWallGroup = this.staticMeshes.getLeftWallFrontParent();
+    const rightWallGroup = this.staticMeshes.getRightWallFrontParent();
+    if (leftWallGroup && rightWallGroup) {
+      this.sponsorAdPlacements.createSideWallAds(leftWallGroup, rightWallGroup);
+    }
 
     this.postProcessing = new PostProcessing(this.scene);
 
@@ -326,6 +341,7 @@ export class SceneManager {
     window.removeEventListener("resize", this.resizeHandler);
 
     this.targetingReticle.dispose();
+    this.sponsorAdPlacements.dispose();
     this.vfxManager.dispose();
     this.postProcessing.dispose();
     this.soundManager.dispose();
@@ -655,6 +671,28 @@ export class SceneManager {
 
   playRewardTicketRain(duration?: number): void {
     this.vfxManager.playRewardTicketRain(duration);
+  }
+
+  // ── Sponsor Config ───────────────────────────────────────────────────
+
+  updateSponsorConfig(sponsors: SponsorConfigMessage["sponsors"]): void {
+    // Create/update coin prototypes
+    for (const sponsor of sponsors) {
+      this.coinManager.createSponsorCoinPrototype(sponsor.id, sponsor.brand_color, sponsor.logo_url);
+    }
+
+    // Update ad placements
+    this.sponsorAdPlacements.updateSponsorCreatives(sponsors);
+  }
+
+  addCoinWithSponsor(
+    id: number,
+    pos: [number, number, number],
+    rot: [number, number, number, number],
+    isKeyCoin?: boolean,
+    sponsorId?: string
+  ): void {
+    this.coinManager.addCoin(id, pos, rot, isKeyCoin, sponsorId);
   }
 
   getScene(): Scene {

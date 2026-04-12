@@ -49,6 +49,13 @@ export class StaticMeshes {
     return this.backWallGroup;
   }
 
+  getSideWallGroups(): { left: TransformNode | null; right: TransformNode | null } {
+    return {
+      left: this.leftWallFrontParent,
+      right: this.rightWallFrontParent,
+    };
+  }
+
   private createStaticScene(): void {
     console.log("🏗️  Building client scene...");
 

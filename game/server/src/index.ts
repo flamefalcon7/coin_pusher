@@ -9,6 +9,7 @@ import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
 import { GameLoop } from "./game/GameLoop.js";
 import { DropScheduler } from "./game/DropScheduler.js";
+import { SponsorManager } from "./game/SponsorManager.js";
 import { EditorPhysics } from "./physics/EditorPhysics.js";
 import type { StackType, WorldSnapshotMessage } from "@coin-pusher/shared";
 
@@ -25,6 +26,7 @@ const natsClient = new NATSClient("main");
 
 let pusher: Pusher;
 let gameLoop: GameLoop;
+let sponsorManager: SponsorManager;
 let snapshotInterval: NodeJS.Timeout;
 
 async function initialize() {
@@ -43,8 +45,9 @@ async function initialize() {
   // Connect to NATS
   await natsClient.connect(NATS_URL);
 
-  // Create drop scheduler and game loop
+  // Create drop scheduler, sponsor manager, and game loop
   const dropScheduler = new DropScheduler();
+  sponsorManager = new SponsorManager(natsClient);
 
   gameLoop = new GameLoop(
     physicsWorld,
@@ -52,7 +55,8 @@ async function initialize() {
     gameState,
     coinManager,
     natsClient,
-    dropScheduler
+    dropScheduler,
+    sponsorManager
   );
 
   // Subscribe to coin_insert commands from Go backend
@@ -154,6 +158,21 @@ async function initialize() {
     });
   });
 
+  // Subscribe to sponsor config updates from backend
+  natsClient.subscribeSponsorConfig((cmd) => {
+    sponsorManager.onSponsorConfig(cmd.sponsors);
+  });
+
+  // Subscribe to sponsor quota commands from backend
+  natsClient.subscribeSponsorQuota((cmd) => {
+    sponsorManager.onSponsorQuota(cmd);
+  });
+
+  // Subscribe to bonus drop commands from backend
+  natsClient.subscribeBonusDrop((cmd) => {
+    sponsorManager.onBonusDrop(cmd);
+  });
+
   // Subscribe to snapshot requests (request/reply for new clients)
   natsClient.subscribeSnapshotRequest(() => {
     const worldState = gameState.getWorldSnapshot();
@@ -200,6 +219,11 @@ const shutdown = async () => {
   if (gameLoop) {
     await gameLoop.drain(60_000);
     gameLoop.stop();
+  }
+
+  // 3b. Clean up sponsor manager timers
+  if (sponsorManager) {
+    sponsorManager.dispose();
   }
 
   // 4. Close NATS (flush remaining publishes)
