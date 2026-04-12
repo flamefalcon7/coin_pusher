@@ -478,6 +478,152 @@ func TestIncrementCashBalance(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// DecrementForInsert
+// ---------------------------------------------------------------------------
+
+func TestDecrementForInsert(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+
+	tests := []struct {
+		name        string
+		play        int64
+		cash        int64
+		amount      int64
+		wantErr     bool
+		wantInsuff  bool
+		wantPlayDeb int64
+		wantCashDeb int64
+		wantNewPlay int64
+		wantNewCash int64
+	}{
+		{
+			name: "pure play source", play: 10, cash: 5, amount: 3,
+			wantPlayDeb: 3, wantCashDeb: 0, wantNewPlay: 7, wantNewCash: 5,
+		},
+		{
+			name: "pure cash source (play empty)", play: 0, cash: 5, amount: 3,
+			wantPlayDeb: 0, wantCashDeb: 3, wantNewPlay: 0, wantNewCash: 2,
+		},
+		{
+			name: "mixed cross-currency draw", play: 2, cash: 10, amount: 5,
+			wantPlayDeb: 2, wantCashDeb: 3, wantNewPlay: 0, wantNewCash: 7,
+		},
+		{
+			name: "exact play boundary", play: 5, cash: 5, amount: 5,
+			wantPlayDeb: 5, wantCashDeb: 0, wantNewPlay: 0, wantNewCash: 5,
+		},
+		{
+			name: "insufficient combined balance", play: 2, cash: 2, amount: 5,
+			wantErr: true, wantInsuff: true,
+		},
+		{
+			name: "zero amount is a no-op", play: 3, cash: 3, amount: 0,
+			wantPlayDeb: 0, wantCashDeb: 0, wantNewPlay: 3, wantNewCash: 3,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			play := decimal.NewFromInt(tc.play)
+			cash := decimal.NewFromInt(tc.cash)
+
+			var updates []struct {
+				currency string
+				delta    decimal.Decimal
+			}
+
+			storer := &mockStorer{
+				queryByIDFn: func(_ context.Context, _ uuid.UUID) (Account, error) {
+					return Account{
+						ID:          accountID,
+						BalancePlay: play,
+						BalanceCash: cash,
+					}, nil
+				},
+				updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+					updates = append(updates, struct {
+						currency string
+						delta    decimal.Decimal
+					}{currency, delta})
+					switch currency {
+					case "PLAY":
+						play = play.Add(delta)
+						return play, nil
+					case "CASH":
+						cash = cash.Add(delta)
+						return cash, nil
+					}
+					return decimal.Zero, errors.New("unexpected currency")
+				},
+			}
+
+			core := NewCore(storer)
+			pd, cd, np, nc, err := core.DecrementForInsert(
+				context.Background(), accountID, decimal.NewFromInt(tc.amount),
+			)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.wantInsuff && !errors.Is(err, v1.ErrInsufficientFund) {
+					t.Errorf("should wrap ErrInsufficientFund, got: %v", err)
+				}
+				// No writes should have occurred on error.
+				if len(updates) != 0 {
+					t.Errorf("expected no balance updates on error, got %d", len(updates))
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !pd.Equal(decimal.NewFromInt(tc.wantPlayDeb)) {
+				t.Errorf("playDeb = %s, want %d", pd, tc.wantPlayDeb)
+			}
+			if !cd.Equal(decimal.NewFromInt(tc.wantCashDeb)) {
+				t.Errorf("cashDeb = %s, want %d", cd, tc.wantCashDeb)
+			}
+			if !np.Equal(decimal.NewFromInt(tc.wantNewPlay)) {
+				t.Errorf("newPlay = %s, want %d", np, tc.wantNewPlay)
+			}
+			if !nc.Equal(decimal.NewFromInt(tc.wantNewCash)) {
+				t.Errorf("newCash = %s, want %d", nc, tc.wantNewCash)
+			}
+
+			// Verify we skipped writes for zero legs.
+			wantWrites := 0
+			if tc.wantPlayDeb > 0 {
+				wantWrites++
+			}
+			if tc.wantCashDeb > 0 {
+				wantWrites++
+			}
+			if len(updates) != wantWrites {
+				t.Errorf("balance updates = %d, want %d (updates=%+v)", len(updates), wantWrites, updates)
+			}
+			// All writes must be negative deltas (decrements).
+			for _, u := range updates {
+				if !u.delta.IsNegative() {
+					t.Errorf("expected negative delta, got %s for %s", u.delta, u.currency)
+				}
+			}
+			// Conservation: new totals must equal old totals minus amount.
+			gotTotal := np.Add(nc)
+			wantTotal := decimal.NewFromInt(tc.play + tc.cash - tc.amount)
+			if !gotTotal.Equal(wantTotal) {
+				t.Errorf("conservation violated: new total %s, want %s", gotTotal, wantTotal)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // GenerateNonce
 // ---------------------------------------------------------------------------
 

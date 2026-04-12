@@ -27,8 +27,15 @@ type GameEvent struct {
 }
 
 // GameEventResult is the response sent back to the game server.
+//
+// On a successful coin insert, PlayDebited + CashDebited reflect the play-first
+// split actually applied to the account. The caller retains these so a refund
+// (on NATS publish failure, etc.) can reverse the exact split.
 type GameEventResult struct {
 	Success     bool   `json:"success"`
 	BalancePlay string `json:"balance_play,omitempty"`
+	BalanceCash string `json:"balance_cash,omitempty"`
+	PlayDebited string `json:"play_debited,omitempty"`
+	CashDebited string `json:"cash_debited,omitempty"`
 	Error       string `json:"error,omitempty"`
 }

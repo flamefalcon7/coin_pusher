@@ -325,8 +325,9 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       setSlotCounts(counts);
     });
 
-    gameClient.onBatchInsertAck((queued, error, bal) => {
-      if (bal) setBalance(bal);
+    gameClient.onBatchInsertAck((queued, error, balPlay, balCash) => {
+      if (balPlay !== undefined) setBalance(balPlay);
+      if (balCash !== undefined) setBalanceCash(balCash);
       if (error === "table_full") {
         setInsertAckMsg("Table is full!");
         setTimeout(() => setInsertAckMsg(null), 2000);

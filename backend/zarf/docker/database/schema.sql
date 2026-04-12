@@ -179,8 +179,16 @@ CREATE TABLE IF NOT EXISTS accounting_logs (
     created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_accounting_logs_unique_ref
-    ON accounting_logs(action_type, reference_id) WHERE (reference_id != '');
+-- Drop pre-split unique index that blocked mixed-currency GAME_INSERT entries
+-- sharing a reference_id. Superseded by idx_accounting_logs_unique_ref_v2
+-- which permits one PLAY + one CASH row per (action_type, reference_id).
+DROP INDEX IF EXISTS idx_accounting_logs_unique_ref;
+
+-- Uniqueness is per (action_type, reference_id, currency) so a split insert
+-- can write one PLAY entry and one CASH entry under the same reference_id,
+-- while still preventing duplicate inserts or refunds within the same currency.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounting_logs_unique_ref_v2
+    ON accounting_logs(action_type, reference_id, currency) WHERE (reference_id != '');
 
 CREATE INDEX IF NOT EXISTS idx_accounting_logs_account_created
     ON accounting_logs(account_id, created_at DESC);

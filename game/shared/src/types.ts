@@ -371,12 +371,15 @@ export type WheelCounterMessage = {
   counter: number;
 };
 
-// Server → Client: Batch insert acknowledgement
+// Server → Client: Batch insert acknowledgement.
+// balance_play + balance_cash are the post-insert balances; the client adds
+// them for the unified wallet total and shows balance_cash as withdrawable.
 export type BatchInsertAckMessage = {
   op: "batch_insert_ack";
   queued: number;
   heat_share?: number;
-  balance?: string;
+  balance_play?: string;
+  balance_cash?: string;
   error?: string;
 };
 

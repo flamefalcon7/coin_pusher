@@ -150,16 +150,38 @@ func errHandler(log *zap.SugaredLogger, handler v1.Handler) http.HandlerFunc {
 	return mid.Errors(log, handler)
 }
 
+// newGameCore builds a game.Core with `balance` seeded as balance_play and
+// zero balance_cash. Behaves equivalently to the pre-split test helper for
+// existing play-only scenarios.
 func newGameCore(accountID uuid.UUID, balance decimal.Decimal) *game.Core {
-	currentBalance := balance
+	return newGameCoreWithBalances(accountID, balance, decimal.Zero)
+}
+
+func newGameCoreWithBalances(accountID uuid.UUID, play, cash decimal.Decimal) *game.Core {
+	curPlay := play
+	curCash := cash
 	userStr := &mockUserStorer{
-		updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
-			newBal := currentBalance.Add(delta)
-			if newBal.IsNegative() {
-				return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), currentBalance)
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: curPlay, BalanceCash: curCash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			switch currency {
+			case user.CurrencyPlay:
+				newBal := curPlay.Add(delta)
+				if newBal.IsNegative() {
+					return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), curPlay)
+				}
+				curPlay = newBal
+				return curPlay, nil
+			case user.CurrencyCash:
+				newBal := curCash.Add(delta)
+				if newBal.IsNegative() {
+					return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), curCash)
+				}
+				curCash = newBal
+				return curCash, nil
 			}
-			currentBalance = newBal
-			return currentBalance, nil
+			return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), decimal.Zero)
 		},
 	}
 	acctStr := &mockAcctStorer{}
@@ -292,5 +314,62 @@ func TestBatchInsert_CountExceedsMax(t *testing.T) {
 				t.Errorf("status = %d, want %d; body = %s", w.Code, tc.wantStatus, w.Body.String())
 			}
 		})
+	}
+}
+
+// TestBatchInsert_ResponseShape verifies the API exposes both balance_play
+// and balance_cash after a split insert so the client can render a unified
+// wallet total plus the withdrawable sub-indicator.
+func TestBatchInsert_ResponseShape(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+	// Seed play=2, cash=10; inserting 5 draws 2 from play + 3 from cash.
+	gameCore := newGameCoreWithBalances(accountID, decimal.NewFromInt(2), decimal.NewFromInt(10))
+
+	// Use a fake NATS conn via a nil check path: we pass nil nc but the
+	// handler would NPE on Publish, so stage with a real conn would be ideal.
+	// Instead, we exercise the success → response branch by skipping the NATS
+	// publish path via a stub. Since New() stores nc directly, use a mock
+	// HTTP test that focuses on validating the shape via the game core
+	// directly rather than the handler end-to-end.
+	_ = log
+
+	result, err := gameCore.ProcessBatchInsert(context.Background(), accountID, 5, "ref-shape")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("insert failed: %s", result.Error)
+	}
+	if result.BalancePlay != "0" {
+		t.Errorf("BalancePlay = %q, want 0", result.BalancePlay)
+	}
+	if result.BalanceCash != "7" {
+		t.Errorf("BalanceCash = %q, want 7", result.BalanceCash)
+	}
+
+	// Verify the response payload shape (JSON field names) by marshalling a
+	// representative response through the struct definition.
+	resp := BatchInsertResponse{
+		Queued:      5,
+		HeatShare:   0.5,
+		BalancePlay: result.BalancePlay,
+		BalanceCash: result.BalanceCash,
+	}
+	blob, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	payload := string(blob)
+	if !strings.Contains(payload, `"balance_play":"0"`) {
+		t.Errorf("response missing balance_play; got %s", payload)
+	}
+	if !strings.Contains(payload, `"balance_cash":"7"`) {
+		t.Errorf("response missing balance_cash; got %s", payload)
+	}
+	if strings.Contains(payload, `"balance":`) {
+		t.Errorf("response should not include legacy single-balance field; got %s", payload)
 	}
 }

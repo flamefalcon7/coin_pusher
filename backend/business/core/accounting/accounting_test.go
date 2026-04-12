@@ -239,23 +239,35 @@ func TestProcessGameInsert(t *testing.T) {
 	accountID := uuid.New()
 
 	tests := []struct {
-		name    string
-		count   int
-		mockBal decimal.Decimal
-		mockErr error
-		wantErr bool
+		name        string
+		startPlay   int64
+		startCash   int64
+		count       int
+		wantErr     bool
+		wantInsuff  bool
+		wantPlayDeb int64
+		wantCashDeb int64
+		// Expected ledger entries (currency -> amount).
+		wantLedger map[string]int64
 	}{
 		{
-			name:    "sufficient balance",
-			count:   5,
-			mockBal: decimal.NewFromInt(95),
-			wantErr: false,
+			name: "pure play draw", startPlay: 95, startCash: 0, count: 5,
+			wantPlayDeb: 5, wantCashDeb: 0,
+			wantLedger: map[string]int64{CurrencyPlay: 5},
 		},
 		{
-			name:    "insufficient balance",
-			count:   5,
-			mockErr: v1.NewInsufficientFundError("PLAY", decimal.NewFromInt(5), decimal.NewFromInt(2)),
-			wantErr: true,
+			name: "pure cash draw (play empty)", startPlay: 0, startCash: 10, count: 3,
+			wantPlayDeb: 0, wantCashDeb: 3,
+			wantLedger: map[string]int64{CurrencyCash: 3},
+		},
+		{
+			name: "mixed split draw", startPlay: 2, startCash: 10, count: 5,
+			wantPlayDeb: 2, wantCashDeb: 3,
+			wantLedger: map[string]int64{CurrencyPlay: 2, CurrencyCash: 3},
+		},
+		{
+			name: "insufficient combined balance", startPlay: 1, startCash: 1, count: 5,
+			wantErr: true, wantInsuff: true,
 		},
 	}
 
@@ -263,29 +275,83 @@ func TestProcessGameInsert(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			play := decimal.NewFromInt(tc.startPlay)
+			cash := decimal.NewFromInt(tc.startCash)
+
 			userStr := &mockUserStorer{
-				updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
-					if tc.mockErr != nil {
-						return decimal.Zero, tc.mockErr
+				queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+					return user.Account{ID: accountID, BalancePlay: play, BalanceCash: cash}, nil
+				},
+				updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+					switch currency {
+					case CurrencyPlay:
+						play = play.Add(delta)
+						return play, nil
+					case CurrencyCash:
+						cash = cash.Add(delta)
+						return cash, nil
 					}
-					return tc.mockBal, nil
+					return decimal.Zero, errors.New("unexpected currency")
 				},
 			}
-			acctStr := &mockAcctStorer{}
+
+			gotLedger := map[string]int64{}
+			acctStr := &mockAcctStorer{
+				createFn: func(_ context.Context, log AccountingLog) error {
+					if log.ActionType != ActionGameInsert {
+						t.Errorf("action_type = %q, want %q", log.ActionType, ActionGameInsert)
+					}
+					if log.ReferenceID != "ref-123" {
+						t.Errorf("reference_id = %q, want ref-123", log.ReferenceID)
+					}
+					gotLedger[log.Currency] = log.Amount.IntPart()
+					return nil
+				},
+			}
 
 			userCore := user.NewCore(userStr)
 			core := NewCore(nil, acctStr, userCore, nil, nil)
 
-			newPlay, err := core.ProcessGameInsert(context.Background(), accountID, tc.count, "ref-123")
+			pd, cd, np, nc, err := core.ProcessGameInsert(
+				context.Background(), accountID, tc.count, "ref-123",
+			)
 
-			if tc.wantErr && err == nil {
-				t.Fatal("expected error, got nil")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.wantInsuff && !errors.Is(err, v1.ErrInsufficientFund) {
+					t.Errorf("should wrap ErrInsufficientFund, got: %v", err)
+				}
+				if len(gotLedger) != 0 {
+					t.Errorf("expected no ledger writes on error, got %v", gotLedger)
+				}
+				return
 			}
-			if !tc.wantErr && err != nil {
+
+			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !tc.wantErr && !newPlay.Equal(tc.mockBal) {
-				t.Errorf("newPlay = %s, want %s", newPlay, tc.mockBal)
+			if !pd.Equal(decimal.NewFromInt(tc.wantPlayDeb)) {
+				t.Errorf("playDebited = %s, want %d", pd, tc.wantPlayDeb)
+			}
+			if !cd.Equal(decimal.NewFromInt(tc.wantCashDeb)) {
+				t.Errorf("cashDebited = %s, want %d", cd, tc.wantCashDeb)
+			}
+			// Balance conservation.
+			wantNewTotal := tc.startPlay + tc.startCash - int64(tc.count)
+			gotNewTotal := np.Add(nc)
+			if !gotNewTotal.Equal(decimal.NewFromInt(wantNewTotal)) {
+				t.Errorf("new total = %s, want %d", gotNewTotal, wantNewTotal)
+			}
+			// Ledger entries match expected split.
+			if len(gotLedger) != len(tc.wantLedger) {
+				t.Errorf("ledger entries = %v, want %v", gotLedger, tc.wantLedger)
+			}
+			for cur, wantAmt := range tc.wantLedger {
+				if gotLedger[cur] != wantAmt {
+					t.Errorf("ledger[%s] = %d, want %d", cur, gotLedger[cur], wantAmt)
+				}
 			}
 		})
 	}
@@ -301,38 +367,57 @@ func TestProcessGameInsertRefund(t *testing.T) {
 	accountID := uuid.New()
 
 	tests := []struct {
-		name       string
-		count      int
-		mockBal    decimal.Decimal
-		updateErr  error
-		queryErr   error
-		createErr  error
-		wantErr    bool
-		wantAction string
+		name        string
+		playDeb     int64
+		cashDeb     int64
+		startPlay   int64
+		startCash   int64
+		updateErr   error
+		queryErr    error
+		createErr   error
+		wantErr     bool
+		wantLedger  map[string]int64 // currency -> amount for refund entries
+		wantNewPlay int64
+		wantNewCash int64
 	}{
 		{
-			name:       "successful refund",
-			count:      5,
-			mockBal:    decimal.NewFromInt(105),
-			wantErr:    false,
-			wantAction: ActionGameInsertRefund,
+			name: "mixed refund restores both legs",
+			playDeb: 2, cashDeb: 3,
+			startPlay: 0, startCash: 7, // before refund: insert left play=0, cash=7
+			wantLedger:  map[string]int64{CurrencyPlay: 2, CurrencyCash: 3},
+			wantNewPlay: 2, wantNewCash: 10,
 		},
 		{
-			name:      "increment balance fails",
-			count:     5,
+			name: "pure play refund writes only play entry",
+			playDeb: 5, cashDeb: 0,
+			startPlay: 0, startCash: 10,
+			wantLedger:  map[string]int64{CurrencyPlay: 5},
+			wantNewPlay: 5, wantNewCash: 10,
+		},
+		{
+			name: "pure cash refund writes only cash entry",
+			playDeb: 0, cashDeb: 5,
+			startPlay: 0, startCash: 5,
+			wantLedger:  map[string]int64{CurrencyCash: 5},
+			wantNewPlay: 0, wantNewCash: 10,
+		},
+		{
+			name: "increment balance fails",
+			playDeb: 5, cashDeb: 0,
 			updateErr: errors.New("db error"),
 			wantErr:   true,
 		},
 		{
-			name:     "query after increment fails",
-			count:    5,
-			queryErr: errors.New("db error"),
-			wantErr:  true,
+			name: "query after refund fails",
+			playDeb: 5, cashDeb: 0,
+			startPlay: 0, startCash: 0,
+			queryErr:  errors.New("db error"),
+			wantErr:   true,
 		},
 		{
-			name:      "create log fails",
-			count:     5,
-			mockBal:   decimal.NewFromInt(105),
+			name: "create log fails",
+			playDeb: 5, cashDeb: 0,
+			startPlay: 0, startCash: 0,
 			createErr: errors.New("insert failed"),
 			wantErr:   true,
 		},
@@ -342,27 +427,45 @@ func TestProcessGameInsertRefund(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var loggedAction string
+			play := decimal.NewFromInt(tc.startPlay)
+			cash := decimal.NewFromInt(tc.startCash)
+
 			userStr := &mockUserStorer{
-				updateBalanceFn: func(ctx context.Context, id uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+				updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
 					if tc.updateErr != nil {
 						return decimal.Zero, tc.updateErr
 					}
-					return decimal.Zero, nil
+					switch currency {
+					case CurrencyPlay:
+						play = play.Add(delta)
+						return play, nil
+					case CurrencyCash:
+						cash = cash.Add(delta)
+						return cash, nil
+					}
+					return decimal.Zero, errors.New("unexpected currency")
 				},
-				queryByIDFn: func(ctx context.Context, id uuid.UUID) (user.Account, error) {
+				queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
 					if tc.queryErr != nil {
 						return user.Account{}, tc.queryErr
 					}
-					return user.Account{BalancePlay: tc.mockBal}, nil
+					return user.Account{BalancePlay: play, BalanceCash: cash}, nil
 				},
 			}
+
+			gotLedger := map[string]int64{}
 			acctStr := &mockAcctStorer{
-				createFn: func(ctx context.Context, log AccountingLog) error {
-					loggedAction = log.ActionType
+				createFn: func(_ context.Context, log AccountingLog) error {
 					if tc.createErr != nil {
 						return tc.createErr
 					}
+					if log.ActionType != ActionGameInsertRefund {
+						t.Errorf("action_type = %q, want %q", log.ActionType, ActionGameInsertRefund)
+					}
+					if log.ReferenceID != "refund-ref-123" {
+						t.Errorf("reference_id = %q, want refund-ref-123", log.ReferenceID)
+					}
+					gotLedger[log.Currency] = log.Amount.IntPart()
 					return nil
 				},
 			}
@@ -370,20 +473,33 @@ func TestProcessGameInsertRefund(t *testing.T) {
 			userCore := user.NewCore(userStr)
 			core := NewCore(nil, acctStr, userCore, nil, nil)
 
-			newPlay, err := core.ProcessGameInsertRefund(context.Background(), accountID, tc.count, "refund-ref-123")
+			newPlay, newCash, err := core.ProcessGameInsertRefund(
+				context.Background(), accountID,
+				decimal.NewFromInt(tc.playDeb), decimal.NewFromInt(tc.cashDeb),
+				"refund-ref-123",
+			)
 
-			if tc.wantErr && err == nil {
-				t.Fatal("expected error, got nil")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
 			}
-			if !tc.wantErr && err != nil {
+			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !tc.wantErr {
-				if !newPlay.Equal(tc.mockBal) {
-					t.Errorf("newPlay = %s, want %s", newPlay, tc.mockBal)
-				}
-				if loggedAction != tc.wantAction {
-					t.Errorf("action_type = %q, want %q", loggedAction, tc.wantAction)
+			if !newPlay.Equal(decimal.NewFromInt(tc.wantNewPlay)) {
+				t.Errorf("newPlay = %s, want %d", newPlay, tc.wantNewPlay)
+			}
+			if !newCash.Equal(decimal.NewFromInt(tc.wantNewCash)) {
+				t.Errorf("newCash = %s, want %d", newCash, tc.wantNewCash)
+			}
+			if len(gotLedger) != len(tc.wantLedger) {
+				t.Errorf("ledger entries = %v, want %v", gotLedger, tc.wantLedger)
+			}
+			for cur, wantAmt := range tc.wantLedger {
+				if gotLedger[cur] != wantAmt {
+					t.Errorf("ledger[%s] = %d, want %d", cur, gotLedger[cur], wantAmt)
 				}
 			}
 		})
