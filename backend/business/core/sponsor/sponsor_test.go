@@ -87,6 +87,10 @@ func (m *mockStorer) UpdateStatus(ctx context.Context, campaignID uuid.UUID, sta
 	return nil
 }
 
+func (m *mockStorer) UpdateImageURLs(ctx context.Context, campaignID uuid.UUID, logoURL, adImageURL string) error {
+	return nil
+}
+
 func (m *mockStorer) QueryByAccount(ctx context.Context, accountID uuid.UUID) ([]Campaign, error) {
 	if m.queryByAccountFn != nil {
 		return m.queryByAccountFn(ctx, accountID)
