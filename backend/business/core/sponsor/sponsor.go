@@ -116,6 +116,14 @@ func (c *Core) Resume(ctx context.Context, campaignID uuid.UUID) error {
 	return nil
 }
 
+// UpdateImageURLs persists logo_url and/or ad_image_url for a campaign.
+func (c *Core) UpdateImageURLs(ctx context.Context, campaignID uuid.UUID, logoURL, adImageURL string) error {
+	if err := c.storer.UpdateImageURLs(ctx, campaignID, logoURL, adImageURL); err != nil {
+		return fmt.Errorf("updating image urls for %s: %w", campaignID, err)
+	}
+	return nil
+}
+
 // Expire sets a campaign's status to "expired".
 func (c *Core) Expire(ctx context.Context, campaignID uuid.UUID) error {
 	if err := c.storer.UpdateStatus(ctx, campaignID, StatusExpired); err != nil {

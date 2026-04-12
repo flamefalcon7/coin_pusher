@@ -200,6 +200,11 @@ func (g *Group) Upload(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		return v1.NewRequestError(fmt.Errorf("no files uploaded; provide 'logo' or 'ad_image' field"), http.StatusBadRequest)
 	}
 
+	// Persist the URLs to the campaign record so clients see them.
+	if err := g.sponsor.UpdateImageURLs(ctx, campaignID, resp.LogoURL, resp.AdImageURL); err != nil {
+		return fmt.Errorf("persisting image urls: %w", err)
+	}
+
 	return v1.Respond(w, http.StatusOK, resp)
 }
 

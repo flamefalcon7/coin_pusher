@@ -18,6 +18,7 @@ type Storer interface {
 	CreateRewardLog(ctx context.Context, log RewardLog) error
 	QueryBalancesByAccount(ctx context.Context, accountID uuid.UUID) ([]SponsorBalance, error)
 	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
+	UpdateImageURLs(ctx context.Context, campaignID uuid.UUID, logoURL, adImageURL string) error
 	QueryByAccount(ctx context.Context, accountID uuid.UUID) ([]Campaign, error)
 	RestorePool(ctx context.Context, campaignID uuid.UUID, amount decimal.Decimal) error
 	CreateQuota(ctx context.Context, entry QuotaEntry) error

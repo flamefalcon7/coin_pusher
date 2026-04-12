@@ -139,6 +139,29 @@ func (s *Store) QueryBalancesByAccount(ctx context.Context, accountID uuid.UUID)
 	return bals, nil
 }
 
+// UpdateImageURLs sets logo_url and/or ad_image_url. Empty strings are ignored.
+func (s *Store) UpdateImageURLs(ctx context.Context, campaignID uuid.UUID, logoURL, adImageURL string) error {
+	const q = `
+		UPDATE sponsor_campaigns
+		SET logo_url = CASE WHEN $1 = '' THEN logo_url ELSE $1 END,
+		    ad_image_url = CASE WHEN $2 = '' THEN ad_image_url ELSE $2 END,
+		    updated_at = now()
+		WHERE campaign_id = $3`
+
+	res, err := s.db.ExecContext(ctx, q, logoURL, adImageURL, campaignID)
+	if err != nil {
+		return fmt.Errorf("updating image urls: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return v1.NewRequestError(v1.ErrNotFound, 404)
+	}
+	return nil
+}
+
 // UpdateStatus sets the status of a campaign.
 func (s *Store) UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error {
 	const q = `UPDATE sponsor_campaigns SET status = $1, updated_at = now() WHERE campaign_id = $2`
