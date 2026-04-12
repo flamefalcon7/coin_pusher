@@ -716,7 +716,12 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       return;
     }
 
-    if (parseFloat(balance) < count) {
+    // Unified wallet: guard against the combined total (play + withdrawable).
+    // The server does play-first draw and will only reject if
+    // balance_play + balance_cash < count. Checking play alone here would
+    // block valid inserts that should fall through to withdrawable balance.
+    const total = parseFloat(balance) + parseFloat(balanceCash);
+    if (!Number.isFinite(total) || total < count) {
       setInsertAckMsg("Not enough coins!");
       setInsertRejected(true);
       setTimeout(() => { setInsertAckMsg(null); setInsertRejected(false); }, 2000);
