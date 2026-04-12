@@ -357,6 +357,8 @@ func TestBatchInsert_ResponseShape(t *testing.T) {
 		HeatShare:   0.5,
 		BalancePlay: result.BalancePlay,
 		BalanceCash: result.BalanceCash,
+		PlayDebited: result.PlayDebited,
+		CashDebited: result.CashDebited,
 	}
 	blob, err := json.Marshal(resp)
 	if err != nil {
@@ -368,6 +370,12 @@ func TestBatchInsert_ResponseShape(t *testing.T) {
 	}
 	if !strings.Contains(payload, `"balance_cash":"7"`) {
 		t.Errorf("response missing balance_cash; got %s", payload)
+	}
+	if !strings.Contains(payload, `"play_debited":"2"`) {
+		t.Errorf("response missing play_debited=2; got %s", payload)
+	}
+	if !strings.Contains(payload, `"cash_debited":"3"`) {
+		t.Errorf("response missing cash_debited=3; got %s", payload)
 	}
 	if strings.Contains(payload, `"balance":`) {
 		t.Errorf("response should not include legacy single-balance field; got %s", payload)
