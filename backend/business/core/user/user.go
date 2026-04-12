@@ -150,6 +150,69 @@ func (c *Core) DecrementCashBalance(ctx context.Context, accountID uuid.UUID, am
 	return c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount.Neg())
 }
 
+// DecrementForInsert atomically debits `amount` from the account using a
+// play-first, cash-second priority. It draws from balance_play until exhausted,
+// then draws the remainder from balance_cash. Returns the amounts actually
+// debited from each currency plus the resulting balances.
+//
+// **CONTRACT: This MUST be called from within an accounting.execTx transaction.**
+// The function issues two sequential UpdateBalance writes (one PLAY, one CASH).
+// Atomicity across those writes — specifically, rollback of the first write if
+// the second fails — relies entirely on the caller's enclosing transaction. If
+// you call this with a non-tx storer, a mid-sequence failure will leave the
+// account in a partial-debit state with NO rollback and a silent fund leak.
+//
+// Current callers: only accounting.Core.ProcessGameInsert, which wraps this in
+// execTx. Do not introduce new callers outside that pattern without threading
+// a transaction through.
+//
+// Returns ErrInsufficientFund (wrapped) if balance_play + balance_cash < amount.
+// When amount is zero, returns (0, 0, currentPlay, currentCash) with no writes.
+func (c *Core) DecrementForInsert(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) (playDebited, cashDebited, newPlay, newCash decimal.Decimal, err error) {
+	if amount.Sign() < 0 {
+		return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero,
+			fmt.Errorf("decrement amount must be non-negative: %s", amount)
+	}
+
+	acct, err := c.storer.QueryByIDForUpdate(ctx, accountID)
+	if err != nil {
+		return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero, err
+	}
+
+	if amount.IsZero() {
+		return decimal.Zero, decimal.Zero, acct.BalancePlay, acct.BalanceCash, nil
+	}
+
+	// Play-first draw: consume up to balance_play, remainder comes from cash.
+	playDebited = decimal.Min(acct.BalancePlay, amount)
+	cashDebited = amount.Sub(playDebited)
+
+	if cashDebited.GreaterThan(acct.BalanceCash) {
+		total := acct.BalancePlay.Add(acct.BalanceCash)
+		return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero,
+			v1.NewInsufficientFundError(CurrencyPlay+"+"+CurrencyCash, amount, total)
+	}
+
+	newPlay = acct.BalancePlay
+	newCash = acct.BalanceCash
+
+	if playDebited.Sign() > 0 {
+		newPlay, err = c.storer.UpdateBalance(ctx, accountID, CurrencyPlay, playDebited.Neg())
+		if err != nil {
+			return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero, err
+		}
+	}
+
+	if cashDebited.Sign() > 0 {
+		newCash, err = c.storer.UpdateBalance(ctx, accountID, CurrencyCash, cashDebited.Neg())
+		if err != nil {
+			return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero, err
+		}
+	}
+
+	return playDebited, cashDebited, newPlay, newCash, nil
+}
+
 // IncrementCashBalance increases an account's cash balance atomically.
 func (c *Core) IncrementCashBalance(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
 	_, err := c.storer.UpdateBalance(ctx, accountID, CurrencyCash, amount)

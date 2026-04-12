@@ -123,59 +123,138 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 }
 
 // ProcessGameInsert handles a coin insertion game event.
-// Debits the account's play balance and creates a ledger entry atomically.
-// Returns the new balance_play value.
-func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (decimal.Decimal, error) {
+// Debits the account using a play-first, cash-second priority within a single
+// transaction and writes a ledger entry for each currency that was actually
+// used (one or two entries sharing the same referenceID).
+//
+// Returns the amounts debited from each currency and the resulting balances.
+func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (playDebited, cashDebited, newPlay, newCash decimal.Decimal, err error) {
 	amount := decimal.NewFromInt(int64(coinCount))
 
-	var newPlay decimal.Decimal
-	err := c.execTx(ctx, func(s txStores) error {
+	err = c.execTx(ctx, func(s txStores) error {
 		var txErr error
-		newPlay, txErr = s.userCore.DecrementPlayBalance(ctx, accountID, amount)
+		playDebited, cashDebited, newPlay, newCash, txErr = s.userCore.DecrementForInsert(ctx, accountID, amount)
 		if txErr != nil {
 			return txErr
 		}
 
 		now := time.Now().UTC()
-		log := AccountingLog{
-			LogID:       uuid.New(),
-			AccountID:   accountID,
-			ActionType:  ActionGameInsert,
-			Amount:      amount,
-			Currency:    CurrencyPlay,
-			ReferenceID: referenceID,
-			CreatedAt:   now,
+
+		if playDebited.Sign() > 0 {
+			log := AccountingLog{
+				LogID:       uuid.New(),
+				AccountID:   accountID,
+				ActionType:  ActionGameInsert,
+				Amount:      playDebited,
+				Currency:    CurrencyPlay,
+				ReferenceID: referenceID,
+				CreatedAt:   now,
+			}
+			if txErr := s.storer.Create(ctx, log); txErr != nil {
+				return fmt.Errorf("creating game insert log (play): %w", txErr)
+			}
 		}
 
-		if txErr = s.storer.Create(ctx, log); txErr != nil {
-			return fmt.Errorf("creating game insert log: %w", txErr)
+		if cashDebited.Sign() > 0 {
+			log := AccountingLog{
+				LogID:       uuid.New(),
+				AccountID:   accountID,
+				ActionType:  ActionGameInsert,
+				Amount:      cashDebited,
+				Currency:    CurrencyCash,
+				ReferenceID: referenceID,
+				CreatedAt:   now,
+			}
+			if txErr := s.storer.Create(ctx, log); txErr != nil {
+				return fmt.Errorf("creating game insert log (cash): %w", txErr)
+			}
 		}
+
 		return nil
 	})
 
 	if err != nil {
-		return decimal.Zero, err
+		return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero, err
 	}
 
 	// Record game insert metric for progress system (after tx succeeds).
+	// Metric amount is the total debited across both currencies — behaviourally
+	// identical to pre-split insert for downstream progress tracking.
 	if c.metricRecorder != nil {
 		if mrErr := c.metricRecorder(ctx, accountID, "game_insert_count", amount); mrErr != nil {
 			metrics.ProgressMetricErrors.Inc()
 		}
 	}
 
-	return newPlay, nil
+	return playDebited, cashDebited, newPlay, newCash, nil
 }
 
-// ProcessGameInsertRefund reverses a game insert by crediting play balance back.
-// Used when NATS publish fails after balance was already debited.
-func (c *Core) ProcessGameInsertRefund(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (decimal.Decimal, error) {
-	amount := decimal.NewFromInt(int64(coinCount))
+// ProcessGameInsertRefund reverses a split game insert by crediting each
+// currency back by the exact amount originally debited. The caller is expected
+// to have retained the split returned by ProcessGameInsert and pass it in here.
+//
+// Writes one ledger entry per non-zero leg. Used when NATS publish fails after
+// balance was already debited.
+func (c *Core) ProcessGameInsertRefund(ctx context.Context, accountID uuid.UUID, playDebited, cashDebited decimal.Decimal, referenceID string) (newPlay, newCash decimal.Decimal, err error) {
+	if playDebited.Sign() < 0 || cashDebited.Sign() < 0 {
+		return decimal.Zero, decimal.Zero, fmt.Errorf("refund amounts must be non-negative: play=%s cash=%s", playDebited, cashDebited)
+	}
 
-	var newPlay decimal.Decimal
-	err := c.execTx(ctx, func(s txStores) error {
-		if err := s.userCore.IncrementPlayBalance(ctx, accountID, amount); err != nil {
-			return err
+	err = c.execTx(ctx, func(s txStores) error {
+		// Idempotency check inside the transaction (mirrors ProcessDeposit's
+		// TOCTOU-safe pattern, docs/security-audit.md P0-8). If any refund
+		// entry already exists for this referenceID, short-circuit with the
+		// current balances — replay must be a no-op, not a double-credit.
+		_, qerr := s.storer.QueryByReference(ctx, ActionGameInsertRefund, referenceID)
+		if qerr == nil {
+			acct, err := s.userCore.QueryByID(ctx, accountID)
+			if err != nil {
+				return err
+			}
+			newPlay = acct.BalancePlay
+			newCash = acct.BalanceCash
+			return nil
+		}
+		if !errors.Is(qerr, v1.ErrNotFound) {
+			return fmt.Errorf("checking refund idempotency: %w", qerr)
+		}
+
+		now := time.Now().UTC()
+
+		if playDebited.Sign() > 0 {
+			if err := s.userCore.IncrementPlayBalance(ctx, accountID, playDebited); err != nil {
+				return err
+			}
+			log := AccountingLog{
+				LogID:       uuid.New(),
+				AccountID:   accountID,
+				ActionType:  ActionGameInsertRefund,
+				Amount:      playDebited,
+				Currency:    CurrencyPlay,
+				ReferenceID: referenceID,
+				CreatedAt:   now,
+			}
+			if txErr := s.storer.Create(ctx, log); txErr != nil {
+				return fmt.Errorf("creating game insert refund log (play): %w", txErr)
+			}
+		}
+
+		if cashDebited.Sign() > 0 {
+			if err := s.userCore.IncrementCashBalance(ctx, accountID, cashDebited); err != nil {
+				return err
+			}
+			log := AccountingLog{
+				LogID:       uuid.New(),
+				AccountID:   accountID,
+				ActionType:  ActionGameInsertRefund,
+				Amount:      cashDebited,
+				Currency:    CurrencyCash,
+				ReferenceID: referenceID,
+				CreatedAt:   now,
+			}
+			if txErr := s.storer.Create(ctx, log); txErr != nil {
+				return fmt.Errorf("creating game insert refund log (cash): %w", txErr)
+			}
 		}
 
 		acct, err := s.userCore.QueryByID(ctx, accountID)
@@ -183,28 +262,14 @@ func (c *Core) ProcessGameInsertRefund(ctx context.Context, accountID uuid.UUID,
 			return err
 		}
 		newPlay = acct.BalancePlay
-
-		now := time.Now().UTC()
-		log := AccountingLog{
-			LogID:       uuid.New(),
-			AccountID:   accountID,
-			ActionType:  ActionGameInsertRefund,
-			Amount:      amount,
-			Currency:    CurrencyPlay,
-			ReferenceID: referenceID,
-			CreatedAt:   now,
-		}
-
-		if txErr := s.storer.Create(ctx, log); txErr != nil {
-			return fmt.Errorf("creating game insert refund log: %w", txErr)
-		}
+		newCash = acct.BalanceCash
 		return nil
 	})
 
 	if err != nil {
-		return decimal.Zero, err
+		return decimal.Zero, decimal.Zero, err
 	}
-	return newPlay, nil
+	return newPlay, newCash, nil
 }
 
 // ProcessGameReward handles a game reward event (coins distributed via heat shares).

@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+	"github.com/shopspring/decimal"
 
+	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
@@ -17,6 +20,11 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
+
+// refundTxTimeout bounds the refund transaction when run on context.Background()
+// (decoupled from the request ctx so cancellation of the caller can't abort
+// the refund, but still bounded so a stuck DB can't leak goroutines).
+const refundTxTimeout = 10 * time.Second
 
 // Group holds the handler dependencies.
 type Group struct {
@@ -58,10 +66,22 @@ type BatchInsertRequest struct {
 }
 
 // BatchInsertResponse is the response for batch insert.
+//
+// BalancePlay and BalanceCash are the post-insert balances. A single insert
+// may draw from one or both currencies (play-first, cash-fallback); both
+// values are returned so the client can render a unified wallet total plus a
+// separate "withdrawable" sub-indicator.
+//
+// PlayDebited and CashDebited expose the exact split applied on this insert,
+// so clients and agents can verify what was consumed without having to retain
+// pre-insert balance state.
 type BatchInsertResponse struct {
-	Queued    int     `json:"queued"`
-	HeatShare float64 `json:"heat_share"`
-	Balance   string  `json:"balance"`
+	Queued      int     `json:"queued"`
+	HeatShare   float64 `json:"heat_share"`
+	BalancePlay string  `json:"balance_play"`
+	BalanceCash string  `json:"balance_cash"`
+	PlayDebited string  `json:"play_debited,omitempty"`
+	CashDebited string  `json:"cash_debited,omitempty"`
 }
 
 // BatchInsert handles POST /v1/game/batch-insert.
@@ -110,8 +130,29 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 	// P1-14: Check publish error; refund balance if NATS is unreachable.
 	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
-		refundKey := uuid.NewString()
-		if _, refundErr := g.game.RefundBatchInsert(ctx, accountID, req.Count, refundKey); refundErr != nil {
+		// Reverse the exact split the insert applied so the ledger refund
+		// entries mirror the insert entries per-currency. Raw field values
+		// are not echoed in the returned error — they could reflect
+		// server-internal decimal formatting state.
+		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
+		if parseErr != nil {
+			metrics.BatchInsertRefundFailures.Inc()
+			return fmt.Errorf("nats publish failed; cannot refund — play_debited unparseable: publish=%w, parse=%v",
+				err, parseErr)
+		}
+		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
+		if parseErr != nil {
+			metrics.BatchInsertRefundFailures.Inc()
+			return fmt.Errorf("nats publish failed; cannot refund — cash_debited unparseable: publish=%w, parse=%v",
+				err, parseErr)
+		}
+		// Decouple the refund tx from the request ctx (client cancellation
+		// must not abort the refund), but cap the wall-clock window so a
+		// stuck DB can't leak goroutines under a sustained outage.
+		refundCtx, cancel := context.WithTimeout(context.Background(), refundTxTimeout)
+		defer cancel()
+		refundKey := refKey + accounting.RefundKeySuffix
+		if _, refundErr := g.game.RefundBatchInsert(refundCtx, accountID, playDeb, cashDeb, refundKey); refundErr != nil {
 			metrics.BatchInsertRefundFailures.Inc()
 			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
 		}
@@ -121,8 +162,11 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	share := g.heat.GetShareForUser(accountID)
 
 	return v1.Respond(w, http.StatusOK, BatchInsertResponse{
-		Queued:    req.Count,
-		HeatShare: share,
-		Balance:   result.BalancePlay,
+		Queued:      req.Count,
+		HeatShare:   share,
+		BalancePlay: result.BalancePlay,
+		BalanceCash: result.BalanceCash,
+		PlayDebited: result.PlayDebited,
+		CashDebited: result.CashDebited,
 	})
 }
