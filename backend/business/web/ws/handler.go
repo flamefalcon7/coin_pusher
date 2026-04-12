@@ -13,9 +13,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
+	"github.com/shopspring/decimal"
 	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
 
+	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
@@ -682,8 +684,6 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		h.log.Warnw("batch_insert failed", "error", result.Error, "user_id", c.userID)
 		return
 	}
-	balanceStr := result.BalancePlay
-
 	// Optimistic increment slot count.
 	atomic.AddInt64(&h.slotCounts[slotID], accepted)
 	metrics.BatchInsertCoins.Add(float64(accepted))
@@ -705,22 +705,56 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	// P1-14: Check publish error; refund balance if NATS is unreachable.
 	if err := h.nc.Publish(TopicBatchInsert(h.room), data); err != nil {
 		h.log.Errorw("nats publish batch_insert failed, refunding", "error", err, "user_id", c.userID, "count", accepted)
-		refundKey := uuid.NewString()
-		if _, refundErr := h.gameCore.RefundBatchInsert(context.Background(), userID, int(accepted), refundKey); refundErr != nil {
+		// Reverse the exact play/cash split the insert applied. Parse failures
+		// are fatal — a silent zero-refund would permanently lose funds.
+		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
+		if parseErr != nil {
+			h.log.Errorw("refund aborted — play_debited unparseable",
+				"raw", result.PlayDebited, "error", parseErr, "user_id", c.userID)
+			metrics.BatchInsertRefundFailures.Inc()
+			return
+		}
+		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
+		if parseErr != nil {
+			h.log.Errorw("refund aborted — cash_debited unparseable",
+				"raw", result.CashDebited, "error", parseErr, "user_id", c.userID)
+			metrics.BatchInsertRefundFailures.Inc()
+			return
+		}
+		// Deterministic refund reference ID: <insert-ref>:refund. Enables
+		// idempotency guard in ProcessGameInsertRefund. Refund tx decoupled
+		// from the WS message lifecycle but wall-clock bounded so a stuck DB
+		// can't leak goroutines.
+		refundCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		refundKey := refKey + accounting.RefundKeySuffix
+		if _, refundErr := h.gameCore.RefundBatchInsert(refundCtx, userID, playDeb, cashDeb, refundKey); refundErr != nil {
 			h.log.Errorw("refund after nats failure also failed", "error", refundErr, "user_id", c.userID)
 			metrics.BatchInsertRefundFailures.Inc()
 		}
 		return
 	}
 
-	// Send response to the requesting client.
+	// Send response to the requesting client. Carry both balances so the
+	// client can render a unified wallet total plus the withdrawable
+	// sub-indicator without doing arithmetic from two separate messages.
 	share := h.heat.GetShareForUser(userID)
-	c.SendMessage(map[string]interface{}{
-		"op":         "batch_insert_ack",
-		"queued":     accepted,
-		"heat_share": share,
-		"balance":    balanceStr,
-	})
+	// Build ack; only include debit fields when non-empty so the WS payload
+	// mirrors the HTTP response's omitempty contract.
+	ack := map[string]interface{}{
+		"op":           "batch_insert_ack",
+		"queued":       accepted,
+		"heat_share":   share,
+		"balance_play": result.BalancePlay,
+		"balance_cash": result.BalanceCash,
+	}
+	if result.PlayDebited != "" {
+		ack["play_debited"] = result.PlayDebited
+	}
+	if result.CashDebited != "" {
+		ack["cash_debited"] = result.CashDebited
+	}
+	c.SendMessage(ack)
 }
 
 func (h *Handler) handlePing(c *Connection) {

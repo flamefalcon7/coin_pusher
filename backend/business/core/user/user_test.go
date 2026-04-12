@@ -478,6 +478,210 @@ func TestIncrementCashBalance(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// DecrementForInsert
+// ---------------------------------------------------------------------------
+
+func TestDecrementForInsert(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+
+	tests := []struct {
+		name        string
+		play        int64
+		cash        int64
+		amount      int64
+		wantErr     bool
+		wantInsuff  bool
+		wantPlayDeb int64
+		wantCashDeb int64
+		wantNewPlay int64
+		wantNewCash int64
+	}{
+		{
+			name: "pure play source", play: 10, cash: 5, amount: 3,
+			wantPlayDeb: 3, wantCashDeb: 0, wantNewPlay: 7, wantNewCash: 5,
+		},
+		{
+			name: "pure cash source (play empty)", play: 0, cash: 5, amount: 3,
+			wantPlayDeb: 0, wantCashDeb: 3, wantNewPlay: 0, wantNewCash: 2,
+		},
+		{
+			name: "mixed cross-currency draw", play: 2, cash: 10, amount: 5,
+			wantPlayDeb: 2, wantCashDeb: 3, wantNewPlay: 0, wantNewCash: 7,
+		},
+		{
+			name: "exact play boundary", play: 5, cash: 5, amount: 5,
+			wantPlayDeb: 5, wantCashDeb: 0, wantNewPlay: 0, wantNewCash: 5,
+		},
+		{
+			name: "insufficient combined balance", play: 2, cash: 2, amount: 5,
+			wantErr: true, wantInsuff: true,
+		},
+		{
+			name: "zero amount is a no-op", play: 3, cash: 3, amount: 0,
+			wantPlayDeb: 0, wantCashDeb: 0, wantNewPlay: 3, wantNewCash: 3,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			play := decimal.NewFromInt(tc.play)
+			cash := decimal.NewFromInt(tc.cash)
+
+			var updates []struct {
+				currency string
+				delta    decimal.Decimal
+			}
+
+			storer := &mockStorer{
+				queryByIDFn: func(_ context.Context, _ uuid.UUID) (Account, error) {
+					return Account{
+						ID:          accountID,
+						BalancePlay: play,
+						BalanceCash: cash,
+					}, nil
+				},
+				updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+					updates = append(updates, struct {
+						currency string
+						delta    decimal.Decimal
+					}{currency, delta})
+					switch currency {
+					case "PLAY":
+						play = play.Add(delta)
+						return play, nil
+					case "CASH":
+						cash = cash.Add(delta)
+						return cash, nil
+					}
+					return decimal.Zero, errors.New("unexpected currency")
+				},
+			}
+
+			core := NewCore(storer)
+			pd, cd, np, nc, err := core.DecrementForInsert(
+				context.Background(), accountID, decimal.NewFromInt(tc.amount),
+			)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.wantInsuff && !errors.Is(err, v1.ErrInsufficientFund) {
+					t.Errorf("should wrap ErrInsufficientFund, got: %v", err)
+				}
+				// No writes should have occurred on error.
+				if len(updates) != 0 {
+					t.Errorf("expected no balance updates on error, got %d", len(updates))
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !pd.Equal(decimal.NewFromInt(tc.wantPlayDeb)) {
+				t.Errorf("playDeb = %s, want %d", pd, tc.wantPlayDeb)
+			}
+			if !cd.Equal(decimal.NewFromInt(tc.wantCashDeb)) {
+				t.Errorf("cashDeb = %s, want %d", cd, tc.wantCashDeb)
+			}
+			if !np.Equal(decimal.NewFromInt(tc.wantNewPlay)) {
+				t.Errorf("newPlay = %s, want %d", np, tc.wantNewPlay)
+			}
+			if !nc.Equal(decimal.NewFromInt(tc.wantNewCash)) {
+				t.Errorf("newCash = %s, want %d", nc, tc.wantNewCash)
+			}
+
+			// Verify we skipped writes for zero legs.
+			wantWrites := 0
+			if tc.wantPlayDeb > 0 {
+				wantWrites++
+			}
+			if tc.wantCashDeb > 0 {
+				wantWrites++
+			}
+			if len(updates) != wantWrites {
+				t.Errorf("balance updates = %d, want %d (updates=%+v)", len(updates), wantWrites, updates)
+			}
+			// All writes must be negative deltas (decrements).
+			for _, u := range updates {
+				if !u.delta.IsNegative() {
+					t.Errorf("expected negative delta, got %s for %s", u.delta, u.currency)
+				}
+			}
+			// Conservation: new totals must equal old totals minus amount.
+			gotTotal := np.Add(nc)
+			wantTotal := decimal.NewFromInt(tc.play + tc.cash - tc.amount)
+			if !gotTotal.Equal(wantTotal) {
+				t.Errorf("conservation violated: new total %s, want %s", gotTotal, wantTotal)
+			}
+		})
+	}
+}
+
+// TestDecrementForInsert_PartialFailureLeavesPlayDebited documents (and pins)
+// the contract that DecrementForInsert relies on its caller's enclosing
+// transaction for atomicity. When the second UpdateBalance (CASH) fails after
+// the first (PLAY) has already written, this primitive returns the error but
+// does NOT itself rollback the play debit. It is the caller's execTx that must
+// observe the error and roll the whole transaction back.
+//
+// If the contract ever changes — e.g., a future maintainer unconditionally
+// unexports this primitive, or an alternate caller is added that doesn't wrap
+// it in a transaction — this test will either need deletion or a strengthening
+// assertion about internal rollback. It exists so such a change is a loud
+// edit, not a silent one.
+func TestDecrementForInsert_PartialFailureLeavesPlayDebited(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	// Start: play=10, cash=5. Insert 12 → playDeb=10, cashDeb=2.
+	play := decimal.NewFromInt(10)
+	cash := decimal.NewFromInt(5)
+
+	storer := &mockStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (Account, error) {
+			return Account{ID: accountID, BalancePlay: play, BalanceCash: cash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			switch currency {
+			case CurrencyPlay:
+				play = play.Add(delta)
+				return play, nil
+			case CurrencyCash:
+				// Simulate lock-wait-timeout / transient DB failure on the second leg.
+				return decimal.Zero, errors.New("simulated cash update failure")
+			}
+			return decimal.Zero, errors.New("unexpected currency")
+		},
+	}
+
+	core := NewCore(storer)
+	_, _, _, _, err := core.DecrementForInsert(
+		context.Background(), accountID, decimal.NewFromInt(12),
+	)
+	if err == nil {
+		t.Fatal("expected error from cash-leg failure, got nil")
+	}
+
+	// Contract: PLAY leg has been written (no internal rollback). In production
+	// the enclosing execTx observes err != nil and rolls the whole tx back —
+	// the DB is the safety net, not this primitive. Assert on the in-memory
+	// mock state to make this visible.
+	if !play.Equal(decimal.NewFromInt(0)) {
+		t.Errorf("play leg should have been written before cash leg failure; "+
+			"got play=%s, want 0 (10 - 10)", play)
+	}
+	if !cash.Equal(decimal.NewFromInt(5)) {
+		t.Errorf("cash leg must not have been written on failure; got cash=%s, want 5", cash)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // GenerateNonce
 // ---------------------------------------------------------------------------
 

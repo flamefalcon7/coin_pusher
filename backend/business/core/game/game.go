@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
@@ -43,7 +44,7 @@ func (c *Core) processInsertCoin(ctx context.Context, evt GameEvent) (GameEventR
 		count = 1
 	}
 
-	newPlay, err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, count, evt.IdempotencyKey)
+	playDeb, cashDeb, newPlay, newCash, err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, count, evt.IdempotencyKey)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
@@ -51,6 +52,9 @@ func (c *Core) processInsertCoin(ctx context.Context, evt GameEvent) (GameEventR
 	return GameEventResult{
 		Success:     true,
 		BalancePlay: newPlay.String(),
+		BalanceCash: newCash.String(),
+		PlayDebited: playDeb.String(),
+		CashDebited: cashDeb.String(),
 	}, nil
 }
 
@@ -64,7 +68,7 @@ func (c *Core) processSpawnStack(ctx context.Context, evt GameEvent) (GameEventR
 	}
 
 	refKey := evt.IdempotencyKey
-	newPlay, err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, cost, refKey)
+	playDeb, cashDeb, newPlay, newCash, err := c.acctCore.ProcessGameInsert(ctx, evt.UserID, cost, refKey)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
@@ -72,17 +76,22 @@ func (c *Core) processSpawnStack(ctx context.Context, evt GameEvent) (GameEventR
 	return GameEventResult{
 		Success:     true,
 		BalancePlay: newPlay.String(),
+		BalanceCash: newCash.String(),
+		PlayDebited: playDeb.String(),
+		CashDebited: cashDeb.String(),
 	}, nil
 }
 
-// ProcessBatchInsert debits the account's balance for a batch coin insert.
-// Returns the result including the updated balance.
+// ProcessBatchInsert debits the account's balance for a batch coin insert
+// using a play-first, cash-second priority. The returned result carries both
+// new balances plus the split actually debited — the caller must retain the
+// split if it may later need to refund (e.g., downstream publish failures).
 func (c *Core) ProcessBatchInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (GameEventResult, error) {
 	if coinCount <= 0 {
 		return GameEventResult{Success: false, Error: "coin count must be positive"}, nil
 	}
 
-	newPlay, err := c.acctCore.ProcessGameInsert(ctx, accountID, coinCount, referenceID)
+	playDeb, cashDeb, newPlay, newCash, err := c.acctCore.ProcessGameInsert(ctx, accountID, coinCount, referenceID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
@@ -90,12 +99,17 @@ func (c *Core) ProcessBatchInsert(ctx context.Context, accountID uuid.UUID, coin
 	return GameEventResult{
 		Success:     true,
 		BalancePlay: newPlay.String(),
+		BalanceCash: newCash.String(),
+		PlayDebited: playDeb.String(),
+		CashDebited: cashDeb.String(),
 	}, nil
 }
 
-// RefundBatchInsert credits back the play balance after a failed NATS publish.
-func (c *Core) RefundBatchInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (GameEventResult, error) {
-	newPlay, err := c.acctCore.ProcessGameInsertRefund(ctx, accountID, coinCount, referenceID)
+// RefundBatchInsert reverses a prior batch insert by crediting each currency
+// back by the exact amount originally debited. Caller must pass the split
+// retained from the insert's GameEventResult.
+func (c *Core) RefundBatchInsert(ctx context.Context, accountID uuid.UUID, playDebited, cashDebited decimal.Decimal, referenceID string) (GameEventResult, error) {
+	newPlay, newCash, err := c.acctCore.ProcessGameInsertRefund(ctx, accountID, playDebited, cashDebited, referenceID)
 	if err != nil {
 		return GameEventResult{Success: false, Error: err.Error()}, nil
 	}
@@ -103,5 +117,6 @@ func (c *Core) RefundBatchInsert(ctx context.Context, accountID uuid.UUID, coinC
 	return GameEventResult{
 		Success:     true,
 		BalancePlay: newPlay.String(),
+		BalanceCash: newCash.String(),
 	}, nil
 }
