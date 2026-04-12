@@ -374,12 +374,16 @@ export type WheelCounterMessage = {
 // Server → Client: Batch insert acknowledgement.
 // balance_play + balance_cash are the post-insert balances; the client adds
 // them for the unified wallet total and shows balance_cash as withdrawable.
+// play_debited / cash_debited expose the exact split so agents and debug
+// tooling can verify what was consumed without retaining pre-insert state.
 export type BatchInsertAckMessage = {
   op: "batch_insert_ack";
   queued: number;
   heat_share?: number;
   balance_play?: string;
   balance_cash?: string;
+  play_debited?: string;
+  cash_debited?: string;
   error?: string;
 };
 

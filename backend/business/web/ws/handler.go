@@ -740,6 +740,8 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		"heat_share":   share,
 		"balance_play": result.BalancePlay,
 		"balance_cash": result.BalanceCash,
+		"play_debited": result.PlayDebited,
+		"cash_debited": result.CashDebited,
 	})
 }
 

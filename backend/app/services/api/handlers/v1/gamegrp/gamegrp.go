@@ -64,11 +64,17 @@ type BatchInsertRequest struct {
 // may draw from one or both currencies (play-first, cash-fallback); both
 // values are returned so the client can render a unified wallet total plus a
 // separate "withdrawable" sub-indicator.
+//
+// PlayDebited and CashDebited expose the exact split applied on this insert,
+// so clients and agents can verify what was consumed without having to retain
+// pre-insert balance state.
 type BatchInsertResponse struct {
 	Queued      int     `json:"queued"`
 	HeatShare   float64 `json:"heat_share"`
 	BalancePlay string  `json:"balance_play"`
 	BalanceCash string  `json:"balance_cash"`
+	PlayDebited string  `json:"play_debited,omitempty"`
+	CashDebited string  `json:"cash_debited,omitempty"`
 }
 
 // BatchInsert handles POST /v1/game/batch-insert.
@@ -148,5 +154,7 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 		HeatShare:   share,
 		BalancePlay: result.BalancePlay,
 		BalanceCash: result.BalanceCash,
+		PlayDebited: result.PlayDebited,
+		CashDebited: result.CashDebited,
 	})
 }
