@@ -31,6 +31,12 @@ const (
 	CurrencyCash = "CASH"
 )
 
+// RefundKeySuffix is appended to an insert's reference_id to form the
+// deterministic correlation ID for its refund ledger entries. Mirrors the
+// pattern used by both HTTP (gamegrp) and WS (ws) handlers so that
+// ProcessGameInsertRefund's idempotency guard can dedupe retries.
+const RefundKeySuffix = ":refund"
+
 // AccountingLog represents a single ledger entry.
 type AccountingLog struct {
 	LogID       uuid.UUID       `db:"log_id" json:"log_id"`

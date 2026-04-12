@@ -354,6 +354,11 @@ Deposit (multi-chain) │ Deposit │ ← spent inserting coins (not withdrawabl
 
 **Ledger integrity.** Every insert writes one ledger entry per currency actually debited (one `GAME_INSERT` row for PLAY + one for CASH when split), all sharing the same `reference_id` so the split is auditable. Refunds mirror the split exactly and are idempotent by deterministic `<insert-ref>:refund` key.
 
+**Retry contract (for automated clients):**
+- `POST /v1/game/batch-insert` (and the WS `batch_insert` op) is **not** idempotent on its own — each call generates a fresh `reference_id` server-side. Clients must not auto-retry a 2xx-but-network-failed insert, because the server may have both debited and successfully published the insert to the physics layer. A retry would double-debit.
+- When the server returns a 5xx **specifically from NATS publish failure**, the server self-heals by issuing the refund before returning the error. Callers can treat the 5xx as "insert did not happen, funds are not consumed" for this specific failure mode.
+- **Refund is idempotent.** `ProcessGameInsertRefund` is keyed on the deterministic `<insert-ref>:refund` correlation ID and guarded by a `QueryByReference` check inside the tx (same pattern as deposit idempotency, `docs/security-audit.md` P0-8). A replay silently returns the current post-refund balances with no additional ledger writes. This means any retry loop *internal to the server* (not a client retry) is safe.
+
 ### 3.3 Where the House Edge Lives
 
 The house edge is **embedded in the physics itself**, not as an explicit fee or tax:

@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
+	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
 )
 
 // ---------------------------------------------------------------------------
@@ -109,7 +110,9 @@ func (m *mockAcctStorer) QueryByAccountID(_ context.Context, _ uuid.UUID, _, _ i
 }
 
 func (m *mockAcctStorer) QueryByReference(_ context.Context, _, _ string) (accounting.AccountingLog, error) {
-	return accounting.AccountingLog{}, nil
+	// Default: no prior entry. Matches real storer miss semantics so tests
+	// don't accidentally trip idempotency guards that treat nil-nil as "hit".
+	return accounting.AccountingLog{}, v1.NewNotFoundError()
 }
 
 func (m *mockAcctStorer) QueryAllByReference(_ context.Context, _, _ string) ([]accounting.AccountingLog, error) {
