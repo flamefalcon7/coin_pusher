@@ -1,7 +1,7 @@
 ---
 title: Fix Unified Wallet Review Findings (P1 + P2, conf > 0.6)
 type: fix
-status: active
+status: completed
 date: 2026-04-12
 origin: docs/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md
 ---

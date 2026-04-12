@@ -1,7 +1,7 @@
 ---
 title: Unified Wallet for Coin Insert (play-first, cash fallback)
 type: feat
-status: active
+status: completed
 date: 2026-04-12
 origin: docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md
 ---
