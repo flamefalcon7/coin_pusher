@@ -13,6 +13,13 @@ type Storer interface {
 	Create(ctx context.Context, log AccountingLog) error
 	QueryByAccountID(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]AccountingLog, error)
 	QueryByReference(ctx context.Context, actionType, referenceID string) (AccountingLog, error)
+	// QueryAllByReference returns every ledger entry matching (actionType,
+	// referenceID). Use this when a split operation may write multiple rows
+	// under the same reference (for example, GAME_INSERT can write one PLAY
+	// + one CASH entry). The singular QueryByReference keeps first-row-match
+	// semantics and is fine for idempotency lookups where any match means
+	// "already processed".
+	QueryAllByReference(ctx context.Context, actionType, referenceID string) ([]AccountingLog, error)
 	SumByActionSince(ctx context.Context, actionType string, since time.Time) (decimal.Decimal, error)
 	SumByPlayerSince(ctx context.Context, actionType string, since time.Time) ([]PlayerSum, error)
 }

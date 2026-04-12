@@ -47,6 +47,10 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 	return AccountingLog{}, v1.NewNotFoundError()
 }
 
+func (m *mockAcctStorer) QueryAllByReference(_ context.Context, _, _ string) ([]AccountingLog, error) {
+	return nil, nil
+}
+
 func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
 	return decimal.Zero, nil
 }
