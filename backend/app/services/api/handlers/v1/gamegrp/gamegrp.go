@@ -117,12 +117,24 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 	// P1-14: Check publish error; refund balance if NATS is unreachable.
 	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
-		refundKey := uuid.NewString()
 		// Reverse the exact split the insert applied so the ledger refund
 		// entries mirror the insert entries per-currency.
-		playDeb, _ := decimal.NewFromString(result.PlayDebited)
-		cashDeb, _ := decimal.NewFromString(result.CashDebited)
-		if _, refundErr := g.game.RefundBatchInsert(ctx, accountID, playDeb, cashDeb, refundKey); refundErr != nil {
+		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
+		if parseErr != nil {
+			metrics.BatchInsertRefundFailures.Inc()
+			return fmt.Errorf("nats publish failed; cannot refund — play_debited unparseable %q: publish=%w, parse=%v",
+				result.PlayDebited, err, parseErr)
+		}
+		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
+		if parseErr != nil {
+			metrics.BatchInsertRefundFailures.Inc()
+			return fmt.Errorf("nats publish failed; cannot refund — cash_debited unparseable %q: publish=%w, parse=%v",
+				result.CashDebited, err, parseErr)
+		}
+		// Use context.Background() so the refund survives request cancellation —
+		// the client's deadline has no bearing on our obligation to restore funds.
+		refundKey := refKey + ":refund"
+		if _, refundErr := g.game.RefundBatchInsert(context.Background(), accountID, playDeb, cashDeb, refundKey); refundErr != nil {
 			metrics.BatchInsertRefundFailures.Inc()
 			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
 		}

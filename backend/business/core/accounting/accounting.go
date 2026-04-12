@@ -201,6 +201,24 @@ func (c *Core) ProcessGameInsertRefund(ctx context.Context, accountID uuid.UUID,
 	}
 
 	err = c.execTx(ctx, func(s txStores) error {
+		// Idempotency check inside the transaction (mirrors ProcessDeposit's
+		// TOCTOU-safe pattern, docs/security-audit.md P0-8). If any refund
+		// entry already exists for this referenceID, short-circuit with the
+		// current balances — replay must be a no-op, not a double-credit.
+		_, qerr := s.storer.QueryByReference(ctx, ActionGameInsertRefund, referenceID)
+		if qerr == nil {
+			acct, err := s.userCore.QueryByID(ctx, accountID)
+			if err != nil {
+				return err
+			}
+			newPlay = acct.BalancePlay
+			newCash = acct.BalanceCash
+			return nil
+		}
+		if !errors.Is(qerr, v1.ErrNotFound) {
+			return fmt.Errorf("checking refund idempotency: %w", qerr)
+		}
+
 		now := time.Now().UTC()
 
 		if playDebited.Sign() > 0 {

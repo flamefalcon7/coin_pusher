@@ -123,7 +123,10 @@ func (m *mockAcctStorer) QueryByReference(ctx context.Context, actionType, refer
 	if m.queryByReferenceFn != nil {
 		return m.queryByReferenceFn(ctx, actionType, referenceID)
 	}
-	return accounting.AccountingLog{}, nil
+	// Default: no prior entry. Refund idempotency guard would treat nil-error
+	// as "already processed" — returning ErrNotFound matches real storer
+	// miss semantics so roundtrip tests don't accidentally short-circuit.
+	return accounting.AccountingLog{}, v1.NewNotFoundError()
 }
 
 func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Time) (decimal.Decimal, error) {
