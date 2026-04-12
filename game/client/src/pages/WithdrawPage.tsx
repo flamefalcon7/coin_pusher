@@ -79,7 +79,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
       return;
     }
     if (amountNum < 10) {
-      setError('Minimum withdrawal is 10 (1 USDC).');
+      setError('Minimum withdrawal is 10 coins (1 USDC).');
       return;
     }
     if (amountNum > cashNum) {
@@ -171,7 +171,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
           autoComplete="off"
         />
 
-        <label className="withdraw-label">Amount</label>
+        <label className="withdraw-label">Amount (coins)</label>
         <div className="withdraw-amount-row">
           <input
             className="withdraw-input withdraw-amount-input"
@@ -188,7 +188,7 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
 
         <div className="withdraw-fee-row">
           <span>Fee</span>
-          <span>{WITHDRAW_FEE_USDC.toFixed(2)} USDC ({WITHDRAW_FEE_CASH})</span>
+          <span>{WITHDRAW_FEE_USDC.toFixed(2)} USDC ({WITHDRAW_FEE_CASH} coins)</span>
         </div>
         <div className="withdraw-fee-row withdraw-receive">
           <span>You receive</span>
