@@ -934,3 +934,149 @@ groups:
           severity: P2
         annotations:
           summary: "Invalid token auth failures trending — possible key rotation issue or client bug"
+
+      # --- Outbox drainer (Unit 7 of outbox plan) ---
+
+      - uid: p0-outbox-drainer-dead
+        title: "P0: Outbox drainer not ticking"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: time() - coinpusher_outbox_last_tick_timestamp > 10
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 30s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Outbox drainer has not ticked in >10s — goroutine dead or LISTEN wedged"
+
+      - uid: p0-outbox-oldest-pending
+        title: "P0: Outbox oldest row stuck"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_outbox_oldest_pending_seconds > 60
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Oldest nats_outbox row stuck >60s — drainer health broken"
+
+      - uid: p1-outbox-pending-backlog
+        title: "P1: Outbox backlog growing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_outbox_pending_rows > 1000
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 2m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Outbox backlog >1000 rows for 2min — drainer keeping up slowly"
+
+      - uid: p1-outbox-dlq-growth
+        title: "P1: Outbox DLQ growing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_outbox_dlq_total[10m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Rows exiled to nats_outbox_dlq — check last_error for root cause"
+
+      - uid: p2-outbox-publish-errors
+        title: "P2: Outbox publish errors"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_outbox_publish_errors_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "nats_outbox publish errors in last 5m — transient NATS blip or deeper issue"
+
+      - uid: p2-outbox-table-bloat
+        title: "P2: Outbox table bloat"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: coinpusher_outbox_table_bytes > 1e9
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "nats_outbox table >1GB — autovacuum pressure, investigate drain rate"
