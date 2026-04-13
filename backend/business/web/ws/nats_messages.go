@@ -67,10 +67,16 @@ type NATSRewardEvent struct {
 }
 
 // NATSBatchInsertCmd is published to game.{room}.cmd.batch_insert.
+//
+// ReferenceID (optional on the wire, omitted when empty) carries the
+// accounting referenceID so the game server can dedup at-least-once
+// retries from the outbox drainer. See EncodeBatchInsertPayload and
+// game/server/src/nats/dedup.ts.
 type NATSBatchInsertCmd struct {
-	UserID string `json:"user_id"`
-	SlotID int    `json:"slot_id"`
-	Count  int    `json:"count"`
+	UserID      string `json:"user_id"`
+	SlotID      int    `json:"slot_id"`
+	Count       int    `json:"count"`
+	ReferenceID string `json:"reference_id,omitempty"`
 }
 
 // NATSSponsorQuota is published to game.{room}.cmd.sponsor_quota.
