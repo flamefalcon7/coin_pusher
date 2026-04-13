@@ -1,5 +1,7 @@
 import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type SuperPushCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
+import { RefIDDedup } from "./nats/dedup.js";
 import { startMetricsServer } from "./metrics.js";
+import * as metrics from "./metrics.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
@@ -146,8 +148,17 @@ async function initialize() {
     editorPhysics.syncObjects(cmd.objects);
   });
 
-  // Subscribe to batch_insert commands from Go backend
+  // Subscribe to batch_insert commands from Go backend.
+  // Dedup on reference_id: outbox drainer uses at-least-once delivery, so a
+  // retry after transient NATS failure can deliver the same event twice.
+  // Dropping duplicates here prevents double-enqueuing coins that the player
+  // was debited for exactly once.
+  const batchInsertDedup = new RefIDDedup();
   natsClient.subscribeBatchInsert((cmd) => {
+    if (batchInsertDedup.check(cmd.reference_id)) {
+      metrics.batchInsertDuplicatesSuppressed.inc();
+      return;
+    }
     const accepted = dropScheduler.enqueue(cmd.user_id, cmd.slot_id, cmd.count);
     console.log(`📥 Batch insert: ${cmd.user_id} queued ${accepted}/${cmd.count} coins at slot=${cmd.slot_id}`);
     // Publish queue update
