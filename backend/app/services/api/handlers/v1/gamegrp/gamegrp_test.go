@@ -146,6 +146,10 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
+func (m *mockAcctStorer) InsertOutboxRow(_ context.Context, _ string, _ []byte, _ string) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
@@ -340,7 +344,7 @@ func TestBatchInsert_ResponseShape(t *testing.T) {
 	// directly rather than the handler end-to-end.
 	_ = log
 
-	result, err := gameCore.ProcessBatchInsert(context.Background(), accountID, 5, "ref-shape")
+	result, err := gameCore.ProcessBatchInsert(context.Background(), accountID, 5, "ref-shape", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

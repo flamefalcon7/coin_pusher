@@ -127,6 +127,10 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
+func (m *mockAcctStorer) InsertOutboxRow(_ context.Context, _ string, _ []byte, _ string) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // ConsumeMegaspeaker
 // ---------------------------------------------------------------------------

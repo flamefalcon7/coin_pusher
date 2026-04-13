@@ -118,6 +118,22 @@ func (s *Store) SumByActionSince(ctx context.Context, actionType string, since t
 	return total, nil
 }
 
+// InsertOutboxRow appends a row to nats_outbox inside the current tx. The
+// drainer worker (backend/business/core/outbox) picks it up, publishes to
+// NATS, and deletes on success. Atomic-with-balance-debit because the caller
+// (accounting.Core.ProcessGameInsert via OutboxWriter) runs this inside the
+// same execTx as the balance update.
+func (s *Store) InsertOutboxRow(ctx context.Context, subject string, payload []byte, referenceID string) error {
+	const q = `
+		INSERT INTO nats_outbox (subject, payload, reference_id)
+		VALUES ($1, $2, $3)`
+
+	if _, err := s.db.ExecContext(ctx, q, subject, payload, referenceID); err != nil {
+		return fmt.Errorf("inserting nats_outbox row: %w", err)
+	}
+	return nil
+}
+
 // SumByPlayerSince returns per-player sum of amounts for a given action type since the given time.
 func (s *Store) SumByPlayerSince(ctx context.Context, actionType string, since time.Time) ([]accounting.PlayerSum, error) {
 	const q = `

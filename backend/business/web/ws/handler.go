@@ -675,7 +675,10 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	}
 
 	refKey := uuid.NewString()
-	result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey)
+	// outboxWriter is nil here: Unit 6 of the outbox rollout plan wires a
+	// real writer + flag-gates removal of the refund path. Until then, the
+	// legacy publish+refund flow below stays in force.
+	result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey, nil)
 	if err != nil {
 		h.log.Errorw("batch_insert process error", "error", err, "user_id", c.userID)
 		return

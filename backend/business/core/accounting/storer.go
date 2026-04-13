@@ -22,6 +22,15 @@ type Storer interface {
 	QueryAllByReference(ctx context.Context, actionType, referenceID string) ([]AccountingLog, error)
 	SumByActionSince(ctx context.Context, actionType string, since time.Time) (decimal.Decimal, error)
 	SumByPlayerSince(ctx context.Context, actionType string, since time.Time) ([]PlayerSum, error)
+
+	// InsertOutboxRow appends a row to nats_outbox. Called from within an
+	// execTx transaction by an OutboxWriter callback, so the outbox row
+	// commits atomically with the balance debit. The drainer (see
+	// business/core/outbox) later publishes the row's payload to NATS and
+	// deletes on success. subject is the NATS topic; payload is the exact
+	// bytes to publish; referenceID enables cross-lookup with
+	// accounting_logs.reference_id for debug and audit.
+	InsertOutboxRow(ctx context.Context, subject string, payload []byte, referenceID string) error
 }
 
 // PlayerSum holds the aggregate amount for a single player.
