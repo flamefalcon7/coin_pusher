@@ -194,6 +194,65 @@ func TestDrainOnce_PerSubjectStopOnFailDoesNotBlockOtherSubjects(t *testing.T) {
 	}
 }
 
+// TestDrainOnce_RoundRobinAcrossSubjects validates the ce:review fix for the
+// LIMIT-starvation class: one subject's large backlog must NOT consume the
+// entire batch budget and starve other subjects. The SELECT's ROW_NUMBER()
+// OVER (PARTITION BY subject) window orders rows round-robin, so a batch
+// of size N across K subjects gives each subject ~N/K slots.
+//
+// Simulation: room-a has 5 pending rows (ids 1-5), room-b has 2 (ids 6,7),
+// room-c has 1 (id 8). Under naive ORDER BY id, room-a would consume
+// positions 1-5 of a BatchSize=4 batch → room-b and room-c starve. With
+// round-robin, the drainer's SELECT returns 1 row per subject per "round"
+// (rn=1 for each subject, then rn=2, ...). Test feeds the round-robin
+// result directly (the SQL is sqlmock'd); we assert processSubject
+// grouping still handles the interleaved input correctly.
+func TestDrainOnce_RoundRobinAcrossSubjects(t *testing.T) {
+	t.Parallel()
+	db, mock := newTestDB(t)
+	pub := &mockPub{}
+	cfg := Config{BatchSize: 4, MaxAttempts: 10}
+
+	now := time.Now()
+	// Simulates what PG returns for:
+	// ROW_NUMBER() OVER (PARTITION BY subject ORDER BY id) ORDER BY rn, id LIMIT 4
+	// Round 1: a-1, b-6, c-8. Round 2: a-2. → batch = [a:1, b:6, c:8, a:2]
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
+		AddRow(int64(1), "game.room-a.cmd.batch_insert", []byte("a-1"), "ref-a-1", now, 0).
+		AddRow(int64(6), "game.room-b.cmd.batch_insert", []byte("b-1"), "ref-b-1", now, 0).
+		AddRow(int64(8), "game.room-c.cmd.batch_insert", []byte("c-1"), "ref-c-1", now, 0).
+		AddRow(int64(2), "game.room-a.cmd.batch_insert", []byte("a-2"), "ref-a-2", now, 0)
+	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 4).WillReturnRows(rows)
+	mock.ExpectExec(deleteQueryRegex.String()).
+		WithArgs(pq.Array([]int64{1, 2, 6, 8})).
+		WillReturnResult(sqlmock.NewResult(0, 4))
+
+	if err := drainOnce(context.Background(), db, pub, silentLogger(), cfg); err != nil {
+		t.Fatalf("drainOnce: %v", err)
+	}
+	recs := pub.records()
+	if len(recs) != 4 {
+		t.Fatalf("expected 4 publishes (all 3 subjects drained), got %d", len(recs))
+	}
+	// All 3 subjects got at least one row drained — the core fairness claim.
+	subjectCounts := make(map[string]int)
+	for _, r := range recs {
+		subjectCounts[r.Subject]++
+	}
+	if subjectCounts["game.room-a.cmd.batch_insert"] != 2 {
+		t.Errorf("room-a: got %d, want 2", subjectCounts["game.room-a.cmd.batch_insert"])
+	}
+	if subjectCounts["game.room-b.cmd.batch_insert"] != 1 {
+		t.Errorf("room-b: got %d, want 1", subjectCounts["game.room-b.cmd.batch_insert"])
+	}
+	if subjectCounts["game.room-c.cmd.batch_insert"] != 1 {
+		t.Errorf("room-c: got %d, want 1", subjectCounts["game.room-c.cmd.batch_insert"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock expectations: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DLQ exile (R3 bounded retry)
 // ---------------------------------------------------------------------------
@@ -232,6 +291,42 @@ func TestDrainOnce_DLQExileAtMaxAttempts(t *testing.T) {
 	}
 	if pub.count() != 0 {
 		t.Errorf("expected 0 publishes, got %d", pub.count())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock expectations: %v", err)
+	}
+}
+
+// TestDrainOnce_BatchDeleteFailureLeavesRowsForRetry covers the load-bearing
+// at-least-once contract: when publish succeeds for all rows but the batched
+// DELETE fails, rows stay in nats_outbox. Next drain pass re-publishes them;
+// game server's RefIDDedup cache suppresses duplicate apply. If this branch
+// ever regresses (e.g., someone "optimizes" by marking rows deleted in
+// memory before the SQL succeeds), coins could be silently lost.
+func TestDrainOnce_BatchDeleteFailureLeavesRowsForRetry(t *testing.T) {
+	t.Parallel()
+	db, mock := newTestDB(t)
+	pub := &mockPub{}
+	cfg := Config{BatchSize: 10, MaxAttempts: 10}
+
+	now := time.Now()
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
+		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("p-1"), "ref-1", now, 0).
+		AddRow(int64(2), "game.main.cmd.batch_insert", []byte("p-2"), "ref-2", now, 0)
+	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 10).WillReturnRows(rows)
+	// Publishes succeed, but DELETE fails.
+	mock.ExpectExec(deleteQueryRegex.String()).
+		WithArgs(pq.Array([]int64{1, 2})).
+		WillReturnError(errors.New("connection reset"))
+
+	err := drainOnce(context.Background(), db, pub, silentLogger(), cfg)
+	if err == nil {
+		t.Fatal("expected error from DELETE failure, got nil")
+	}
+	// Both rows were published. Next pass will re-publish (at-least-once).
+	// Idempotency lives on the consumer side (RefIDDedup in game server).
+	if pub.count() != 2 {
+		t.Errorf("expected 2 publishes, got %d", pub.count())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("mock expectations: %v", err)
