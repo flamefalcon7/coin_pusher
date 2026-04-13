@@ -25,6 +25,23 @@ type UserStorerFactory func(database.DBTX) user.Storer
 // MetricRecorder is a callback for recording metric events to the progress system.
 type MetricRecorder func(ctx context.Context, accountID uuid.UUID, metricType string, delta decimal.Decimal) error
 
+// OutboxWriter is a caller-supplied callback invoked inside ProcessGameInsert's
+// transaction, after the balance debit and accounting_logs writes. The
+// callback writes a row to nats_outbox (or equivalent) via the tx-bound
+// Storer so the outbox row commits atomically with the balance change.
+//
+// Kept domain-pure: this package does NOT know what NATS subject or payload
+// shape the caller intends. Handlers (WS/HTTP) construct OutboxWriters that
+// know both. A nil OutboxWriter is legal and means "no outbox row this call"
+// — used by non-batch-insert paths (ProcessDeposit, ProcessGameReward, etc.)
+// and by unit tests that don't exercise outbox semantics.
+//
+// If the callback returns an error, the entire transaction rolls back —
+// balance, logs, and any outbox-side write are reverted together. This is
+// the atomicity guarantee that closes the "balance debited but event never
+// published" gap.
+type OutboxWriter func(ctx context.Context, s Storer) error
+
 // Core manages the set of APIs for accounting access.
 type Core struct {
 	db              *sqlx.DB         // needed to start transactions; nil in unit tests
@@ -127,8 +144,17 @@ func (c *Core) ProcessDeposit(ctx context.Context, accountID uuid.UUID, amount d
 // transaction and writes a ledger entry for each currency that was actually
 // used (one or two entries sharing the same referenceID).
 //
+// The optional OutboxWriter is invoked inside the same transaction, after the
+// log writes. Callers that need to publish an event for this insert (e.g.,
+// the batch_insert WS/HTTP handlers) pass a writer that inserts into
+// nats_outbox; callers that don't (deposit paths, tests) pass nil.
+//
+// After successful commit, a best-effort `NOTIFY outbox_new` is fired so the
+// drainer wakes immediately. Notify failure is silently swallowed — the
+// drainer's fallback tick catches missed notifications within a few seconds.
+//
 // Returns the amounts debited from each currency and the resulting balances.
-func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string) (playDebited, cashDebited, newPlay, newCash decimal.Decimal, err error) {
+func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinCount int, referenceID string, outboxWriter OutboxWriter) (playDebited, cashDebited, newPlay, newCash decimal.Decimal, err error) {
 	amount := decimal.NewFromInt(int64(coinCount))
 
 	err = c.execTx(ctx, func(s txStores) error {
@@ -170,11 +196,30 @@ func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinC
 			}
 		}
 
+		// Outbox row (optional) — atomic with balance + logs. If this fails,
+		// the whole tx rolls back: no debit, no logs, no stuck row.
+		if outboxWriter != nil {
+			if txErr := outboxWriter(ctx, s.storer); txErr != nil {
+				return fmt.Errorf("outbox writer: %w", txErr)
+			}
+		}
+
 		return nil
 	})
 
 	if err != nil {
 		return decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero, err
+	}
+
+	// Wake the outbox drainer. Best-effort: drainer's 5s fallback tick catches
+	// missed notifications, and the notify isn't transactional so we fire it
+	// after commit. Skip the notify when there's no DB (unit tests) or no
+	// outbox writer (non-outbox callers). Use a short-timeout context
+	// detached from the request ctx so a slow notify can't stall the caller.
+	if outboxWriter != nil && c.db != nil {
+		notifyCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		_, _ = c.db.ExecContext(notifyCtx, "NOTIFY outbox_new")
+		cancel()
 	}
 
 	// Record game insert metric for progress system (after tx succeeds).

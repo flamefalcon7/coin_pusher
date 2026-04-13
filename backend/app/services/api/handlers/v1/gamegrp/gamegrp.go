@@ -107,7 +107,9 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	refKey := uuid.NewString()
-	result, err := g.game.ProcessBatchInsert(ctx, accountID, req.Count, refKey)
+	// outboxWriter is nil here: Unit 6 wires it alongside removing the
+	// publish+refund path. Until then, legacy flow (below) stays in force.
+	result, err := g.game.ProcessBatchInsert(ctx, accountID, req.Count, refKey, nil)
 	if err != nil {
 		return err
 	}

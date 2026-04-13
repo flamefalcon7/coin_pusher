@@ -141,6 +141,10 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
+func (m *mockAcctStorer) InsertOutboxRow(_ context.Context, _ string, _ []byte, _ string) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -351,7 +355,7 @@ func TestProcessBatchInsert(t *testing.T) {
 
 	core, accountID := newTestCore(t, decimal.NewFromInt(100))
 
-	result, err := core.ProcessBatchInsert(context.Background(), accountID, 5, uuid.NewString())
+	result, err := core.ProcessBatchInsert(context.Background(), accountID, 5, uuid.NewString(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -370,7 +374,7 @@ func TestProcessBatchInsert_ZeroCount(t *testing.T) {
 
 	core, accountID := newTestCore(t, decimal.NewFromInt(100))
 
-	result, err := core.ProcessBatchInsert(context.Background(), accountID, 0, uuid.NewString())
+	result, err := core.ProcessBatchInsert(context.Background(), accountID, 0, uuid.NewString(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -386,7 +390,7 @@ func TestProcessBatchInsert_MixedSplit(t *testing.T) {
 	// play=2, cash=10; insert 5 → play-first draws 2 from play + 3 from cash.
 	core, accountID, snapshot := newTestCoreWithBalances(t, decimal.NewFromInt(2), decimal.NewFromInt(10))
 
-	result, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "ref-mixed")
+	result, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "ref-mixed", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -475,7 +479,7 @@ func TestRefundBatchInsert_IdempotentReplay(t *testing.T) {
 	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
 	core := NewCore(userCore, acctCore)
 
-	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "insert-ref-unit4")
+	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "insert-ref-unit4", nil)
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -535,7 +539,7 @@ func TestRefundBatchInsert_RoundTrip(t *testing.T) {
 	// Start at play=2, cash=10. Insert 5 (play-first). Then refund exact split.
 	core, accountID, snapshot := newTestCoreWithBalances(t, decimal.NewFromInt(2), decimal.NewFromInt(10))
 
-	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "ref-roundtrip")
+	insertResult, err := core.ProcessBatchInsert(context.Background(), accountID, 5, "ref-roundtrip", nil)
 	if err != nil {
 		t.Fatalf("insert error: %v", err)
 	}

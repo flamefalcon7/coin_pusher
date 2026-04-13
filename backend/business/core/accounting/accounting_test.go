@@ -21,6 +21,7 @@ type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log AccountingLog) error
 	queryByAccountIDFn func(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]AccountingLog, error)
 	queryByReferenceFn func(ctx context.Context, actionType, referenceID string) (AccountingLog, error)
+	insertOutboxRowFn  func() error
 }
 
 func (m *mockAcctStorer) Create(ctx context.Context, log AccountingLog) error {
@@ -57,6 +58,13 @@ func (m *mockAcctStorer) SumByActionSince(_ context.Context, _ string, _ time.Ti
 
 func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Time) ([]PlayerSum, error) {
 	return nil, nil
+}
+
+func (m *mockAcctStorer) InsertOutboxRow(_ context.Context, _ string, _ []byte, _ string) error {
+	if m.insertOutboxRowFn != nil {
+		return m.insertOutboxRowFn()
+	}
+	return nil
 }
 
 type mockUserStorer struct {
@@ -320,7 +328,7 @@ func TestProcessGameInsert(t *testing.T) {
 			core := NewCore(nil, acctStr, userCore, nil, nil)
 
 			pd, cd, np, nc, err := core.ProcessGameInsert(
-				context.Background(), accountID, tc.count, "ref-123",
+				context.Background(), accountID, tc.count, "ref-123", nil,
 			)
 
 			if tc.wantErr {
@@ -361,6 +369,121 @@ func TestProcessGameInsert(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ProcessGameInsert — OutboxWriter plumbing (Unit 2)
+// ---------------------------------------------------------------------------
+
+func TestProcessGameInsert_OutboxWriterCalledInsideTx(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	play := decimal.NewFromInt(10)
+	cash := decimal.NewFromInt(0)
+
+	userStr := &mockUserStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: play, BalanceCash: cash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, _ string, delta decimal.Decimal) (decimal.Decimal, error) {
+			play = play.Add(delta)
+			return play, nil
+		},
+	}
+	acctStr := &mockAcctStorer{}
+	userCore := user.NewCore(userStr)
+	core := NewCore(nil, acctStr, userCore, nil, nil)
+
+	var calls int
+	var sawStorer Storer
+	writer := func(_ context.Context, s Storer) error {
+		calls++
+		sawStorer = s
+		return nil
+	}
+
+	_, _, _, _, err := core.ProcessGameInsert(context.Background(), accountID, 5, "ref-unit2-ok", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("outbox writer calls = %d, want 1", calls)
+	}
+	if sawStorer == nil {
+		t.Errorf("outbox writer received nil Storer — expected tx-bound storer")
+	}
+}
+
+func TestProcessGameInsert_OutboxWriterErrorRollsBackTx(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	play := decimal.NewFromInt(100)
+	cash := decimal.NewFromInt(0)
+	startPlay := play
+	writtenLogs := 0
+
+	userStr := &mockUserStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: play, BalanceCash: cash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, _ string, delta decimal.Decimal) (decimal.Decimal, error) {
+			// Note: mock db=nil path does NOT actually roll back the mock's state
+			// on callback error (execTx's rollback is a real-tx concern). What we
+			// assert here is that ProcessGameInsert RETURNS the error, so the
+			// real (sqlx) execTx WOULD roll back.
+			play = play.Add(delta)
+			return play, nil
+		},
+	}
+	acctStr := &mockAcctStorer{
+		createFn: func(_ context.Context, _ AccountingLog) error {
+			writtenLogs++
+			return nil
+		},
+	}
+	userCore := user.NewCore(userStr)
+	core := NewCore(nil, acctStr, userCore, nil, nil)
+
+	failingWriter := func(_ context.Context, _ Storer) error {
+		return errors.New("outbox insert failed")
+	}
+
+	_, _, _, _, err := core.ProcessGameInsert(context.Background(), accountID, 5, "ref-unit2-fail", failingWriter)
+	if err == nil {
+		t.Fatal("expected error from failing outbox writer, got nil")
+	}
+	// The ProcessGameInsert caller must see the error — their handler then
+	// surfaces it to the client. This is the contract the real tx rollback
+	// relies on for atomicity.
+	_ = startPlay
+	_ = writtenLogs
+}
+
+func TestProcessGameInsert_NilOutboxWriterIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	play := decimal.NewFromInt(10)
+	userStr := &mockUserStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: play, BalanceCash: decimal.Zero}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, _ string, delta decimal.Decimal) (decimal.Decimal, error) {
+			play = play.Add(delta)
+			return play, nil
+		},
+	}
+	acctStr := &mockAcctStorer{}
+	userCore := user.NewCore(userStr)
+	core := NewCore(nil, acctStr, userCore, nil, nil)
+
+	// Passing nil must work exactly like the pre-Unit-2 call shape.
+	_, _, _, _, err := core.ProcessGameInsert(context.Background(), accountID, 3, "ref-nil-writer", nil)
+	if err != nil {
+		t.Fatalf("nil writer should succeed: %v", err)
 	}
 }
 
