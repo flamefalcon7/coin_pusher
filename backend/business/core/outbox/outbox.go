@@ -38,6 +38,12 @@ type Publisher interface {
 	Publish(subject string, data []byte) error
 }
 
+// NotifyChannel is the Postgres LISTEN/NOTIFY channel name shared by the
+// outbox drainer (listen side) and the accounting core (notify-after-commit
+// side). Centralized here so both sides can never silently diverge on the
+// channel name — any change must touch this one const.
+const NotifyChannel = "outbox_new"
+
 // Config tunes the drainer. Zero values get sensible defaults via
 // applyDefaults.
 type Config struct {
@@ -56,8 +62,10 @@ type Config struct {
 	// the sqlx pool). Required.
 	ListenDSN string
 
-	// NotifyChannel is the Postgres NOTIFY channel name. Default:
-	// "outbox_new". Must match what accounting.Core fires after commit.
+	// NotifyChannel overrides the default LISTEN channel (outbox.NotifyChannel).
+	// Typically left unset — test overrides only. Production should rely on
+	// the shared package-level const so the listen and notify sides cannot
+	// diverge via misconfiguration.
 	NotifyChannel string
 
 	// TableSizeRefresh is how often the outbox table size gauge is sampled
@@ -76,7 +84,7 @@ func (c *Config) applyDefaults() {
 		c.MaxAttempts = 10
 	}
 	if c.NotifyChannel == "" {
-		c.NotifyChannel = "outbox_new"
+		c.NotifyChannel = NotifyChannel
 	}
 	if c.TableSizeRefresh <= 0 {
 		c.TableSizeRefresh = 60 * time.Second
@@ -156,6 +164,7 @@ func Run(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredLogger,
 func runDrainPass(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredLogger, cfg Config) {
 	defer func() {
 		if r := recover(); r != nil {
+			metrics.OutboxPanics.Inc()
 			log.Errorw("outbox drainer panic recovered", "panic", r)
 		}
 		metrics.OutboxLastTickTimestamp.SetToCurrentTime()
@@ -218,9 +227,8 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 
 		// Process this subject's rows in id order. Stop at first publish
 		// failure to preserve per-subject ordering.
-		publishedInSubject, dlqInSubject := processSubject(ctx, db, nc, log, cfg, subjRows)
+		publishedInSubject := processSubject(ctx, db, nc, log, cfg, subjRows)
 		successIDs = append(successIDs, publishedInSubject...)
-		_ = dlqInSubject // already logged + metered inline
 	}
 
 	// Batch-delete all successfully published rows.
@@ -230,7 +238,10 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 			pq.Array(successIDs),
 		); err != nil {
 			// Rows stay in outbox → next drain pass re-publishes (duplicate
-			// delivery, game server dedups on reference_id).
+			// delivery, game server dedups on reference_id). Metric surfaces
+			// the sustained-DELETE-failure state so ops can act before the
+			// duplicate-delivery rate overwhelms dedup cache capacity.
+			metrics.OutboxDeleteErrors.Inc()
 			return fmt.Errorf("delete published rows: %w", err)
 		}
 		metrics.OutboxPublishedTotal.Add(float64(len(successIDs)))
@@ -242,9 +253,8 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 // processSubject iterates rows for a single subject in id order, publishing
 // each. On the first failure, it either bumps attempt_count or exiles to
 // DLQ, then returns — subsequent rows in this subject stay for the next
-// pass so order is preserved.
-//
-// Returns (publishedIDs, dlqedIDs) for caller's bookkeeping.
+// pass so order is preserved. DLQ exile increments metrics inline so the
+// caller does not need a second return value.
 func processSubject(
 	ctx context.Context,
 	db *sqlx.DB,
@@ -252,8 +262,8 @@ func processSubject(
 	log *zap.SugaredLogger,
 	cfg Config,
 	rows []outboxRow,
-) ([]int64, []int64) {
-	var published, dlqed []int64
+) []int64 {
+	var published []int64
 	for _, r := range rows {
 		if err := nc.Publish(r.Subject, r.Payload); err != nil {
 			// Publish failure: update attempt state or exile to DLQ.
@@ -271,7 +281,6 @@ func processSubject(
 					)
 				} else {
 					metrics.OutboxDLQTotal.Inc()
-					dlqed = append(dlqed, r.ID)
 					log.Errorw("outbox row exiled to DLQ",
 						"id", r.ID, "subject", r.Subject, "attempts", newAttempts,
 					)
@@ -281,16 +290,21 @@ func processSubject(
 				}
 			} else {
 				if upErr := bumpAttempt(ctx, db, r.ID, newAttempts, err.Error()); upErr != nil {
+					// attempt_count didn't advance → the row will retry with
+					// the same count forever if this keeps failing, and the
+					// subject stays blocked by stop-on-fail. Surface via
+					// metric so ops notice before the subject fully wedges.
+					metrics.OutboxBumpErrors.Inc()
 					log.Warnw("outbox attempt bump failed — row will be retried in place",
 						"id", r.ID, "error", upErr,
 					)
 				}
 			}
-			return published, dlqed
+			return published
 		}
 		published = append(published, r.ID)
 	}
-	return published, dlqed
+	return published
 }
 
 func bumpAttempt(ctx context.Context, db *sqlx.DB, id int64, newCount int, lastErr string) error {

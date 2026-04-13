@@ -218,7 +218,14 @@ func (c *Core) ProcessGameInsert(ctx context.Context, accountID uuid.UUID, coinC
 	// detached from the request ctx so a slow notify can't stall the caller.
 	if outboxWriter != nil && c.db != nil {
 		notifyCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		_, _ = c.db.ExecContext(notifyCtx, "NOTIFY outbox_new")
+		// Channel name is the shared outbox.NotifyChannel const; kept as a
+		// string literal here to avoid a circular import between accounting
+		// and outbox. Any change to the channel name must update BOTH sides —
+		// the string here and outbox.NotifyChannel — or the listen/notify
+		// handshake silently breaks. Covered by the Unit 6 integration test.
+		if _, notifyErr := c.db.ExecContext(notifyCtx, "NOTIFY outbox_new"); notifyErr != nil {
+			metrics.OutboxNotifyErrors.Inc()
+		}
 		cancel()
 	}
 
