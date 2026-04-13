@@ -416,34 +416,32 @@ func TestProcessGameInsert_OutboxWriterCalledInsideTx(t *testing.T) {
 	}
 }
 
-func TestProcessGameInsert_OutboxWriterErrorRollsBackTx(t *testing.T) {
+// TestProcessGameInsert_OutboxWriterErrorPropagates asserts only that
+// ProcessGameInsert RETURNS the error when OutboxWriter fails. The
+// unit-test uses db=nil so execTx runs WITHOUT a real Postgres tx — a
+// regression on the rollback path (e.g., the callback running BEFORE log
+// writes, so an error-return would leave partial state) is NOT caught
+// here. Real rollback semantics are exercised by the integration tests
+// in outbox/chaos_test.go (//go:build integration) and, once Unit 6
+// lands, by the testcontainers-go end-to-end test that sqlmock cannot
+// express. Tracked as residual test gap.
+func TestProcessGameInsert_OutboxWriterErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
 	play := decimal.NewFromInt(100)
 	cash := decimal.NewFromInt(0)
-	startPlay := play
-	writtenLogs := 0
 
 	userStr := &mockUserStorer{
 		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
 			return user.Account{ID: accountID, BalancePlay: play, BalanceCash: cash}, nil
 		},
 		updateBalanceFn: func(_ context.Context, _ uuid.UUID, _ string, delta decimal.Decimal) (decimal.Decimal, error) {
-			// Note: mock db=nil path does NOT actually roll back the mock's state
-			// on callback error (execTx's rollback is a real-tx concern). What we
-			// assert here is that ProcessGameInsert RETURNS the error, so the
-			// real (sqlx) execTx WOULD roll back.
 			play = play.Add(delta)
 			return play, nil
 		},
 	}
-	acctStr := &mockAcctStorer{
-		createFn: func(_ context.Context, _ AccountingLog) error {
-			writtenLogs++
-			return nil
-		},
-	}
+	acctStr := &mockAcctStorer{}
 	userCore := user.NewCore(userStr)
 	core := NewCore(nil, acctStr, userCore, nil, nil)
 
@@ -455,11 +453,6 @@ func TestProcessGameInsert_OutboxWriterErrorRollsBackTx(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from failing outbox writer, got nil")
 	}
-	// The ProcessGameInsert caller must see the error — their handler then
-	// surfaces it to the client. This is the contract the real tx rollback
-	// relies on for atomicity.
-	_ = startPlay
-	_ = writtenLogs
 }
 
 func TestProcessGameInsert_NilOutboxWriterIsNoOp(t *testing.T) {

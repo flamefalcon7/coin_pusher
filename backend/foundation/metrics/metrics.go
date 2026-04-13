@@ -203,6 +203,42 @@ var (
 		Name: "coinpusher_outbox_table_bytes",
 		Help: "Size of nats_outbox table in bytes (via pg_total_relation_size).",
 	})
+
+	// OutboxNotifyErrors counts best-effort `NOTIFY outbox_new` failures
+	// fired from accounting.ProcessGameInsert after commit. Not load-bearing
+	// (drainer fallback tick catches missed notifies), but a sustained
+	// non-zero rate signals pool saturation or a slow-NOTIFY Postgres state
+	// that would otherwise go silent.
+	OutboxNotifyErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_notify_errors_total",
+		Help: "Post-commit NOTIFY outbox_new calls that failed; drainer fallback tick handles recovery.",
+	})
+
+	// OutboxPanics counts drainer-goroutine panics recovered by the loop's
+	// defer. Should stay at 0. Any increment is a code bug to investigate.
+	OutboxPanics = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_panics_total",
+		Help: "Drainer goroutine panics recovered by defer; normally 0.",
+	})
+
+	// OutboxDeleteErrors counts failures of the batched DELETE-after-publish
+	// statement. Rows stay in nats_outbox → next drain pass re-publishes;
+	// game server dedups on reference_id. Non-zero means we are actively
+	// relying on consumer dedup — worth an investigation.
+	OutboxDeleteErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_delete_errors_total",
+		Help: "Batched DELETE of successfully-published rows failed; at-least-once duplicates expected on next pass.",
+	})
+
+	// OutboxBumpErrors counts failures of the attempt_count UPDATE after a
+	// publish failure. Critical: if bumpAttempt fails persistently, a poison
+	// row's attempt_count never advances, it never reaches MaxAttempts, never
+	// exiles to DLQ, and its subject stays blocked indefinitely. This
+	// counter is how that failure mode surfaces.
+	OutboxBumpErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_bump_errors_total",
+		Help: "attempt_count UPDATE failures after publish failure; row retry state may be stuck.",
+	})
 )
 
 // RTP monitoring metrics
