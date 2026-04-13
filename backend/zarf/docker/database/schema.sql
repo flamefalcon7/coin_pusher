@@ -352,3 +352,57 @@ CREATE TABLE IF NOT EXISTS sponsor_reward_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sponsor_reward_logs_account ON sponsor_reward_logs(account_id, campaign_id, created_at DESC);
+
+-- ==========================================================================
+-- 17. nats_outbox (transactional outbox for at-least-once NATS delivery)
+-- ==========================================================================
+-- Rows written inside the same tx as balance debits; drained by a background
+-- worker that publishes to NATS and deletes on success. Closes the
+-- "balance debited but event never published" gap that drives the
+-- coinpusher_batch_insert_refund_failures_total P0 alert. See
+-- docs/plans/2026-04-13-001-fix-batch-insert-outbox-plan.md.
+CREATE TABLE IF NOT EXISTS nats_outbox (
+    id                  BIGSERIAL     PRIMARY KEY,
+    subject             TEXT          NOT NULL,
+    payload             BYTEA         NOT NULL,
+    reference_id        TEXT          NOT NULL,
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    attempt_count       INT           NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    last_error          TEXT,
+    last_attempted_at   TIMESTAMPTZ,
+    payload_version     SMALLINT      NOT NULL DEFAULT 1
+);
+
+-- Composite (subject, id) index powers the drainer's per-subject ordered drain:
+--   SELECT ... FROM nats_outbox WHERE attempt_count < 10 ORDER BY subject, id LIMIT N
+-- This also covers per-subject backlog queries.
+CREATE INDEX IF NOT EXISTS idx_nats_outbox_subject_id
+    ON nats_outbox(subject, id);
+
+-- Cross-lookup with accounting_logs.reference_id for debug/audit.
+CREATE INDEX IF NOT EXISTS idx_nats_outbox_reference
+    ON nats_outbox(reference_id);
+
+-- ==========================================================================
+-- 18. nats_outbox_dlq (poison-pill quarantine for bounded retry)
+-- ==========================================================================
+-- Rows that reached attempt_count >= 10 in nats_outbox are moved here by the
+-- drainer. Unblocks the subject so subsequent rows can drain, and surfaces the
+-- failure via P1 alert on DLQ growth. Operator reviews moved_at DESC.
+CREATE TABLE IF NOT EXISTS nats_outbox_dlq (
+    id                  BIGSERIAL     PRIMARY KEY,
+    original_id         BIGINT        NOT NULL,
+    subject             TEXT          NOT NULL,
+    payload             BYTEA         NOT NULL,
+    reference_id        TEXT          NOT NULL,
+    created_at          TIMESTAMPTZ   NOT NULL,
+    attempt_count       INT           NOT NULL,
+    last_error          TEXT,
+    last_attempted_at   TIMESTAMPTZ,
+    payload_version     SMALLINT      NOT NULL DEFAULT 1,
+    dlq_reason          TEXT          NOT NULL,
+    moved_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_nats_outbox_dlq_moved_at
+    ON nats_outbox_dlq(moved_at DESC);
