@@ -72,6 +72,15 @@ export const natsPublishErrors = new client.Counter({
   labelNames: ["topic"] as const,
 });
 
+// Batch-insert commands dropped because reference_id was recently seen in the
+// game-server dedup cache. Non-zero is expected (outbox drainer retries); a
+// sustained spike signals the drainer is aggressively retrying a subject that
+// isn't ack-visible, which may indicate NATS-level issues.
+export const batchInsertDuplicatesSuppressed = new client.Counter({
+  name: "coinpusher_batch_insert_duplicates_suppressed_total",
+  help: "Total batch_insert commands dropped due to reference_id dedup (outbox retry protection).",
+});
+
 // ── Abilities ────────────────────────────────────────────────────────
 
 export const tornadoActive = new client.Gauge({

@@ -10,6 +10,10 @@ export type BatchInsertCommand = {
   user_id: string;
   slot_id: number;
   count: number;
+  // Optional reference_id carried from the Go backend's outbox row. Used by
+  // the game server to dedup at-least-once retries from the outbox drainer.
+  // Absent on legacy (pre-outbox) publishes.
+  reference_id?: string;
 };
 
 export type CoinInsertCommand = {
