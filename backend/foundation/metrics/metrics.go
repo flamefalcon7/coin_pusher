@@ -166,6 +166,45 @@ var (
 	})
 )
 
+// Outbox drainer metrics — transactional-outbox publish path observability.
+// See docs/plans/2026-04-13-001-fix-batch-insert-outbox-plan.md.
+var (
+	OutboxPublishedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_published_total",
+		Help: "Total nats_outbox rows successfully published to NATS and deleted.",
+	})
+
+	OutboxPublishErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_publish_errors_total",
+		Help: "Total nats_outbox rows that failed to publish on a given drain pass (row is retained for retry).",
+	})
+
+	OutboxDLQTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_outbox_dlq_total",
+		Help: "Total rows exiled to nats_outbox_dlq after exceeding attempt_count threshold.",
+	})
+
+	OutboxPendingRows = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_outbox_pending_rows",
+		Help: "Current count of rows in nats_outbox with attempt_count < 10 (drainable backlog).",
+	})
+
+	OutboxOldestPendingSeconds = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_outbox_oldest_pending_seconds",
+		Help: "Age of the oldest drainable row in nats_outbox, in seconds.",
+	})
+
+	OutboxLastTickTimestamp = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_outbox_last_tick_timestamp",
+		Help: "Unix timestamp of the last drainer loop iteration (liveness signal).",
+	})
+
+	OutboxTableBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_outbox_table_bytes",
+		Help: "Size of nats_outbox table in bytes (via pg_total_relation_size).",
+	})
+)
+
 // RTP monitoring metrics
 var (
 	RTPRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
