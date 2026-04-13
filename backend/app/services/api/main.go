@@ -38,6 +38,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/deposit"
 	depositdb "github.com/flamefalcon/coin-pusher/backend/business/core/deposit/stores/depositdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/outbox"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/inventory"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/sponsor"
@@ -100,6 +101,16 @@ type config struct {
 		URL           string        `conf:"default:nats://localhost:4222"`
 		ReconnectWait time.Duration `conf:"default:2s"`
 		MaxReconnects int           `conf:"default:60"`
+	}
+	// Outbox controls the transactional-outbox drainer for NATS batch_insert.
+	// When Enabled, handlers write event rows to nats_outbox inside the
+	// balance-debit tx and the drainer publishes them at-least-once. When
+	// disabled (default), handlers fall back to the legacy publish-then-refund
+	// flow. Flag exists for staged rollout; Unit 8 of the outbox plan removes
+	// both the flag and the legacy path once production bakes confirm zero
+	// BatchInsertRefundFailures increments.
+	Outbox struct {
+		Enabled bool `conf:"default:false"`
 	}
 }
 
@@ -243,6 +254,36 @@ func run() error {
 	defer nc.Drain()
 
 	// -------------------------------------------------------------------------
+	// Outbox drainer (flag-gated). When enabled, handlers route batch_insert
+	// publishes through nats_outbox (same-tx with balance debit) and this
+	// worker drains them. When disabled, the handlers keep the legacy
+	// inline-publish-with-refund path. See docs/plans/2026-04-13-001.
+	if cfg.Outbox.Enabled {
+		// pq.NewListener needs its own connection string (separate from the
+		// sqlx pool). Reconstruct it from the same DB config values.
+		sslMode := "require"
+		if cfg.DB.DisableTLS {
+			sslMode = "disable"
+		}
+		listenDSN := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=%s",
+			strings.Split(cfg.DB.Host, ":")[0], cfg.DB.User, cfg.DB.Password, cfg.DB.Name, sslMode)
+		if hostPort := strings.Split(cfg.DB.Host, ":"); len(hostPort) == 2 {
+			listenDSN += " port=" + hostPort[1]
+		}
+
+		go func() {
+			log.Infow("outbox drainer starting", "flag", "BACKEND_OUTBOX_ENABLED=true")
+			if err := outbox.Run(context.Background(), db, nc, log, outbox.Config{
+				ListenDSN: listenDSN,
+			}); err != nil {
+				log.Errorw("outbox drainer exited with error", "error", err)
+			}
+		}()
+	} else {
+		log.Infow("outbox drainer disabled; handlers using legacy publish+refund path")
+	}
+
+	// -------------------------------------------------------------------------
 	// WebSocket Hub, Relay, Handler
 	hub := ws.NewHub()
 
@@ -280,7 +321,7 @@ func run() error {
 		func(dbtx database.DBTX) sponsor.Storer { return sponsordb.NewStore(dbtx) },
 	)
 
-	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, sponsorCore, wsOrigins)
+	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, sponsorCore, wsOrigins, cfg.Outbox.Enabled)
 
 	// Subscribe to slot_status from game server for cap enforcement.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
@@ -289,7 +330,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, sponsorCore, nc, wsHandler)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, sponsorCore, nc, wsHandler, cfg.Outbox.Enabled)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -1080,6 +1121,7 @@ func buildAPIMux(
 	sponsorCore *sponsor.Core,
 	nc *nats.Conn,
 	wsHandler *ws.Handler,
+	outboxEnabled bool,
 ) *chi.Mux {
 	mux := chi.NewRouter()
 
@@ -1112,7 +1154,7 @@ func buildAPIMux(
 
 	// V1 routes.
 	userGrp := usergrp.New(userCore, a)
-	gameGrp := gamegrp.New(gameCore, heatEngine, nc)
+	gameGrp := gamegrp.New(gameCore, heatEngine, nc, outboxEnabled)
 	invGrp := inventorygrp.New(inventoryCore)
 
 	// Public

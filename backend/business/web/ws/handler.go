@@ -55,10 +55,16 @@ type Handler struct {
 	coinCount      int64          // atomic — authoritative active coin count from game server
 	allowedOrigins []string
 	upgrader       websocket.Upgrader
+	// outboxEnabled switches handleBatchInsert between the legacy
+	// publish-then-refund path and the outbox path (same-tx write to
+	// nats_outbox, drainer publishes async). Controlled by
+	// BACKEND_OUTBOX_ENABLED env var at process start. See docs/plans/
+	// 2026-04-13-001-fix-batch-insert-outbox-plan.md Unit 6.
+	outboxEnabled bool
 }
 
 // NewHandler constructs a WS Handler.
-func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, userCore *user.Core, sponsorCore *sponsor.Core, allowedOrigins []string) *Handler {
+func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, gameCore *game.Core, heat *heat.HeatEngine, inventoryCore *inventory.Core, userCore *user.Core, sponsorCore *sponsor.Core, allowedOrigins []string, outboxEnabled bool) *Handler {
 	h := &Handler{
 		log:            log,
 		hub:            hub,
@@ -71,6 +77,7 @@ func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, g
 		userCore:       userCore,
 		sponsorCore:    sponsorCore,
 		allowedOrigins: allowedOrigins,
+		outboxEnabled:  outboxEnabled,
 	}
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -675,10 +682,26 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	}
 
 	refKey := uuid.NewString()
-	// outboxWriter is nil here: Unit 6 of the outbox rollout plan wires a
-	// real writer + flag-gates removal of the refund path. Until then, the
-	// legacy publish+refund flow below stays in force.
-	result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey, nil)
+
+	// Build the OutboxWriter (flag on) or pass nil (flag off).
+	// When the writer is non-nil, accounting inserts a nats_outbox row
+	// atomically with the balance debit; the drainer (started in api/main.go
+	// when Outbox.Enabled) publishes the event later. The legacy
+	// publish-then-refund path below is skipped entirely in that case.
+	var outboxWriter accounting.OutboxWriter
+	if h.outboxEnabled {
+		payload, encodeErr := EncodeBatchInsertPayload(userID.String(), slotID, int(accepted), refKey)
+		if encodeErr != nil {
+			h.log.Errorw("encode batch_insert payload", "error", encodeErr, "user_id", c.userID)
+			return
+		}
+		subject := TopicBatchInsert(h.room)
+		outboxWriter = func(ctx context.Context, s accounting.Storer) error {
+			return s.InsertOutboxRow(ctx, subject, payload, refKey)
+		}
+	}
+
+	result, err := h.gameCore.ProcessBatchInsert(context.Background(), userID, int(accepted), refKey, outboxWriter)
 	if err != nil {
 		h.log.Errorw("batch_insert process error", "error", err, "user_id", c.userID)
 		return
@@ -694,48 +717,57 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	// Add heat on commit.
 	h.heat.AddHeat(userID, int(accepted))
 
-	// Publish batch_insert command to NATS for game server.
-	cmd := NATSBatchInsertCmd{
-		UserID: userID.String(),
-		SlotID: slotID,
-		Count:  int(accepted),
-	}
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		h.log.Errorw("json marshal batch_insert", "error", err)
-		return
-	}
-	// P1-14: Check publish error; refund balance if NATS is unreachable.
-	if err := h.nc.Publish(TopicBatchInsert(h.room), data); err != nil {
-		h.log.Errorw("nats publish batch_insert failed, refunding", "error", err, "user_id", c.userID, "count", accepted)
-		// Reverse the exact play/cash split the insert applied. Parse failures
-		// are fatal — a silent zero-refund would permanently lose funds.
-		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
-		if parseErr != nil {
-			h.log.Errorw("refund aborted — play_debited unparseable",
-				"raw", result.PlayDebited, "error", parseErr, "user_id", c.userID)
-			metrics.BatchInsertRefundFailures.Inc()
+	if h.outboxEnabled {
+		// Outbox path: ProcessBatchInsert already wrote nats_outbox inside
+		// the tx and fired pg_notify. Drainer handles the publish — no
+		// inline publish, no refund path. The ack below still goes out so
+		// the client sees its balance update immediately.
+	} else {
+		// Legacy path: inline publish, refund on publish failure. Unit 8 of
+		// the outbox plan deletes this block once production bakes confirm
+		// zero BatchInsertRefundFailures increments.
+		cmd := NATSBatchInsertCmd{
+			UserID: userID.String(),
+			SlotID: slotID,
+			Count:  int(accepted),
+		}
+		data, err := json.Marshal(cmd)
+		if err != nil {
+			h.log.Errorw("json marshal batch_insert", "error", err)
 			return
 		}
-		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
-		if parseErr != nil {
-			h.log.Errorw("refund aborted — cash_debited unparseable",
-				"raw", result.CashDebited, "error", parseErr, "user_id", c.userID)
-			metrics.BatchInsertRefundFailures.Inc()
+		// P1-14: Check publish error; refund balance if NATS is unreachable.
+		if err := h.nc.Publish(TopicBatchInsert(h.room), data); err != nil {
+			h.log.Errorw("nats publish batch_insert failed, refunding", "error", err, "user_id", c.userID, "count", accepted)
+			// Reverse the exact play/cash split the insert applied. Parse failures
+			// are fatal — a silent zero-refund would permanently lose funds.
+			playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
+			if parseErr != nil {
+				h.log.Errorw("refund aborted — play_debited unparseable",
+					"raw", result.PlayDebited, "error", parseErr, "user_id", c.userID)
+				metrics.BatchInsertRefundFailures.Inc()
+				return
+			}
+			cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
+			if parseErr != nil {
+				h.log.Errorw("refund aborted — cash_debited unparseable",
+					"raw", result.CashDebited, "error", parseErr, "user_id", c.userID)
+				metrics.BatchInsertRefundFailures.Inc()
+				return
+			}
+			// Deterministic refund reference ID: <insert-ref>:refund. Enables
+			// idempotency guard in ProcessGameInsertRefund. Refund tx decoupled
+			// from the WS message lifecycle but wall-clock bounded so a stuck DB
+			// can't leak goroutines.
+			refundCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			refundKey := refKey + accounting.RefundKeySuffix
+			if _, refundErr := h.gameCore.RefundBatchInsert(refundCtx, userID, playDeb, cashDeb, refundKey); refundErr != nil {
+				h.log.Errorw("refund after nats failure also failed", "error", refundErr, "user_id", c.userID)
+				metrics.BatchInsertRefundFailures.Inc()
+			}
 			return
 		}
-		// Deterministic refund reference ID: <insert-ref>:refund. Enables
-		// idempotency guard in ProcessGameInsertRefund. Refund tx decoupled
-		// from the WS message lifecycle but wall-clock bounded so a stuck DB
-		// can't leak goroutines.
-		refundCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		refundKey := refKey + accounting.RefundKeySuffix
-		if _, refundErr := h.gameCore.RefundBatchInsert(refundCtx, userID, playDeb, cashDeb, refundKey); refundErr != nil {
-			h.log.Errorw("refund after nats failure also failed", "error", refundErr, "user_id", c.userID)
-			metrics.BatchInsertRefundFailures.Inc()
-		}
-		return
 	}
 
 	// Send response to the requesting client. Carry both balances so the
