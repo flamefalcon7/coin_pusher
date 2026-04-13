@@ -476,3 +476,117 @@ tests:
       - eval_time: 3m
         alertname: P1_RTPPlayerAnomalies
         exp_alerts: []
+
+  # ===================================================================
+  # Outbox drainer alerts (Unit 7)
+  # ===================================================================
+
+  # P1_OutboxPendingBacklog: pending > 1000 for 2m — fires.
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_pending_rows{job="backend", instance="backend:4010"}'
+        values: "0 500 1500 1500 1500"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P1_OutboxPendingBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Outbox backlog >1000 rows for 2min — drainer keeping up but slowly"
+
+  # Negative: pending stays below threshold
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_pending_rows{job="backend", instance="backend:4010"}'
+        values: "0 500 800 900 999"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P1_OutboxPendingBacklog
+        exp_alerts: []
+
+  # P0_OutboxOldestPending: oldest age > 60s fires immediately
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_oldest_pending_seconds{job="backend", instance="backend:4010"}'
+        values: "0 10 30 61 61"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P0_OutboxOldestPending
+        exp_alerts:
+          - exp_labels:
+              severity: P0
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Oldest nats_outbox row stuck >60s — investigate drainer health"
+
+  # Negative: age stays under threshold
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_oldest_pending_seconds{job="backend", instance="backend:4010"}'
+        values: "0 10 20 30 59"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: P0_OutboxOldestPending
+        exp_alerts: []
+
+  # P1_OutboxDLQGrowth: any DLQ row in last 10m fires
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_dlq_total{job="backend", instance="backend:4010"}'
+        values: "0 0 0 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P1_OutboxDLQGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "Row(s) exiled to nats_outbox_dlq — check last_error column"
+
+  # Negative: DLQ count unchanged
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_dlq_total{job="backend", instance="backend:4010"}'
+        values: "0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: P1_OutboxDLQGrowth
+        exp_alerts: []
+
+  # P2_OutboxPublishErrors: any publish error in last 5m fires
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_publish_errors_total{job="backend", instance="backend:4010"}'
+        values: "0 0 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P2_OutboxPublishErrors
+        exp_alerts:
+          - exp_labels:
+              severity: P2
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "nats_outbox publish errors in last 5m — brief NATS blip or deeper issue"
+
+  # P2_OutboxTableBloat: table size > 1GB fires
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_table_bytes{job="backend", instance="backend:4010"}'
+        values: "100000 1000000 2e9 2e9"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: P2_OutboxTableBloat
+        exp_alerts:
+          - exp_labels:
+              severity: P2
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "nats_outbox table >1GB — autovacuum may struggle, investigate drain rate"

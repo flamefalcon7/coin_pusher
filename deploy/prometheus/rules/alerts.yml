@@ -302,3 +302,84 @@ groups:
           severity: P2
         annotations:
           summary: "Auth failures trending up"
+
+      # ==========================================================================
+      # Outbox drainer (transactional outbox for NATS batch_insert).
+      # See docs/plans/2026-04-13-001-fix-batch-insert-outbox-plan.md.
+      # ==========================================================================
+
+      # Drainer goroutine is silent or wedged. Early warning before
+      # pending_rows / oldest_age would fire. Uses 10s staleness on the
+      # last_tick_timestamp gauge — healthy drainer ticks every 5s
+      # (FallbackTick) at minimum.
+      - alert: P0_OutboxDrainerDead
+        expr: time() - coinpusher_outbox_last_tick_timestamp > 10
+        for: 30s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Outbox drainer has not ticked in >10s — goroutine dead or LISTEN wedged"
+
+      # A row has been stuck for a minute. Something is actively wrong —
+      # poison pill not reaching DLQ, subject blocked, or sustained NATS
+      # publish failure.
+      - alert: P0_OutboxOldestPending
+        expr: coinpusher_outbox_oldest_pending_seconds > 60
+        for: 0s
+        labels:
+          severity: P0
+        annotations:
+          summary: "Oldest nats_outbox row stuck >60s — investigate drainer health"
+
+      # Backlog building but still draining. Often signals NATS back-pressure
+      # or sustained failure-recovery after an outage.
+      - alert: P1_OutboxPendingBacklog
+        expr: coinpusher_outbox_pending_rows > 1000
+        for: 2m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Outbox backlog >1000 rows for 2min — drainer keeping up but slowly"
+
+      # Poison-pill row(s) exiled past MaxAttempts=10. These are rows that
+      # consistently fail to publish — human investigation required (check
+      # last_error in nats_outbox_dlq).
+      - alert: P1_OutboxDLQGrowth
+        expr: increase(coinpusher_outbox_dlq_total[10m]) > 0
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "Row(s) exiled to nats_outbox_dlq — check last_error column"
+
+      # Transient publish failures. Brief spikes expected during NATS blips;
+      # sustained non-zero means deeper investigation.
+      - alert: P2_OutboxPublishErrors
+        expr: increase(coinpusher_outbox_publish_errors_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "nats_outbox publish errors in last 5m — brief NATS blip or deeper issue"
+
+      # Table bloat. Autovacuum pressure risk before row-count alerts would
+      # fire. 1 GB threshold is conservative for this workload.
+      - alert: P2_OutboxTableBloat
+        expr: coinpusher_outbox_table_bytes > 1e9
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "nats_outbox table >1GB — autovacuum may struggle, investigate drain rate"
+
+      # pg_notify after commit is best-effort; the drainer's 5s fallback
+      # tick catches missed notifications. A sustained non-zero rate
+      # signals pool saturation or slow Postgres — investigate before
+      # user-facing latency degrades.
+      - alert: P2_OutboxNotifyErrors
+        expr: increase(coinpusher_outbox_notify_errors_total[5m]) > 10
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "pg_notify outbox_new failing — drainer falling back to 5s tick"
