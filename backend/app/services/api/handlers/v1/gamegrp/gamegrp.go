@@ -32,15 +32,21 @@ type Group struct {
 	heat *heat.HeatEngine
 	nc   *nats.Conn
 	room string
+	// outboxEnabled routes batch_insert through nats_outbox (flag on) or
+	// keeps the legacy inline-publish-with-refund path (flag off). See
+	// docs/plans/2026-04-13-001 Unit 6. Flag set at process start via
+	// BACKEND_OUTBOX_ENABLED.
+	outboxEnabled bool
 }
 
 // New constructs a handler Group.
-func New(game *game.Core, heat *heat.HeatEngine, nc *nats.Conn) *Group {
+func New(game *game.Core, heat *heat.HeatEngine, nc *nats.Conn, outboxEnabled bool) *Group {
 	return &Group{
-		game: game,
-		heat: heat,
-		nc:   nc,
-		room: "main",
+		game:          game,
+		heat:          heat,
+		nc:            nc,
+		room:          "main",
+		outboxEnabled: outboxEnabled,
 	}
 }
 
@@ -107,9 +113,23 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	refKey := uuid.NewString()
-	// outboxWriter is nil here: Unit 6 wires it alongside removing the
-	// publish+refund path. Until then, legacy flow (below) stays in force.
-	result, err := g.game.ProcessBatchInsert(ctx, accountID, req.Count, refKey, nil)
+	slotID := 0 // HTTP handler always uses default slot
+
+	// Outbox path (flag on): write nats_outbox row inside same tx as debit;
+	// drainer publishes at-least-once. No inline publish, no refund path.
+	var outboxWriter accounting.OutboxWriter
+	if g.outboxEnabled {
+		payload, encodeErr := ws.EncodeBatchInsertPayload(accountID.String(), slotID, req.Count, refKey)
+		if encodeErr != nil {
+			return fmt.Errorf("encode batch_insert payload: %w", encodeErr)
+		}
+		subject := ws.TopicBatchInsert(g.room)
+		outboxWriter = func(ctx context.Context, s accounting.Storer) error {
+			return s.InsertOutboxRow(ctx, subject, payload, refKey)
+		}
+	}
+
+	result, err := g.game.ProcessBatchInsert(ctx, accountID, req.Count, refKey, outboxWriter)
 	if err != nil {
 		return err
 	}
@@ -120,45 +140,49 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 	// Add heat on commit.
 	g.heat.AddHeat(accountID, req.Count)
 
-	// Publish batch_insert command to NATS for game server.
-	cmd := ws.NATSBatchInsertCmd{
-		UserID: accountID.String(),
-		SlotID: 0, // default slot
-		Count:  req.Count,
-	}
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		return fmt.Errorf("marshaling batch insert cmd: %w", err)
-	}
-	// P1-14: Check publish error; refund balance if NATS is unreachable.
-	if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
-		// Reverse the exact split the insert applied so the ledger refund
-		// entries mirror the insert entries per-currency. Raw field values
-		// are not echoed in the returned error — they could reflect
-		// server-internal decimal formatting state.
-		playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
-		if parseErr != nil {
-			metrics.BatchInsertRefundFailures.Inc()
-			return fmt.Errorf("nats publish failed; cannot refund — play_debited unparseable: publish=%w, parse=%v",
-				err, parseErr)
+	if !g.outboxEnabled {
+		// Legacy path: inline publish + refund on publish failure. Unit 8 of
+		// the outbox plan deletes this block after production bakes confirm
+		// zero BatchInsertRefundFailures.
+		cmd := ws.NATSBatchInsertCmd{
+			UserID: accountID.String(),
+			SlotID: slotID,
+			Count:  req.Count,
 		}
-		cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
-		if parseErr != nil {
-			metrics.BatchInsertRefundFailures.Inc()
-			return fmt.Errorf("nats publish failed; cannot refund — cash_debited unparseable: publish=%w, parse=%v",
-				err, parseErr)
+		data, err := json.Marshal(cmd)
+		if err != nil {
+			return fmt.Errorf("marshaling batch insert cmd: %w", err)
 		}
-		// Decouple the refund tx from the request ctx (client cancellation
-		// must not abort the refund), but cap the wall-clock window so a
-		// stuck DB can't leak goroutines under a sustained outage.
-		refundCtx, cancel := context.WithTimeout(context.Background(), refundTxTimeout)
-		defer cancel()
-		refundKey := refKey + accounting.RefundKeySuffix
-		if _, refundErr := g.game.RefundBatchInsert(refundCtx, accountID, playDeb, cashDeb, refundKey); refundErr != nil {
-			metrics.BatchInsertRefundFailures.Inc()
-			return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
+		// P1-14: Check publish error; refund balance if NATS is unreachable.
+		if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
+			// Reverse the exact split the insert applied so the ledger refund
+			// entries mirror the insert entries per-currency. Raw field values
+			// are not echoed in the returned error — they could reflect
+			// server-internal decimal formatting state.
+			playDeb, parseErr := decimal.NewFromString(result.PlayDebited)
+			if parseErr != nil {
+				metrics.BatchInsertRefundFailures.Inc()
+				return fmt.Errorf("nats publish failed; cannot refund — play_debited unparseable: publish=%w, parse=%v",
+					err, parseErr)
+			}
+			cashDeb, parseErr := decimal.NewFromString(result.CashDebited)
+			if parseErr != nil {
+				metrics.BatchInsertRefundFailures.Inc()
+				return fmt.Errorf("nats publish failed; cannot refund — cash_debited unparseable: publish=%w, parse=%v",
+					err, parseErr)
+			}
+			// Decouple the refund tx from the request ctx (client cancellation
+			// must not abort the refund), but cap the wall-clock window so a
+			// stuck DB can't leak goroutines under a sustained outage.
+			refundCtx, cancel := context.WithTimeout(context.Background(), refundTxTimeout)
+			defer cancel()
+			refundKey := refKey + accounting.RefundKeySuffix
+			if _, refundErr := g.game.RefundBatchInsert(refundCtx, accountID, playDeb, cashDeb, refundKey); refundErr != nil {
+				metrics.BatchInsertRefundFailures.Inc()
+				return fmt.Errorf("nats publish failed and refund failed: publish=%w, refund=%v", err, refundErr)
+			}
+			return fmt.Errorf("nats publish failed (balance refunded): %w", err)
 		}
-		return fmt.Errorf("nats publish failed (balance refunded): %w", err)
 	}
 
 	share := g.heat.GetShareForUser(accountID)

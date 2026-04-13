@@ -19,6 +19,8 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/web/mid"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
+	fmetrics "github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // ---------------------------------------------------------------------------
@@ -111,6 +113,7 @@ type mockAcctStorer struct {
 	createFn           func(ctx context.Context, log accounting.AccountingLog) error
 	queryByAccountIDFn func(ctx context.Context, accountID uuid.UUID, page, pageSize int) ([]accounting.AccountingLog, error)
 	queryByReferenceFn func(ctx context.Context, actionType, referenceID string) (accounting.AccountingLog, error)
+	insertOutboxRowFn  func(ctx context.Context, subject string, payload []byte, referenceID string) error
 }
 
 func (m *mockAcctStorer) Create(ctx context.Context, log accounting.AccountingLog) error {
@@ -146,7 +149,10 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
-func (m *mockAcctStorer) InsertOutboxRow(_ context.Context, _ string, _ []byte, _ string) error {
+func (m *mockAcctStorer) InsertOutboxRow(ctx context.Context, subject string, payload []byte, referenceID string) error {
+	if m.insertOutboxRowFn != nil {
+		return m.insertOutboxRowFn(ctx, subject, payload, referenceID)
+	}
 	return nil
 }
 
@@ -242,7 +248,7 @@ func TestEvent(t *testing.T) {
 			t.Parallel()
 
 			gameCore := newGameCore(accountID, tc.balance)
-			grp := New(gameCore, heat.New(), nil)
+			grp := New(gameCore, heat.New(), nil, false)
 
 			r := httptest.NewRequest(http.MethodPost, "/v1/game/event", strings.NewReader(tc.body))
 			r.Header.Set("Content-Type", "application/json")
@@ -278,7 +284,7 @@ func TestBatchInsert_CountExceedsMax(t *testing.T) {
 	log := zap.NewNop().Sugar()
 	accountID := uuid.New()
 	gameCore := newGameCore(accountID, decimal.NewFromInt(100000))
-	grp := New(gameCore, heat.New(), nil)
+	grp := New(gameCore, heat.New(), nil, false)
 
 	tests := []struct {
 		name       string
@@ -387,5 +393,122 @@ func TestBatchInsert_ResponseShape(t *testing.T) {
 	}
 	if strings.Contains(payload, `"balance":`) {
 		t.Errorf("response should not include legacy single-balance field; got %s", payload)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Unit 6: flag-gated outbox path
+// ---------------------------------------------------------------------------
+
+// newGameCoreWithOutboxCapture wires a game.Core whose acctStorer captures
+// every InsertOutboxRow call. Returns the core + a pointer to the captured
+// call record so Unit 6 tests can assert the handler fed the correct
+// subject/payload/refID into the outbox writer.
+func newGameCoreWithOutboxCapture(accountID uuid.UUID, play, cash decimal.Decimal) (*game.Core, *struct {
+	called      bool
+	subject     string
+	payload     []byte
+	referenceID string
+}) {
+	captured := &struct {
+		called      bool
+		subject     string
+		payload     []byte
+		referenceID string
+	}{}
+
+	curPlay := play
+	curCash := cash
+	userStr := &mockUserStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: curPlay, BalanceCash: curCash}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			switch currency {
+			case user.CurrencyPlay:
+				curPlay = curPlay.Add(delta)
+				return curPlay, nil
+			case user.CurrencyCash:
+				curCash = curCash.Add(delta)
+				return curCash, nil
+			}
+			return decimal.Zero, v1.NewInsufficientFundError(currency, delta.Abs(), decimal.Zero)
+		},
+	}
+	acctStr := &mockAcctStorer{
+		insertOutboxRowFn: func(_ context.Context, subject string, payload []byte, referenceID string) error {
+			captured.called = true
+			captured.subject = subject
+			captured.payload = payload
+			captured.referenceID = referenceID
+			return nil
+		},
+	}
+
+	userCore := user.NewCore(userStr)
+	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
+	return game.NewCore(userCore, acctCore), captured
+}
+
+// TestBatchInsert_OutboxPathWritesRowAndSkipsInlinePublish covers Unit 6's
+// flag-on path: handler MUST call accounting.Storer.InsertOutboxRow with
+// the correct subject + encoded payload + reference_id, AND MUST NOT
+// attempt an inline nats publish. Tripwire: BatchInsertRefundFailures
+// counter must stay at 0 — the refund path code must not run when the
+// outbox is handling delivery.
+func TestBatchInsert_OutboxPathWritesRowAndSkipsInlinePublish(t *testing.T) {
+	t.Parallel()
+
+	// Tripwire asserted at teardown: counter must not advance during this
+	// test. If it does, the refund code path ran, meaning Unit 6's flip is
+	// broken. This is the R1 hard guarantee.
+	fmetrics.AssertNoRefundFailures(t)
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+	// Seed play=100, cash=0 so insert stays in the single-currency path.
+	gameCore, captured := newGameCoreWithOutboxCapture(accountID, decimal.NewFromInt(100), decimal.Zero)
+
+	// flag = true. nc can stay nil: if the handler ever tries to publish
+	// inline, the nil dereference will panic and fail the test — that's
+	// the strongest "no inline publish" guard.
+	grp := New(gameCore, heat.New(), nil, true)
+
+	body := `{"count":5}`
+	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	// Inject authed user via claims context.
+	ctx := mid.SetClaims(r.Context(), mid.Claims{AccountID: accountID.String()})
+	r = r.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler := errHandler(log, grp.BatchInsert)
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	if !captured.called {
+		t.Fatal("outbox writer was never called — handler did not route through outbox path")
+	}
+	// Subject must match the NATS topic the drainer later publishes to.
+	wantSubject := "game.main.cmd.batch_insert"
+	if captured.subject != wantSubject {
+		t.Errorf("subject = %q, want %q", captured.subject, wantSubject)
+	}
+	// Payload must round-trip to a NATSBatchInsertCmd with the right fields.
+	var cmd ws.NATSBatchInsertCmd
+	if err := json.Unmarshal(captured.payload, &cmd); err != nil {
+		t.Fatalf("decode captured payload: %v", err)
+	}
+	if cmd.UserID != accountID.String() {
+		t.Errorf("payload user_id = %q, want %q", cmd.UserID, accountID.String())
+	}
+	if cmd.Count != 5 {
+		t.Errorf("payload count = %d, want 5", cmd.Count)
+	}
+	if cmd.ReferenceID == "" || cmd.ReferenceID != captured.referenceID {
+		t.Errorf("payload reference_id = %q, outbox row reference_id = %q — must be non-empty and equal", cmd.ReferenceID, captured.referenceID)
 	}
 }
