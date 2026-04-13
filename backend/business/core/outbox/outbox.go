@@ -178,12 +178,33 @@ func runDrainPass(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.Sugar
 // drainOnce runs a single drain pass. Returns error only for unexpected
 // infra failures (SELECT can't run, etc.). Per-row publish failures are
 // handled inline and do not abort the pass.
+//
+// Fairness: the SELECT uses ROW_NUMBER() OVER (PARTITION BY subject) to
+// interleave rows across subjects. This closes the starvation class
+// flagged in ce:review — a high-volume subject's backlog cannot consume
+// the entire BatchSize budget and starve other subjects. Within a
+// subject, rows arrive in id order, preserving per-subject ordering.
+//
+// Ordering note: `ORDER BY id` gives insert-order, NOT commit-order —
+// BIGSERIAL allocates at INSERT (non-transactional), so two concurrent
+// writers' ids may land in a different order than their tx commits.
+// For this codebase's use case (batch_insert per game room, game server
+// dedups on reference_id) insert-order is sufficient.
 func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredLogger, cfg Config) error {
+	// Round-robin across subjects via ROW_NUMBER(). rn=1 is the oldest
+	// row in each subject; rn=2 the second-oldest; etc. ORDER BY rn, id
+	// then pulls one row from each subject before taking the second row
+	// of any subject. LIMIT caps the total per pass.
 	const selectQ = `
+		WITH ranked AS (
+			SELECT id, subject, payload, reference_id, created_at, attempt_count,
+			       ROW_NUMBER() OVER (PARTITION BY subject ORDER BY id) AS rn
+			FROM nats_outbox
+			WHERE attempt_count < $1
+		)
 		SELECT id, subject, payload, reference_id, created_at, attempt_count
-		FROM nats_outbox
-		WHERE attempt_count < $1
-		ORDER BY subject, id
+		FROM ranked
+		ORDER BY rn, id
 		LIMIT $2`
 
 	var rows []outboxRow
@@ -191,10 +212,11 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 		return fmt.Errorf("select outbox rows: %w", err)
 	}
 
-	// Update pending-count and oldest-age gauges. Pending count shown is
-	// this-batch lower-bound; for a real total we'd need a separate COUNT —
-	// fine for now since alerts care about "is this growing" more than
-	// exact value at an instant.
+	// Update pending-count and oldest-age gauges. Pending count is the
+	// this-batch lower-bound (capped at BatchSize); for a true queue-depth
+	// signal rely on oldest_pending_seconds. Keeping both lets dashboards
+	// distinguish "drainer is making progress" (low pending + low age) from
+	// "backlog exists behind the batch ceiling" (pending==BatchSize + age>0).
 	metrics.OutboxPendingRows.Set(float64(len(rows)))
 	if len(rows) > 0 {
 		oldest := rows[0].CreatedAt
@@ -212,22 +234,28 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 		return nil
 	}
 
-	// Group rows by subject. Rows are already ORDER BY subject,id so runs of
-	// same subject are contiguous.
-	successIDs := make([]int64, 0, len(rows))
-	i := 0
-	for i < len(rows) {
-		subj := rows[i].Subject
-		j := i
-		for j < len(rows) && rows[j].Subject == subj {
-			j++
+	// Group rows by subject in memory so a publish failure in one subject
+	// doesn't block progress on OTHER subjects in the same batch. Selecting
+	// with ORDER BY id (not subject, id) ensures a high-volume subject at
+	// the alphabetical head can't starve later-alphabet subjects — this
+	// closes the LIMIT-100 starvation finding flagged in ce:review.
+	//
+	// Within a subject, rows stay in id order (subsequences of the id-sorted
+	// rows), so per-subject stop-on-fail preserves per-subject ordering.
+	bySubject := make(map[string][]outboxRow, 4)
+	subjectOrder := make([]string, 0, 4)
+	for _, r := range rows {
+		if _, seen := bySubject[r.Subject]; !seen {
+			subjectOrder = append(subjectOrder, r.Subject)
 		}
-		subjRows := rows[i:j]
-		i = j
+		bySubject[r.Subject] = append(bySubject[r.Subject], r)
+	}
 
+	successIDs := make([]int64, 0, len(rows))
+	for _, subj := range subjectOrder {
 		// Process this subject's rows in id order. Stop at first publish
 		// failure to preserve per-subject ordering.
-		publishedInSubject := processSubject(ctx, db, nc, log, cfg, subjRows)
+		publishedInSubject := processSubject(ctx, db, nc, log, cfg, bySubject[subj])
 		successIDs = append(successIDs, publishedInSubject...)
 	}
 
@@ -274,8 +302,15 @@ func processSubject(
 				"attempts", newAttempts, "error", err,
 			)
 
+			// Use a detached context for retry-state writes so a shutdown
+			// mid-drain cannot rewind attempt_count via ctx.Canceled.
+			// Without this, rel-003 bites: SIGTERM during a NATS outage
+			// → bumpAttempt UPDATE fails with ctx.Canceled → attempt_count
+			// stays stale → row looks fresh to the next pod → it never
+			// exiles to DLQ → the subject wedges indefinitely.
+			stateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			if newAttempts >= cfg.MaxAttempts {
-				if dlqErr := moveToDLQ(ctx, db, r, err.Error()); dlqErr != nil {
+				if dlqErr := moveToDLQ(stateCtx, db, r, err.Error()); dlqErr != nil {
 					log.Errorw("outbox DLQ move failed — row stays and will retry",
 						"id", r.ID, "error", dlqErr,
 					)
@@ -289,7 +324,7 @@ func processSubject(
 					// newer writes, or within FallbackTick) picks up continuations.
 				}
 			} else {
-				if upErr := bumpAttempt(ctx, db, r.ID, newAttempts, err.Error()); upErr != nil {
+				if upErr := bumpAttempt(stateCtx, db, r.ID, newAttempts, err.Error()); upErr != nil {
 					// attempt_count didn't advance → the row will retry with
 					// the same count forever if this keeps failing, and the
 					// subject stays blocked by stop-on-fail. Surface via
@@ -300,6 +335,7 @@ func processSubject(
 					)
 				}
 			}
+			cancel()
 			return published
 		}
 		published = append(published, r.ID)
