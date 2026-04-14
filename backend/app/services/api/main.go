@@ -254,33 +254,44 @@ func run() error {
 	defer nc.Drain()
 
 	// -------------------------------------------------------------------------
-	// Outbox drainer (flag-gated). When enabled, handlers route batch_insert
-	// publishes through nats_outbox (same-tx with balance debit) and this
-	// worker drains them. When disabled, the handlers keep the legacy
-	// inline-publish-with-refund path. See docs/plans/2026-04-13-001.
-	if cfg.Outbox.Enabled {
-		// pq.NewListener needs its own connection string (separate from the
-		// sqlx pool). Reconstruct it from the same DB config values.
-		sslMode := "require"
-		if cfg.DB.DisableTLS {
-			sslMode = "disable"
-		}
-		listenDSN := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=%s",
-			strings.Split(cfg.DB.Host, ":")[0], cfg.DB.User, cfg.DB.Password, cfg.DB.Name, sslMode)
-		if hostPort := strings.Split(cfg.DB.Host, ":"); len(hostPort) == 2 {
-			listenDSN += " port=" + hostPort[1]
-		}
+	// Outbox drainer. Always started once the nats_outbox schema is present,
+	// independent of the BACKEND_OUTBOX_ENABLED flag. Rationale: the flag only
+	// gates whether handlers WRITE outbox rows on new requests. Draining must
+	// always be running so that a rollback (flag ON → OFF) cannot orphan rows
+	// that were already committed — every nats_outbox row represents a balance
+	// that was debited atomically, and must eventually reach NATS. An idle
+	// drainer against an empty table is cheap (one empty SELECT per 5s tick).
+	//
+	// pq.NewListener needs its own connection string (separate from the sqlx
+	// pool). Reconstruct it from the same DB config values.
+	sslMode := "require"
+	if cfg.DB.DisableTLS {
+		sslMode = "disable"
+	}
+	listenDSN := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=%s",
+		strings.Split(cfg.DB.Host, ":")[0], cfg.DB.User, cfg.DB.Password, cfg.DB.Name, sslMode)
+	if hostPort := strings.Split(cfg.DB.Host, ":"); len(hostPort) == 2 {
+		listenDSN += " port=" + hostPort[1]
+	}
 
-		go func() {
-			log.Infow("outbox drainer starting", "flag", "BACKEND_OUTBOX_ENABLED=true")
-			if err := outbox.Run(context.Background(), db, nc, log, outbox.Config{
-				ListenDSN: listenDSN,
-			}); err != nil {
-				log.Errorw("outbox drainer exited with error", "error", err)
-			}
-		}()
-	} else {
-		log.Infow("outbox drainer disabled; handlers using legacy publish+refund path")
+	// Cancelable context + WaitGroup so graceful shutdown can drain to empty
+	// before db.Close / nc.Drain tear down the drainer's dependencies. Without
+	// this, a SIGTERM mid-pass leaves successfully-published rows un-DELETEd,
+	// forcing a duplicate delivery on next boot.
+	outboxCtx, outboxCancel := context.WithCancel(context.Background())
+	var outboxWg sync.WaitGroup
+	outboxWg.Add(1)
+	go func() {
+		defer outboxWg.Done()
+		log.Infow("outbox drainer starting", "handler_flag", cfg.Outbox.Enabled)
+		if err := outbox.Run(outboxCtx, db, nc, log, outbox.Config{
+			ListenDSN: listenDSN,
+		}); err != nil {
+			log.Errorw("outbox drainer exited with error", "error", err)
+		}
+	}()
+	if !cfg.Outbox.Enabled {
+		log.Infow("outbox handler flag OFF — handlers on legacy publish+refund; drainer still running to clear any residual rows")
 	}
 
 	// -------------------------------------------------------------------------
@@ -1056,6 +1067,16 @@ func run() error {
 		close(stopNoncePurge)
 		close(stopExpire)
 		close(stopRTP)
+
+		// Stop outbox drainer BEFORE nc.Drain / db.Close (both fire via defer
+		// at run()'s return). Waiting here guarantees the in-flight drain pass
+		// finishes — publishing remaining rows and DELETE-ing them — before
+		// the NATS connection drains or the DB pool closes. Without this, a
+		// mid-pass DELETE hits a closed pool, rows stay un-deleted, and the
+		// next boot re-publishes them (duplicate delivery).
+		log.Infow("stopping outbox drainer")
+		outboxCancel()
+		outboxWg.Wait()
 
 		// Flush remaining accumulated rewards to DB before exit.
 		log.Infow("flushing remaining rewards")

@@ -202,12 +202,26 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 	// row in each subject; rn=2 the second-oldest; etc. ORDER BY rn, id
 	// then pulls one row from each subject before taking the second row
 	// of any subject. LIMIT caps the total per pass.
+	//
+	// Exponential retry backoff: rows that recently failed are excluded
+	// until their backoff window elapses. Schedule is 5s * 2^attempt,
+	// capped at 300s (= 5m). Total time-to-DLQ across 10 attempts is
+	// ~18 min (5+10+20+40+80+160+300+300+300+300s) — long enough to ride
+	// out a typical NATS outage without exhausting MaxAttempts, short
+	// enough that a true poison pill reaches DLQ within a shift.
+	// last_attempted_at IS NULL → never tried → always eligible.
 	const selectQ = `
 		WITH ranked AS (
 			SELECT id, subject, payload, reference_id, created_at, attempt_count, payload_version,
 			       ROW_NUMBER() OVER (PARTITION BY subject ORDER BY id) AS rn
 			FROM nats_outbox
 			WHERE attempt_count < $1
+			  AND (
+			    last_attempted_at IS NULL
+			    OR last_attempted_at < NOW() - make_interval(
+			         secs => LEAST(300, (5 * power(2, LEAST(attempt_count, 6)))::int)
+			       )
+			  )
 		)
 		SELECT id, subject, payload, reference_id, created_at, attempt_count, payload_version
 		FROM ranked
@@ -319,9 +333,29 @@ func processSubject(
 			defer cancel()
 			if newAttempts >= cfg.MaxAttempts {
 				if dlqErr := moveToDLQ(stateCtx, db, r, err.Error()); dlqErr != nil {
-					log.Errorw("outbox DLQ move failed — row stays and will retry",
-						"id", r.ID, "error", dlqErr,
+					// DLQ move failed (e.g., Postgres timeout, tx abort). We
+					// MUST still advance attempt_count above MaxAttempts,
+					// otherwise this row stays at attempt_count=MaxAttempts-1
+					// and the next pass picks it up again — wedging the subject
+					// indefinitely because stop-on-fail halts on this row.
+					// Bumping past the threshold exits the SELECT WHERE filter,
+					// unblocking the subject. The row needs manual cleanup
+					// (audit: attempt_count >= MaxAttempts AND NOT in DLQ),
+					// which is why we log at ERROR level and surface via metric.
+					metrics.OutboxBumpErrors.Inc()
+					log.Errorw("outbox DLQ move failed — advancing attempt_count past threshold to unblock subject (row needs manual cleanup)",
+						"id", r.ID, "subject", r.Subject, "new_attempt_count", newAttempts, "dlq_error", dlqErr,
 					)
+					if upErr := bumpAttempt(stateCtx, db, r.ID, newAttempts, "dlq_move_failed: "+dlqErr.Error()); upErr != nil {
+						// Double failure: DLQ move failed AND bump also failed.
+						// The subject is genuinely wedged. OutboxBumpErrors now
+						// reflects two increments — operator will notice the
+						// spike and intervene.
+						metrics.OutboxBumpErrors.Inc()
+						log.Errorw("outbox bumpAttempt also failed after DLQ failure — subject wedged until manual intervention",
+							"id", r.ID, "bump_error", upErr,
+						)
+					}
 				} else {
 					metrics.OutboxDLQTotal.Inc()
 					log.Errorw("outbox row exiled to DLQ",
