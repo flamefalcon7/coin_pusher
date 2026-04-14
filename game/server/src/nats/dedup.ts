@@ -15,20 +15,27 @@
 const DEFAULT_MAX_ENTRIES = 10_000;
 
 export class RefIDDedup {
-  private readonly seen = new Map<string, number>();
-  private counter = 0;
+  // Set preserves insertion order per ES2015+, so the first value yielded by
+  // .values() / .keys() is always the oldest insertion. We rely on that for
+  // FIFO eviction. No counter needed — the Set itself is the queue.
+  private readonly seen = new Set<string>();
 
   constructor(private readonly maxEntries: number = DEFAULT_MAX_ENTRIES) {}
 
   // Returns true if this reference_id was already seen (= duplicate, drop it).
   // Empty / undefined reference_id always returns false.
+  //
+  // Defensive runtime type check: the NATS payload is unvalidated JSON, so a
+  // non-string value (e.g., null from a backend bug) would bypass dedup via
+  // falsy-check and silently admit a duplicate. Treat anything non-string as
+  // "no reference_id" rather than throwing — unknown shape is a bypass, not
+  // a crash.
   check(refID: string | undefined): boolean {
-    if (!refID) return false;
+    if (typeof refID !== "string" || refID.length === 0) return false;
     if (this.seen.has(refID)) return true;
-    this.seen.set(refID, this.counter++);
+    this.seen.add(refID);
     if (this.seen.size > this.maxEntries) {
-      // Map preserves insertion order — first key is oldest.
-      const oldest = this.seen.keys().next().value;
+      const oldest = this.seen.values().next().value;
       if (oldest !== undefined) this.seen.delete(oldest);
     }
     return false;

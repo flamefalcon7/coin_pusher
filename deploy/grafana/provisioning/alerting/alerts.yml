@@ -1080,3 +1080,75 @@ groups:
           severity: P2
         annotations:
           summary: "nats_outbox table >1GB — autovacuum pressure, investigate drain rate"
+
+      - uid: p2-outbox-notify-errors
+        title: "P2: Outbox pg_notify errors"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_outbox_notify_errors_total[5m]) > 10
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "pg_notify outbox_new failing — drainer falling back to 5s tick"
+
+      - uid: p1-outbox-bump-errors
+        title: "P1: Outbox bumpAttempt errors (subject may be wedged)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_outbox_bump_errors_total[10m]) > 3
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "outbox bumpAttempt failing repeatedly — row retry state stuck, subject blocked, rows not advancing to DLQ"
+
+      - uid: p2-outbox-delete-errors
+        title: "P2: Outbox DELETE-after-publish errors (duplicate delivery risk)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(coinpusher_outbox_delete_errors_total[5m]) > 0
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "outbox DELETE-after-publish failing — at-least-once relying on consumer RefIDDedup; cache exhaustion risk"

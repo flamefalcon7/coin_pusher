@@ -91,7 +91,7 @@ func TestDrainOnce_EmptyOutbox(t *testing.T) {
 	pub := &mockPub{}
 	cfg := Config{BatchSize: 100, MaxAttempts: 10}
 
-	emptyRows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"})
+	emptyRows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"})
 	mock.ExpectQuery(selectQueryRegex.String()).
 		WithArgs(10, 100).
 		WillReturnRows(emptyRows)
@@ -114,10 +114,10 @@ func TestDrainOnce_SingleSubjectAllPublished(t *testing.T) {
 	cfg := Config{BatchSize: 100, MaxAttempts: 10}
 
 	now := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
-		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("payload-1"), "ref-1", now, 0).
-		AddRow(int64(2), "game.main.cmd.batch_insert", []byte("payload-2"), "ref-2", now, 0).
-		AddRow(int64(3), "game.main.cmd.batch_insert", []byte("payload-3"), "ref-3", now, 0)
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
+		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("payload-1"), "ref-1", now, 0, int16(1)).
+		AddRow(int64(2), "game.main.cmd.batch_insert", []byte("payload-2"), "ref-2", now, 0, int16(1)).
+		AddRow(int64(3), "game.main.cmd.batch_insert", []byte("payload-3"), "ref-3", now, 0, int16(1))
 	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 100).WillReturnRows(rows)
 	mock.ExpectExec(deleteQueryRegex.String()).
 		WithArgs(pq.Array([]int64{1, 2, 3})).
@@ -160,11 +160,11 @@ func TestDrainOnce_PerSubjectStopOnFailDoesNotBlockOtherSubjects(t *testing.T) {
 	}
 
 	now := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
-		AddRow(int64(1), "game.room-a.cmd.batch_insert", []byte("a-1"), "ref-a-1", now, 0).
-		AddRow(int64(2), "game.room-a.cmd.batch_insert", []byte("a-2"), "ref-a-2", now, 0).
-		AddRow(int64(3), "game.room-b.cmd.batch_insert", []byte("b-1"), "ref-b-1", now, 0).
-		AddRow(int64(4), "game.room-b.cmd.batch_insert", []byte("b-2"), "ref-b-2", now, 0)
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
+		AddRow(int64(1), "game.room-a.cmd.batch_insert", []byte("a-1"), "ref-a-1", now, 0, int16(1)).
+		AddRow(int64(2), "game.room-a.cmd.batch_insert", []byte("a-2"), "ref-a-2", now, 0, int16(1)).
+		AddRow(int64(3), "game.room-b.cmd.batch_insert", []byte("b-1"), "ref-b-1", now, 0, int16(1)).
+		AddRow(int64(4), "game.room-b.cmd.batch_insert", []byte("b-2"), "ref-b-2", now, 0, int16(1))
 	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 100).WillReturnRows(rows)
 	// Bump attempt_count on id=1 (the failed row).
 	mock.ExpectExec(bumpQueryRegex.String()).
@@ -217,11 +217,11 @@ func TestDrainOnce_RoundRobinAcrossSubjects(t *testing.T) {
 	// Simulates what PG returns for:
 	// ROW_NUMBER() OVER (PARTITION BY subject ORDER BY id) ORDER BY rn, id LIMIT 4
 	// Round 1: a-1, b-6, c-8. Round 2: a-2. → batch = [a:1, b:6, c:8, a:2]
-	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
-		AddRow(int64(1), "game.room-a.cmd.batch_insert", []byte("a-1"), "ref-a-1", now, 0).
-		AddRow(int64(6), "game.room-b.cmd.batch_insert", []byte("b-1"), "ref-b-1", now, 0).
-		AddRow(int64(8), "game.room-c.cmd.batch_insert", []byte("c-1"), "ref-c-1", now, 0).
-		AddRow(int64(2), "game.room-a.cmd.batch_insert", []byte("a-2"), "ref-a-2", now, 0)
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
+		AddRow(int64(1), "game.room-a.cmd.batch_insert", []byte("a-1"), "ref-a-1", now, 0, int16(1)).
+		AddRow(int64(6), "game.room-b.cmd.batch_insert", []byte("b-1"), "ref-b-1", now, 0, int16(1)).
+		AddRow(int64(8), "game.room-c.cmd.batch_insert", []byte("c-1"), "ref-c-1", now, 0, int16(1)).
+		AddRow(int64(2), "game.room-a.cmd.batch_insert", []byte("a-2"), "ref-a-2", now, 0, int16(1))
 	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 4).WillReturnRows(rows)
 	mock.ExpectExec(deleteQueryRegex.String()).
 		WithArgs(pq.Array([]int64{1, 2, 6, 8})).
@@ -269,16 +269,16 @@ func TestDrainOnce_DLQExileAtMaxAttempts(t *testing.T) {
 	}
 
 	now := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
 		// attempt_count = 9, publish fails → newAttempts = 10 ≥ max → DLQ.
-		AddRow(int64(42), "game.main.cmd.batch_insert", []byte("doomed"), "ref-doom", now, 9)
+		AddRow(int64(42), "game.main.cmd.batch_insert", []byte("doomed"), "ref-doom", now, 9, int16(1))
 	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 100).WillReturnRows(rows)
 
 	// DLQ move is a tx: BEGIN, INSERT dlq, DELETE outbox, COMMIT.
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO nats_outbox_dlq`).
 		WithArgs(int64(42), "game.main.cmd.batch_insert", []byte("doomed"), "ref-doom",
-			sqlmock.AnyArg(), 10, "poison pill", "attempt_count=10 >= max").
+			sqlmock.AnyArg(), 10, "poison pill", int16(1), "attempt_count=10 >= max").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`DELETE FROM nats_outbox WHERE id = \$1`).
 		WithArgs(int64(42)).
@@ -310,9 +310,9 @@ func TestDrainOnce_BatchDeleteFailureLeavesRowsForRetry(t *testing.T) {
 	cfg := Config{BatchSize: 10, MaxAttempts: 10}
 
 	now := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
-		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("p-1"), "ref-1", now, 0).
-		AddRow(int64(2), "game.main.cmd.batch_insert", []byte("p-2"), "ref-2", now, 0)
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
+		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("p-1"), "ref-1", now, 0, int16(1)).
+		AddRow(int64(2), "game.main.cmd.batch_insert", []byte("p-2"), "ref-2", now, 0, int16(1))
 	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 10).WillReturnRows(rows)
 	// Publishes succeed, but DELETE fails.
 	mock.ExpectExec(deleteQueryRegex.String()).
@@ -373,8 +373,8 @@ func TestRunDrainPass_PanicRecovered(t *testing.T) {
 
 	// One row to feed into the panicking publisher.
 	now := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count"}).
-		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("boom"), "ref", now, 0)
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
+		AddRow(int64(1), "game.main.cmd.batch_insert", []byte("boom"), "ref", now, 0, int16(1))
 	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 100).WillReturnRows(rows)
 
 	// Should not panic the test.

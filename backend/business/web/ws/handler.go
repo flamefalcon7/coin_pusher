@@ -629,13 +629,16 @@ func (h *Handler) handleUpdateSceneObjects(c *Connection, msg ClientMessage) {
 	h.nc.Publish(TopicUpdateSceneObjects(h.room), data)
 }
 
-const maxBatchCount = 100
+// MaxBatchCount is the shared upper bound on a single batch_insert request.
+// Exported so HTTP (gamegrp) and WS (this package) enforce the same cap —
+// otherwise a physics-cap change would silently diverge across transports.
+const MaxBatchCount = 100
 
 func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 	c.TouchActivity()
 
 	count := msg.Count
-	if count <= 0 || count > maxBatchCount {
+	if count <= 0 || count > MaxBatchCount {
 		return
 	}
 
