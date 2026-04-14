@@ -21,7 +21,10 @@
 //	docker compose -f docker-compose.dev.yml up -d postgres
 //	go test -tags=integration ./backend/business/core/accounting/...
 
-package accounting
+// External test package avoids the import cycle: ledgerdb imports
+// accounting for Storer/model types, so a test inside package accounting
+// cannot import ledgerdb. `accounting_test` lets us wire the real stores.
+package accounting_test
 
 import (
 	"context"
@@ -36,6 +39,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/shopspring/decimal"
 
+	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
@@ -64,22 +68,24 @@ func setupAtomicityIntegration(t *testing.T) (*sqlx.DB, uuid.UUID, func()) {
 		t.Skipf("nats_outbox missing (%v) — run admin migrate first", err)
 	}
 
-	// Create a throwaway test account with a known balance.
+	// Create a throwaway test account with a known balance. `accounts` PK is
+	// `account_id` (not `id`); display_name must be unique, so derive a per-
+	// test suffix from the UUID to avoid collision across parallel runs.
 	accountID := uuid.New()
 	if _, err := db.Exec(`
-		INSERT INTO accounts (id, email, wallet_address, balance_play, balance_cash, role, created_at)
-		VALUES ($1, $2, $3, $4, $5, 'user', NOW())
-	`, accountID, fmt.Sprintf("atomicity-%s@test", accountID), fmt.Sprintf("0x%x", accountID[:]),
-		decimal.NewFromInt(100), decimal.Zero); err != nil {
+		INSERT INTO accounts (account_id, display_name, balance_play, balance_cash, referral_code)
+		VALUES ($1, $2, $3, $4, $5)
+	`, accountID, fmt.Sprintf("atomicity-%s", accountID),
+		decimal.NewFromInt(100), decimal.Zero,
+		fmt.Sprintf("ATOMIC%s", accountID.String()[:6])); err != nil {
 		db.Close()
 		t.Fatalf("seed account: %v", err)
 	}
 
 	cleanup := func() {
-		// Order matters — FK cascade will clean children but be explicit.
 		db.Exec(`DELETE FROM nats_outbox WHERE reference_id LIKE 'atomic-%'`)
 		db.Exec(`DELETE FROM accounting_logs WHERE account_id = $1`, accountID)
-		db.Exec(`DELETE FROM accounts WHERE id = $1`, accountID)
+		db.Exec(`DELETE FROM accounts WHERE account_id = $1`, accountID)
 		db.Close()
 	}
 	return db, accountID, cleanup
@@ -106,11 +112,11 @@ func TestIntegration_OutboxWriterFailureRollsBackBalance(t *testing.T) {
 	userStorer := userdb.NewStore(db)
 	userCore := user.NewCore(userStorer)
 
-	core := NewCore(
+	core := accounting.NewCore(
 		db,
 		acctStorer,
 		userCore,
-		func(dbtx database.DBTX) Storer { return ledgerdb.NewStore(dbtx) },
+		func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
 		func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
 	)
 
@@ -120,7 +126,7 @@ func TestIntegration_OutboxWriterFailureRollsBackBalance(t *testing.T) {
 	// Snapshot the balance before.
 	var balanceBefore decimal.Decimal
 	if err := db.GetContext(ctx, &balanceBefore,
-		`SELECT balance_play FROM accounts WHERE id = $1`, accountID,
+		`SELECT balance_play FROM accounts WHERE account_id = $1`, accountID,
 	); err != nil {
 		t.Fatalf("snapshot balance: %v", err)
 	}
@@ -129,7 +135,7 @@ func TestIntegration_OutboxWriterFailureRollsBackBalance(t *testing.T) {
 	}
 
 	// Call ProcessGameInsert with a writer that always fails.
-	failingWriter := func(_ context.Context, _ Storer) error {
+	failingWriter := func(_ context.Context, _ accounting.Storer) error {
 		return errors.New("simulated nats_outbox INSERT failure")
 	}
 
@@ -142,7 +148,7 @@ func TestIntegration_OutboxWriterFailureRollsBackBalance(t *testing.T) {
 	// Invariant 1: balance unchanged.
 	var balanceAfter decimal.Decimal
 	if err := db.GetContext(ctx, &balanceAfter,
-		`SELECT balance_play FROM accounts WHERE id = $1`, accountID,
+		`SELECT balance_play FROM accounts WHERE account_id = $1`, accountID,
 	); err != nil {
 		t.Fatalf("read balance after: %v", err)
 	}
@@ -188,11 +194,11 @@ func TestIntegration_OutboxWriterSuccessCommitsAll(t *testing.T) {
 	userStorer := userdb.NewStore(db)
 	userCore := user.NewCore(userStorer)
 
-	core := NewCore(
+	core := accounting.NewCore(
 		db,
 		acctStorer,
 		userCore,
-		func(dbtx database.DBTX) Storer { return ledgerdb.NewStore(dbtx) },
+		func(dbtx database.DBTX) accounting.Storer { return ledgerdb.NewStore(dbtx) },
 		func(dbtx database.DBTX) user.Storer { return userdb.NewStore(dbtx) },
 	)
 
@@ -200,7 +206,7 @@ func TestIntegration_OutboxWriterSuccessCommitsAll(t *testing.T) {
 	defer cancel()
 
 	refID := "atomic-ok-" + uuid.NewString()
-	realWriter := func(ctx context.Context, s Storer) error {
+	realWriter := func(ctx context.Context, s accounting.Storer) error {
 		return s.InsertOutboxRow(ctx, "test.atomic", []byte(`{"ok":true}`), refID)
 	}
 
@@ -212,7 +218,7 @@ func TestIntegration_OutboxWriterSuccessCommitsAll(t *testing.T) {
 	// All three artifacts must be present.
 	var balanceAfter decimal.Decimal
 	if err := db.GetContext(ctx, &balanceAfter,
-		`SELECT balance_play FROM accounts WHERE id = $1`, accountID,
+		`SELECT balance_play FROM accounts WHERE account_id = $1`, accountID,
 	); err != nil {
 		t.Fatalf("balance: %v", err)
 	}
