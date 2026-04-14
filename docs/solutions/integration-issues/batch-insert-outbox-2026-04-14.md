@@ -1,7 +1,19 @@
 ---
+module: accounting
 date: 2026-04-14
-domain: accounting, backend, reliability
-tags: [outbox, nats, postgres, at-least-once, coin-loss, p0, ce-review]
+problem_type: integration_issue
+component: payments
+severity: critical
+symptoms:
+  - "BatchInsertRefundFailures P0 counter increments — balance debited, NATS publish failed, refund also failed"
+  - "Player sees balance deduction but coins never spawn on table"
+  - "No automated recovery path once both publish and refund fail"
+root_cause: async_timing
+resolution_type: code_fix
+related_components:
+  - background_job
+  - database
+tags: [outbox, nats, postgres, at-least-once, coin-loss, transactional-outbox, ce-review]
 related_plan: docs/plans/2026-04-13-001-fix-batch-insert-outbox-plan.md
 pr_branch: feat/batch-insert-outbox
 status: merged-pending-deploy
