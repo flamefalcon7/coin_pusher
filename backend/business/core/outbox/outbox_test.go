@@ -297,6 +297,51 @@ func TestDrainOnce_DLQExileAtMaxAttempts(t *testing.T) {
 	}
 }
 
+// TestDrainOnce_DLQMoveFailureAdvancesAttemptCount covers the ce:review P1
+// finding: if moveToDLQ fails at attempt_count=MaxAttempts-1, the naive
+// behavior (log and continue) leaves the row stuck at the same attempt_count,
+// which the SELECT WHERE filter keeps re-picking-up forever — wedging the
+// subject indefinitely because stop-on-fail halts on this row every pass.
+// The fix: on DLQ move failure, still bump attempt_count past the threshold
+// so the row exits the SELECT filter, unblocking the subject. The row needs
+// manual cleanup (audit query: attempt_count >= MaxAttempts AND NOT in DLQ),
+// but the subject is no longer wedged.
+func TestDrainOnce_DLQMoveFailureAdvancesAttemptCount(t *testing.T) {
+	t.Parallel()
+	db, mock := newTestDB(t)
+	cfg := Config{BatchSize: 100, MaxAttempts: 10}
+
+	pub := &mockPub{
+		failOn: func(_ string, _ []byte) error {
+			return errors.New("poison pill")
+		},
+	}
+
+	now := time.Now()
+	rows := sqlmock.NewRows([]string{"id", "subject", "payload", "reference_id", "created_at", "attempt_count", "payload_version"}).
+		AddRow(int64(77), "game.main.cmd.batch_insert", []byte("doomed"), "ref-doom", now, 9, int16(1))
+	mock.ExpectQuery(selectQueryRegex.String()).WithArgs(10, 100).WillReturnRows(rows)
+
+	// DLQ move BEGINs a tx but the INSERT fails — tx rolls back.
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO nats_outbox_dlq`).
+		WillReturnError(errors.New("dlq table locked"))
+	mock.ExpectRollback()
+
+	// Fallback: bumpAttempt must still run so attempt_count advances past
+	// MaxAttempts and the row exits the SELECT filter on the next pass.
+	mock.ExpectExec(bumpQueryRegex.String()).
+		WithArgs(10, sqlmock.AnyArg(), int64(77)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := drainOnce(context.Background(), db, pub, silentLogger(), cfg); err != nil {
+		t.Fatalf("drainOnce: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock expectations: %v", err)
+	}
+}
+
 // TestDrainOnce_BatchDeleteFailureLeavesRowsForRetry covers the load-bearing
 // at-least-once contract: when publish succeeds for all rows but the batched
 // DELETE fails, rows stay in nats_outbox. Next drain pass re-publishes them;

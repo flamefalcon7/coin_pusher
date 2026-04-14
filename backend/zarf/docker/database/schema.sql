@@ -373,11 +373,23 @@ CREATE TABLE IF NOT EXISTS nats_outbox (
     payload_version     SMALLINT      NOT NULL DEFAULT 1
 );
 
--- Composite (subject, id) index powers the drainer's per-subject ordered drain:
---   SELECT ... FROM nats_outbox WHERE attempt_count < 10 ORDER BY subject, id LIMIT N
--- This also covers per-subject backlog queries.
-CREATE INDEX IF NOT EXISTS idx_nats_outbox_subject_id
-    ON nats_outbox(subject, id);
+-- Partial index scoped to drainer-eligible rows. The drain query CTE is:
+--   WITH ranked AS (
+--     SELECT ..., ROW_NUMBER() OVER (PARTITION BY subject ORDER BY id) AS rn
+--     FROM nats_outbox
+--     WHERE attempt_count < 10 AND (last_attempted_at IS NULL OR backoff-elapsed)
+--   )
+-- Without a partial index on (subject, id) WHERE attempt_count < 10, Postgres
+-- must scan the entire table to evaluate the WHERE predicate before the window
+-- function can run — steady state is fine, but a sustained NATS outage that
+-- accumulates a backlog forces a full seq-scan on every drain tick.
+--
+-- The partial predicate matches the drainer's MaxAttempts default (10). If
+-- MaxAttempts changes at runtime, the index still covers the common case
+-- because rows are deleted on success long before they accumulate.
+CREATE INDEX IF NOT EXISTS idx_nats_outbox_drainable
+    ON nats_outbox(subject, id)
+    WHERE attempt_count < 10;
 
 -- Cross-lookup with accounting_logs.reference_id for debug/audit.
 CREATE INDEX IF NOT EXISTS idx_nats_outbox_reference
