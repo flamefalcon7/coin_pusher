@@ -35,7 +35,16 @@ func main() {
 func run() error {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: admin <command>")
-		fmt.Println("Commands: migrate, seed, set-role")
+		fmt.Println("Commands:")
+		fmt.Println("  migrate                        apply schema.sql")
+		fmt.Println("  seed                           apply seed.sql")
+		fmt.Println("  set-role <account-id> <role>   promote/demote an account")
+		fmt.Println("  outbox status                  pending backlog + per-subject breakdown + stuck rows")
+		fmt.Println("  dlq list [limit]               list recent DLQ rows (default 20)")
+		fmt.Println("  dlq inspect <dlq-id>           print one DLQ row in full")
+		fmt.Println("  dlq retry <dlq-id>             move a DLQ row back to nats_outbox (attempt_count=0)")
+		fmt.Println("  dlq retry-all                  move every DLQ row back (use after incident recovery)")
+		fmt.Println("  dlq delete <dlq-id> --confirm  permanently delete a DLQ row (needs --confirm)")
 		return nil
 	}
 
@@ -65,6 +74,10 @@ func run() error {
 		return seed(db)
 	case "set-role":
 		return setRole(db)
+	case "outbox":
+		return outboxCmd(db)
+	case "dlq":
+		return dlqCmd(db)
 	default:
 		return fmt.Errorf("unknown command: %s", os.Args[1])
 	}
