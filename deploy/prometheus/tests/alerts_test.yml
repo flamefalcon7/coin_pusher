@@ -590,3 +590,55 @@ tests:
               instance: "backend:4010"
             exp_annotations:
               summary: "nats_outbox table >1GB — autovacuum may struggle, investigate drain rate"
+
+  # P1_OutboxBumpErrors: >3 bump failures in 10m fires
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_bump_errors_total{job="backend", instance="backend:4010"}'
+        values: "0 0 1 2 3 4 5 5 5 5 5"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: P1_OutboxBumpErrors
+        exp_alerts:
+          - exp_labels:
+              severity: P1
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "outbox bumpAttempt failing repeatedly — subject may be wedged, rows not advancing to DLQ"
+
+  # P1_OutboxBumpErrors: <=3 bump failures does not fire
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_bump_errors_total{job="backend", instance="backend:4010"}'
+        values: "0 0 1 2 2 2 2 2 2 2 2"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: P1_OutboxBumpErrors
+        exp_alerts: []
+
+  # P2_OutboxDeleteErrors: any delete error in last 5m fires
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_delete_errors_total{job="backend", instance="backend:4010"}'
+        values: "0 0 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P2_OutboxDeleteErrors
+        exp_alerts:
+          - exp_labels:
+              severity: P2
+              job: backend
+              instance: "backend:4010"
+            exp_annotations:
+              summary: "outbox DELETE-after-publish failing — at-least-once relying entirely on consumer dedup"
+
+  # P2_OutboxDeleteErrors: zero delete errors does not fire
+  - interval: 1m
+    input_series:
+      - series: 'coinpusher_outbox_delete_errors_total{job="backend", instance="backend:4010"}'
+        values: "0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: P2_OutboxDeleteErrors
+        exp_alerts: []

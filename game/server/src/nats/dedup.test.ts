@@ -106,3 +106,30 @@ test("1000 distinct entries stay bounded by default cap", () => {
   assert.equal(d.check("ref-900"), true);
   assert.equal(d.check("ref-999"), true);
 });
+
+test("default constructor caps at 10,000", () => {
+  // Boundary test for the production default. Without this, a regression
+  // changing DEFAULT_MAX_ENTRIES would pass every other test.
+  const d = new RefIDDedup();
+  for (let i = 0; i < 10_001; i++) {
+    d.check(`ref-${i}`);
+  }
+  assert.equal(d.size(), 10_000);
+  // ref-0 (first inserted) must have been evicted at the 10,001st insert.
+  // Don't probe with check() (re-inserts), use the other path: the last
+  // 10k inserted are present.
+  assert.equal(d.check("ref-10000"), true);
+  assert.equal(d.check("ref-5000"), true);
+});
+
+test("non-string reference_id bypasses dedup (defensive — wire payload is unvalidated)", () => {
+  const d = new RefIDDedup();
+  // JSON null, number, object — anything non-string from a malformed/buggy
+  // producer must fall through to the no-dedup path, not admit a duplicate
+  // via accidental equality. The as-unknown-as-string cast reflects how
+  // the field arrives after JSON.parse.
+  assert.equal(d.check(null as unknown as string | undefined), false);
+  assert.equal(d.check(null as unknown as string | undefined), false);
+  assert.equal(d.check(123 as unknown as string | undefined), false);
+  assert.equal(d.size(), 0);
+});

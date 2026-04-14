@@ -93,12 +93,13 @@ func (c *Config) applyDefaults() {
 
 // outboxRow is the internal shape read from nats_outbox during a drain pass.
 type outboxRow struct {
-	ID            int64     `db:"id"`
-	Subject       string    `db:"subject"`
-	Payload       []byte    `db:"payload"`
-	ReferenceID   string    `db:"reference_id"`
-	CreatedAt     time.Time `db:"created_at"`
-	AttemptCount  int       `db:"attempt_count"`
+	ID             int64     `db:"id"`
+	Subject        string    `db:"subject"`
+	Payload        []byte    `db:"payload"`
+	ReferenceID    string    `db:"reference_id"`
+	CreatedAt      time.Time `db:"created_at"`
+	AttemptCount   int       `db:"attempt_count"`
+	PayloadVersion int16     `db:"payload_version"`
 }
 
 // Run blocks until ctx is canceled. It establishes the LISTEN connection,
@@ -161,13 +162,19 @@ func Run(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredLogger,
 
 // runDrainPass wraps drainOnce with panic recovery. A single bad row or
 // transient glitch must not kill the drainer goroutine.
+//
+// Liveness marker is set at pass START (not end) so the P0_OutboxDrainerDead
+// alert reflects "goroutine is awake" rather than "a drain pass completed
+// within the window". A single slow DB query (e.g., seq-scan during backlog)
+// would otherwise false-fire the staleness alert even though the drainer is
+// healthy.
 func runDrainPass(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredLogger, cfg Config) {
+	metrics.OutboxLastTickTimestamp.SetToCurrentTime()
 	defer func() {
 		if r := recover(); r != nil {
 			metrics.OutboxPanics.Inc()
 			log.Errorw("outbox drainer panic recovered", "panic", r)
 		}
-		metrics.OutboxLastTickTimestamp.SetToCurrentTime()
 	}()
 
 	if err := drainOnce(ctx, db, nc, log, cfg); err != nil {
@@ -197,12 +204,12 @@ func drainOnce(ctx context.Context, db *sqlx.DB, nc Publisher, log *zap.SugaredL
 	// of any subject. LIMIT caps the total per pass.
 	const selectQ = `
 		WITH ranked AS (
-			SELECT id, subject, payload, reference_id, created_at, attempt_count,
+			SELECT id, subject, payload, reference_id, created_at, attempt_count, payload_version,
 			       ROW_NUMBER() OVER (PARTITION BY subject ORDER BY id) AS rn
 			FROM nats_outbox
 			WHERE attempt_count < $1
 		)
-		SELECT id, subject, payload, reference_id, created_at, attempt_count
+		SELECT id, subject, payload, reference_id, created_at, attempt_count, payload_version
 		FROM ranked
 		ORDER BY rn, id
 		LIMIT $2`
@@ -309,6 +316,7 @@ func processSubject(
 			// stays stale → row looks fresh to the next pod → it never
 			// exiles to DLQ → the subject wedges indefinitely.
 			stateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
 			if newAttempts >= cfg.MaxAttempts {
 				if dlqErr := moveToDLQ(stateCtx, db, r, err.Error()); dlqErr != nil {
 					log.Errorw("outbox DLQ move failed — row stays and will retry",
@@ -335,7 +343,6 @@ func processSubject(
 					)
 				}
 			}
-			cancel()
 			return published
 		}
 		published = append(published, r.ID)
@@ -361,16 +368,25 @@ func moveToDLQ(ctx context.Context, db *sqlx.DB, r outboxRow, lastErr string) er
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback is no-op after commit
 
+	// payload_version is preserved from the source row (not hardcoded) so
+	// future schema evolution can't silently stamp exiled rows with the
+	// wrong version. Defaults to 1 if the source row was inserted before
+	// the column existed (BC safety — should not happen in practice).
+	payloadVersion := r.PayloadVersion
+	if payloadVersion == 0 {
+		payloadVersion = 1
+	}
 	const insQ = `
 		INSERT INTO nats_outbox_dlq (
 			original_id, subject, payload, reference_id,
 			created_at, attempt_count, last_error, last_attempted_at,
 			payload_version, dlq_reason
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 1, $8)`
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)`
 	newAttempts := r.AttemptCount + 1
 	if _, err := tx.ExecContext(ctx, insQ,
 		r.ID, r.Subject, r.Payload, r.ReferenceID,
 		r.CreatedAt, newAttempts, lastErr,
+		payloadVersion,
 		fmt.Sprintf("attempt_count=%d >= max", newAttempts),
 	); err != nil {
 		return fmt.Errorf("insert dlq: %w", err)

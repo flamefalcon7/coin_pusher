@@ -383,3 +383,30 @@ groups:
           severity: P2
         annotations:
           summary: "pg_notify outbox_new failing — drainer falling back to 5s tick"
+
+      # bumpAttempt UPDATE failures mean a row's attempt_count never advances
+      # after a publish failure. Because per-subject ordering is stop-on-fail,
+      # a wedged row blocks newer rows on the same subject indefinitely. The
+      # DLQ path is never reached because attempt_count doesn't cross the
+      # threshold. This is the "silent wedge" failure mode — surface loudly.
+      - alert: P1_OutboxBumpErrors
+        expr: increase(coinpusher_outbox_bump_errors_total[10m]) > 3
+        for: 0s
+        labels:
+          severity: P1
+        annotations:
+          summary: "outbox bumpAttempt failing repeatedly — subject may be wedged, rows not advancing to DLQ"
+
+      # Batched DELETE-after-publish failures mean successfully published rows
+      # stay in nats_outbox and get re-published on the next drain pass.
+      # Game-server RefIDDedup suppresses the duplicate application — but that
+      # cache is bounded (10k) and in-process. Sustained DELETE errors can
+      # exhaust cache capacity or outlast a game-server restart, exposing
+      # duplicate-coin delivery. Any non-zero rate warrants investigation.
+      - alert: P2_OutboxDeleteErrors
+        expr: increase(coinpusher_outbox_delete_errors_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: P2
+        annotations:
+          summary: "outbox DELETE-after-publish failing — at-least-once relying entirely on consumer dedup"
