@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,6 +36,8 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/app/services/api/handlers/v1/usergrp"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
 	ledgerdb "github.com/flamefalcon/coin-pusher/backend/business/core/accounting/stores/ledgerdb"
+	"github.com/flamefalcon/coin-pusher/backend/business/core/bot"
+	botdb "github.com/flamefalcon/coin-pusher/backend/business/core/bot/stores/botdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/deposit"
 	depositdb "github.com/flamefalcon/coin-pusher/backend/business/core/deposit/stores/depositdb"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/game"
@@ -185,6 +188,7 @@ func run() error {
 	)
 	gameCore := game.NewCore(userCore, acctCore)
 	heatEngine := heat.New()
+	botCore := bot.NewCore(db, botdb.NewStore(db), acctCore)
 	inventoryCore := inventory.NewCore(
 		db,
 		inventorydb.NewStore(db),
@@ -338,6 +342,45 @@ func run() error {
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
 		return fmt.Errorf("subscribing to slot_status: %w", err)
 	}
+
+	// -------------------------------------------------------------------------
+	// Bot scheduler — server-controlled NPC accounts that insert coins so
+	// the shared platform doesn't feel empty at low real-player counts.
+	// Singleton across replicas via pg_try_advisory_lock; if another API
+	// instance already holds the lock this one logs WARN and continues
+	// without scheduling. Graceful shutdown follows the outbox-drainer
+	// pattern: ctx + WaitGroup, cancel before db.Close.
+	//
+	// See backend/business/core/bot/scheduler.go and
+	// docs/plans/2026-04-16-001-feat-play-bot-plan.md (Unit 5).
+	botScheduler := bot.NewScheduler(bot.SchedulerDeps{
+		BotCore:       botCore,
+		GameCore:      gameCore,
+		AcctCore:      acctCore,
+		HeatEngine:    heatEngine,
+		PlayerCounter: bot.HubPlayerCounter{Hub: hub},
+		Clock:         bot.NewRealClock(),
+		// Seeded math/rand for deterministic-by-test, jitter-by-prod. Crypto
+		// strength not required for slot/amount/jitter selection.
+		RNG: mrand.New(mrand.NewSource(time.Now().UnixNano())),
+		Log: log,
+		DB:  db,
+	})
+	botCtx, botCancel := context.WithCancel(context.Background())
+	// Defer matches the outbox drainer pattern above: idempotent cancel
+	// guards against early-return paths (e.g., apiServer.ListenAndServe
+	// error) bypassing the SIGTERM shutdown sequence below.
+	defer botCancel()
+	var botWg sync.WaitGroup
+	botWg.Add(1)
+	go func() {
+		defer botWg.Done()
+		if err := botScheduler.Run(botCtx); err != nil {
+			// Real-money fail-closed gate or initial pool load error. Both
+			// are structural — log loudly but keep the API alive.
+			log.Errorw("bot scheduler exited with error; API continues without bot activity", "error", err)
+		}
+	}()
 
 	// -------------------------------------------------------------------------
 	// Routes
@@ -604,6 +647,13 @@ func run() error {
 				log.Errorw("heat reward flush error", "user_id", uid, "amount", truncated, "error", err)
 				metrics.RewardFlushErrors.Inc()
 				metrics.WorkerErrors.WithLabelValues("reward_flush").Inc()
+				continue
+			}
+			// Bot reward observability — one-line role check via the
+			// scheduler's atomic snapshot (no SQL per credit). See plan
+			// Unit 5 §"BotRewardTotalCash decision".
+			if botScheduler.IsBot(uid) {
+				metrics.BotRewardTotalCash.Add(truncated)
 			}
 		}
 		metrics.WorkerDuration.WithLabelValues("reward_flush").Observe(time.Since(workerStart).Seconds())
@@ -1071,6 +1121,15 @@ func run() error {
 		close(stopNoncePurge)
 		close(stopExpire)
 		close(stopRTP)
+
+		// Stop bot scheduler BEFORE outbox drainer + db.Close. The scheduler
+		// writes ledger rows + nats_outbox rows, so it must finish any
+		// in-flight tick before the outbox drainer (which reads those rows)
+		// stops, and before the DB pool closes. Cancel + Wait gives the
+		// scheduler one tick window to drop out of its select cleanly.
+		log.Infow("stopping bot scheduler")
+		botCancel()
+		botWg.Wait()
 
 		// Stop outbox drainer BEFORE nc.Drain / db.Close (both fire via defer
 		// at run()'s return). Waiting here guarantees the in-flight drain pass

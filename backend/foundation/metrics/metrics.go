@@ -241,6 +241,58 @@ var (
 	})
 )
 
+// Bot scheduler metrics — observability for the play-bot Scheduler goroutine
+// (see backend/business/core/bot/scheduler.go and
+// docs/plans/2026-04-16-001-feat-play-bot-plan.md, Unit 5).
+//
+// All counters are house-flow safety signals: BotInsertFailureTotal /
+// BotInsertPanicTotal sustained increments indicate the scheduler is failing
+// to write inserts but not crashing — silent house drain risk. BotOutboxStalled
+// at 1 means scheduler proactively skipped insert work to avoid amplifying an
+// existing outbox backlog. BotRefillDailyCapRemaining alertable to surface
+// runaway refill loops before they exhaust the daily cap.
+var (
+	BotActiveCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_bot_active_count",
+		Help: "Number of bots currently flagged online by the scheduler.",
+	})
+
+	BotInsertTotalPlay = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_bot_insert_total_play",
+		Help: "Cumulative PLAY coins inserted by bots via scheduler ticks.",
+	})
+
+	BotRewardTotalCash = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_bot_reward_total_cash",
+		Help: "Cumulative CASH coins credited to bot accounts via heat reward distribution.",
+	})
+
+	BotRefillTotalPlay = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_bot_refill_total_play",
+		Help: "Cumulative PLAY coins issued via BOT_REFILL by the scheduler.",
+	})
+
+	BotRefillDailyCapRemaining = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_bot_refill_daily_cap_remaining",
+		Help: "Remaining headroom under the configured daily bot refill cap (PLAY).",
+	})
+
+	BotInsertFailureTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_bot_insert_failure_total",
+		Help: "Bot insert attempts that returned an error from gameCore.ProcessBatchInsert.",
+	})
+
+	BotInsertPanicTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "coinpusher_bot_insert_panic_total",
+		Help: "Bot insert attempts where the scheduler recovered from a panic.",
+	})
+
+	BotOutboxStalled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "coinpusher_bot_outbox_stalled",
+		Help: "1 when scheduler is skipping inserts due to nats_outbox backlog or stale rows; 0 otherwise.",
+	})
+)
+
 // RTP monitoring metrics
 var (
 	RTPRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
