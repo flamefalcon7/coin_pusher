@@ -149,3 +149,50 @@ func (s *Store) SumByPlayerSince(ctx context.Context, actionType string, since t
 
 	return results, nil
 }
+
+// SumByActionSinceExcludingRole mirrors SumByActionSince but joins accounts and
+// filters out rows where accounts.role equals excludeRole. RTP / liability
+// reports pass excludeRole="bot" so bot activity does not pollute real-player
+// metrics. An empty excludeRole falls back to the unfiltered query so the
+// method is safe to call unconditionally.
+func (s *Store) SumByActionSinceExcludingRole(ctx context.Context, actionType, excludeRole string, since time.Time) (decimal.Decimal, error) {
+	if excludeRole == "" {
+		return s.SumByActionSince(ctx, actionType, since)
+	}
+
+	const q = `
+		SELECT COALESCE(SUM(l.amount), 0) FROM accounting_logs l
+		JOIN accounts a ON a.account_id = l.account_id
+		WHERE l.action_type = $1 AND l.created_at >= $2 AND a.role != $3`
+
+	var total decimal.Decimal
+	if err := s.db.GetContext(ctx, &total, q, actionType, since, excludeRole); err != nil {
+		return decimal.Zero, fmt.Errorf("summing %s since %v excluding role %q: %w", actionType, since, excludeRole, err)
+	}
+
+	return total, nil
+}
+
+// SumByPlayerSinceExcludingRole mirrors SumByPlayerSince but joins accounts and
+// filters out rows where accounts.role equals excludeRole. Used by the RTP
+// anomaly worker to keep bot players out of the per-player outlier set. An
+// empty excludeRole falls back to the unfiltered query.
+func (s *Store) SumByPlayerSinceExcludingRole(ctx context.Context, actionType, excludeRole string, since time.Time) ([]accounting.PlayerSum, error) {
+	if excludeRole == "" {
+		return s.SumByPlayerSince(ctx, actionType, since)
+	}
+
+	const q = `
+		SELECT l.account_id, SUM(l.amount) AS total FROM accounting_logs l
+		JOIN accounts a ON a.account_id = l.account_id
+		WHERE l.action_type = $1 AND l.created_at >= $2 AND a.role != $3
+		GROUP BY l.account_id
+		HAVING SUM(l.amount) > 0`
+
+	var results []accounting.PlayerSum
+	if err := s.db.SelectContext(ctx, &results, q, actionType, since, excludeRole); err != nil {
+		return nil, fmt.Errorf("summing %s by player since %v excluding role %q: %w", actionType, since, excludeRole, err)
+	}
+
+	return results, nil
+}

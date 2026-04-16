@@ -161,3 +161,40 @@ curl -I https://localhost/grafana/
 3. Add panel to relevant dashboard JSON in `deploy/grafana/dashboards/`
 4. If alertable, add rule to `deploy/grafana/provisioning/alerting/alerts.yml`
 5. Restart Grafana to pick up provisioned changes: `docker compose restart grafana`
+
+## Report-Authoring Rule: Exclude `role='bot'` From Player Metrics
+
+Any new report, dashboard query, or alert that aggregates over `accounting_logs`
+(or any table whose rows are produced by both real players and server-controlled
+bot accounts) **MUST** filter out `role='bot'` accounts so bot activity does not
+pollute real-player metrics (RTP, liability, anomaly detection, etc.).
+
+**Canonical SQL pattern** — join `accounts` and exclude the bot role:
+
+```sql
+SELECT ...
+FROM accounting_logs l
+JOIN accounts a ON a.account_id = l.account_id
+WHERE l.action_type = $1
+  AND l.created_at >= $2
+  AND a.role != 'bot'
+```
+
+**In Go**, prefer the existing storer methods that encapsulate this join:
+
+- `ledgerdb.Store.SumByActionSinceExcludingRole(ctx, action, "bot", since)` —
+  global aggregates (RTP monitor window totals).
+- `ledgerdb.Store.SumByPlayerSinceExcludingRole(ctx, action, "bot", since)` —
+  per-player aggregates (RTP anomaly detection).
+
+Existing enforcement sites (update these if you touch them):
+
+- `backend/app/services/api/main.go` — `rtp_monitor` worker (window aggregates)
+- `backend/app/services/api/main.go` — `rtp_anomaly` worker (per-player outliers)
+
+Rationale: bot accounts (`accounts.role='bot'`) are server-controlled NPC
+players funded by the house. Their inserts and rewards land in the same
+`accounting_logs` table as real players but must not influence alert signals,
+house-liability estimates, or RTP tuning decisions. See the play-bot plan
+(`docs/plans/2026-04-16-001-feat-play-bot-plan.md`, Unit 7) for the full
+design.

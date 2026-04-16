@@ -149,6 +149,14 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
+func (m *mockAcctStorer) SumByActionSinceExcludingRole(_ context.Context, _, _ string, _ time.Time) (decimal.Decimal, error) {
+	return decimal.Zero, nil
+}
+
+func (m *mockAcctStorer) SumByPlayerSinceExcludingRole(_ context.Context, _, _ string, _ time.Time) ([]accounting.PlayerSum, error) {
+	return nil, nil
+}
+
 func (m *mockAcctStorer) InsertOutboxRow(ctx context.Context, subject string, payload []byte, referenceID string) error {
 	if m.insertOutboxRowFn != nil {
 		return m.insertOutboxRowFn(ctx, subject, payload, referenceID)

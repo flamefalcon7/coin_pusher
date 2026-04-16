@@ -911,13 +911,15 @@ func run() error {
 
 			for _, w := range windows {
 				since := time.Now().UTC().Add(-w.duration)
-				inserted, err := rtpStore.SumByActionSince(ctx, accounting.ActionGameInsert, since)
+				// Exclude role='bot' accounts so bot insert/reward activity does
+				// not pollute real-player RTP. See docs/monitoring.md.
+				inserted, err := rtpStore.SumByActionSinceExcludingRole(ctx, accounting.ActionGameInsert, user.RoleBot, since)
 				if err != nil {
 					log.Errorw("rtp_monitor: query inserted error", "window", w.label, "error", err)
 					metrics.WorkerErrors.WithLabelValues("rtp_monitor").Inc()
 					continue
 				}
-				rewarded, err := rtpStore.SumByActionSince(ctx, accounting.ActionGameReward, since)
+				rewarded, err := rtpStore.SumByActionSinceExcludingRole(ctx, accounting.ActionGameReward, user.RoleBot, since)
 				if err != nil {
 					log.Errorw("rtp_monitor: query rewarded error", "window", w.label, "error", err)
 					metrics.WorkerErrors.WithLabelValues("rtp_monitor").Inc()
@@ -954,14 +956,16 @@ func run() error {
 
 			since := time.Now().UTC().Add(-24 * time.Hour)
 
-			insertsByPlayer, err := rtpStore.SumByPlayerSince(ctx, accounting.ActionGameInsert, since)
+			// Exclude role='bot' accounts so bots never show up as per-player
+			// RTP outliers in the anomaly alert signal. See docs/monitoring.md.
+			insertsByPlayer, err := rtpStore.SumByPlayerSinceExcludingRole(ctx, accounting.ActionGameInsert, user.RoleBot, since)
 			if err != nil {
 				log.Errorw("rtp_anomaly: query inserts error", "error", err)
 				metrics.WorkerErrors.WithLabelValues("rtp_anomaly").Inc()
 				metrics.WorkerDuration.WithLabelValues("rtp_anomaly").Observe(time.Since(workerStart).Seconds())
 				return
 			}
-			rewardsByPlayer, err := rtpStore.SumByPlayerSince(ctx, accounting.ActionGameReward, since)
+			rewardsByPlayer, err := rtpStore.SumByPlayerSinceExcludingRole(ctx, accounting.ActionGameReward, user.RoleBot, since)
 			if err != nil {
 				log.Errorw("rtp_anomaly: query rewards error", "error", err)
 				metrics.WorkerErrors.WithLabelValues("rtp_anomaly").Inc()

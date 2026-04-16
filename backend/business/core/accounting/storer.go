@@ -22,6 +22,16 @@ type Storer interface {
 	QueryAllByReference(ctx context.Context, actionType, referenceID string) ([]AccountingLog, error)
 	SumByActionSince(ctx context.Context, actionType string, since time.Time) (decimal.Decimal, error)
 	SumByPlayerSince(ctx context.Context, actionType string, since time.Time) ([]PlayerSum, error)
+	// SumByActionSinceExcludingRole returns the total amount like SumByActionSince,
+	// but joins accounts and filters out rows where accounts.role == excludeRole.
+	// Used by RTP/liability reports to exclude bot activity (excludeRole="bot").
+	// If excludeRole is empty, behaves identically to SumByActionSince.
+	SumByActionSinceExcludingRole(ctx context.Context, actionType, excludeRole string, since time.Time) (decimal.Decimal, error)
+	// SumByPlayerSinceExcludingRole returns per-player sums like SumByPlayerSince,
+	// but joins accounts and filters out rows where accounts.role == excludeRole.
+	// Used by RTP/liability reports to exclude bot activity (excludeRole="bot").
+	// If excludeRole is empty, behaves identically to SumByPlayerSince.
+	SumByPlayerSinceExcludingRole(ctx context.Context, actionType, excludeRole string, since time.Time) ([]PlayerSum, error)
 
 	// InsertOutboxRow appends a row to nats_outbox. Called from within an
 	// execTx transaction by an OutboxWriter callback, so the outbox row

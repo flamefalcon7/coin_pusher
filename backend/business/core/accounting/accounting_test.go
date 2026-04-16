@@ -60,6 +60,14 @@ func (m *mockAcctStorer) SumByPlayerSince(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
+func (m *mockAcctStorer) SumByActionSinceExcludingRole(_ context.Context, _, _ string, _ time.Time) (decimal.Decimal, error) {
+	return decimal.Zero, nil
+}
+
+func (m *mockAcctStorer) SumByPlayerSinceExcludingRole(_ context.Context, _, _ string, _ time.Time) ([]PlayerSum, error) {
+	return nil, nil
+}
+
 func (m *mockAcctStorer) InsertOutboxRow(_ context.Context, _ string, _ []byte, _ string) error {
 	if m.insertOutboxRowFn != nil {
 		return m.insertOutboxRowFn()
