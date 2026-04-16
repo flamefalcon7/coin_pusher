@@ -108,6 +108,17 @@ func (c *Core) DailyRefillTotal(ctx context.Context) (decimal.Decimal, error) {
 	return total, nil
 }
 
+// PausedAccountIDs returns the set of bot account_ids operators have marked
+// paused via `admin bot pause`. Scheduler consults this per tick (cache-
+// fronted) to skip paused bots.
+func (c *Core) PausedAccountIDs(ctx context.Context) (map[uuid.UUID]struct{}, error) {
+	ids, err := c.storer.QueryPausedAccountIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query paused bot account ids: %w", err)
+	}
+	return ids, nil
+}
+
 // RefillBalance validates the target is a bot account, then delegates to
 // accounting.Core.ProcessBotRefill to perform the atomic ledger write +
 // balance credit. Returns the new balance_play.

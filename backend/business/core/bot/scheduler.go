@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -204,6 +205,13 @@ type Scheduler struct {
 	// Cached config snapshot.
 	cachedCfg     parsedConfig
 	cachedAt      time.Time
+
+	// Cached paused-account set. Refreshed with the same TTL as cachedCfg.
+	// Written by `admin bot pause`/`resume`; enforced here by skipping paused
+	// bots in eligibilityand fire_due. nil means "not yet loaded" (treated as
+	// empty set — safer than blocking the tick on a DB error).
+	pausedIDs      map[uuid.UUID]struct{}
+	pausedCachedAt time.Time
 }
 
 // parsedConfig is the typed view of bot_config the tick loop consumes.
@@ -296,8 +304,15 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		return ErrRealMoneyEnabled
 	}
 
+	// Derive a cancellable child ctx so the advisory-lock keepalive can
+	// unilaterally stop the scheduler if the pinned conn dies (the session
+	// lock goes with the conn; continuing to tick under a released lock
+	// would break the singleton invariant).
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if s.db != nil {
-		acquired, err := s.tryAcquireAdvisoryLock(ctx)
+		acquired, err := s.tryAcquireAdvisoryLock(runCtx, cancel)
 		if err != nil {
 			s.log.Warnw("bot scheduler advisory lock acquire failed; continuing without scheduler",
 				"error", err, "lock_id", SchedulerAdvisoryLockID)
@@ -309,6 +324,8 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return nil
 		}
 	}
+
+	ctx = runCtx // downstream tick uses the cancellable ctx
 
 	if err := s.loadBotPool(ctx); err != nil {
 		s.log.Errorw("bot scheduler initial pool load failed; aborting startup", "error", err)
@@ -339,6 +356,15 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
+// advisoryLockKeepaliveInterval is how often the scheduler health-checks the
+// pinned conn that holds pg_try_advisory_lock. Postgres session-scope locks
+// are released silently when the TCP conn dies (network blip, idle timeout,
+// DB failover) so without a keepalive the scheduler could continue ticking
+// under a released lock while a second replica also acquires it — breaking
+// the singleton invariant. 30s keeps the detection window short without
+// hammering the DB.
+const advisoryLockKeepaliveInterval = 30 * time.Second
+
 // tryAcquireAdvisoryLock returns true iff this session holds the bot
 // scheduler advisory lock. The lock is auto-released on connection close, so
 // no explicit unlock is needed during shutdown.
@@ -348,7 +374,12 @@ func (s *Scheduler) Run(ctx context.Context) error {
 // session that holds the lock is the same session whose lifetime governs
 // release. Holding a single *sql.Conn open for the lifetime of the scheduler
 // is the standard pattern.
-func (s *Scheduler) tryAcquireAdvisoryLock(ctx context.Context) (bool, error) {
+//
+// On acquire, a keepalive goroutine runs SELECT 1 on the pinned conn every
+// advisoryLockKeepaliveInterval. If the check fails, the goroutine calls
+// cancelRun to stop the scheduler — staying alive under a lost lock would
+// break the singleton guarantee.
+func (s *Scheduler) tryAcquireAdvisoryLock(ctx context.Context, cancelRun context.CancelFunc) (bool, error) {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return false, fmt.Errorf("acquire conn: %w", err)
@@ -365,13 +396,32 @@ func (s *Scheduler) tryAcquireAdvisoryLock(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	// Keep the conn alive for the lifetime of the process. The conn is
-	// intentionally never returned to the pool — closing it would release
-	// the lock. main.go's shutdown sequence (cancel scheduler ctx → wait →
-	// db.Close) will close every pooled conn including this one.
+	// Keep the conn alive for the lifetime of the process with a periodic
+	// health check. The conn is intentionally never returned to the pool —
+	// closing it would release the lock. main.go's shutdown sequence
+	// (cancel scheduler ctx → wait → db.Close) will close this conn.
 	go func() {
-		<-ctx.Done()
-		conn.Close()
+		ticker := time.NewTicker(advisoryLockKeepaliveInterval)
+		defer ticker.Stop()
+		defer conn.Close()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Use a short per-probe context so a genuinely unresponsive
+				// DB doesn't block the keepalive indefinitely.
+				probeCtx, cancelProbe := context.WithTimeout(ctx, 5*time.Second)
+				err := conn.PingContext(probeCtx)
+				cancelProbe()
+				if err != nil {
+					s.log.Errorw("bot scheduler advisory lock conn health check failed; stopping scheduler to avoid split-brain",
+						"error", err, "lock_id", SchedulerAdvisoryLockID)
+					cancelRun()
+					return
+				}
+			}
+		}
 	}()
 	return true, nil
 }
@@ -432,6 +482,20 @@ func (s *Scheduler) runTick(ctx context.Context) {
 		metrics.WorkerDuration.WithLabelValues("bot_scheduler").Observe(time.Since(start).Seconds())
 	}()
 
+	// Tick-level panic guard. fireOneInsert has its own recover for per-bot
+	// isolation, but a panic inside getConfigCached / outboxStalled /
+	// DailyRefillTotal / refillPass / adjustOnlineSet would propagate to
+	// Run() and kill the scheduler goroutine permanently. The per-tick
+	// guard keeps the scheduler alive across transient bugs; a persistent
+	// bug will show up as sustained bot_scheduler WorkerErrors.
+	defer func() {
+		if r := recover(); r != nil {
+			metrics.WorkerErrors.WithLabelValues("bot_scheduler").Inc()
+			s.log.Errorw("bot scheduler tick panicked; recovered, will resume next tick",
+				"panic", r)
+		}
+	}()
+
 	now := s.clock.Now()
 
 	cfg, err := s.getConfigCached(ctx, now)
@@ -445,6 +509,23 @@ func (s *Scheduler) runTick(ctx context.Context) {
 		metrics.BotActiveCount.Set(0)
 		metrics.BotOutboxStalled.Set(0)
 		return
+	}
+
+	// Refresh paused-bot set (cache-fronted) and force any currently-online
+	// paused bot offline. Paused bots are re-admitted automatically on resume
+	// via the normal eligibility path at the next tick.
+	s.refreshPausedCache(ctx, now)
+	for _, st := range s.state {
+		if !st.online {
+			continue
+		}
+		if _, paused := s.pausedIDs[st.accountID]; paused {
+			st.online = false
+			// Set a short offlineUntil so the same bot isn't immediately
+			// re-brought-online in this tick's adjustOnlineSet — a resume
+			// happens via admin action, not by internal rotation.
+			st.offlineUntil = now.Add(time.Minute)
+		}
 	}
 
 	skipInserts := false
@@ -659,6 +740,23 @@ func (s *Scheduler) refillPass(ctx context.Context, now time.Time, cfg parsedCon
 	}
 }
 
+// refreshPausedCache loads the paused-account set from bot.Core if the
+// cache has expired. Uses the same TTL as config. On error, keeps the
+// previous cache (fail-open for pause — operators can retry) and logs a
+// warning.
+func (s *Scheduler) refreshPausedCache(ctx context.Context, now time.Time) {
+	if !s.pausedCachedAt.IsZero() && now.Sub(s.pausedCachedAt) < configCacheTTL {
+		return
+	}
+	ids, err := s.botCore.PausedAccountIDs(ctx)
+	if err != nil {
+		s.log.Warnw("bot scheduler paused-accounts query error; using stale cache", "error", err)
+		return
+	}
+	s.pausedIDs = ids
+	s.pausedCachedAt = now
+}
+
 // handleDailyCapExceeded throttles the cap-breach error log and pulls
 // underfunded bots offline so the scheduler doesn't burn metrics retrying
 // inserts they cannot afford for the rest of the UTC day.
@@ -668,7 +766,11 @@ func (s *Scheduler) handleDailyCapExceeded(now time.Time, cfg parsedConfig) {
 			"daily_cap", cfg.dailyCap.String())
 		s.lastCapLog = now
 	}
-	nextMidnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+	// Use UTC components to compute the UTC-day boundary. Using now.Year()/Month()/Day()
+	// directly mixes the server's local calendar date with time.UTC, which on a non-UTC
+	// server produces a date offset from the cap-reset day (DailyRefillTotal uses UTC).
+	nowUTC := now.UTC()
+	nextMidnight := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day()+1, 0, 0, 0, 0, time.UTC)
 	for _, st := range s.state {
 		total := st.balancePlay.Add(st.balanceCash)
 		if total.LessThan(cfg.refillThreshold) {
@@ -737,6 +839,9 @@ func (s *Scheduler) eligibleOfflineBots(now time.Time) []*botState {
 			continue
 		}
 		if !st.capExhaustedUntil.IsZero() && st.capExhaustedUntil.After(now) {
+			continue
+		}
+		if _, paused := s.pausedIDs[st.accountID]; paused {
 			continue
 		}
 		out = append(out, st)
@@ -949,12 +1054,65 @@ func lookupCrowdScale(scale []int, bucket int) int {
 	return scale[bucket]
 }
 
-// parseCrowdScale parses a comma-separated list of non-negative ints, e.g.
-// "3,3,2,2,1,1,0". Returns the package default on any parse error.
+// parseCrowdScale parses the crowd_scale config value written by the admin
+// CLI. The canonical format is a JSON object with stringified int keys and
+// int values — e.g. {"0":3,"1":4,"2":4,"3":3,"4":3,"5":2} — where the key
+// is the real-player count bucket and the value is the target active-bot
+// count. The map is flattened into a slice indexed by bucket so that
+// lookupCrowdScale can index it directly by floor(realPlayerCount).
+//
+// Missing buckets fill with the last known value (typical monotonic config).
+// Returns the package default on any parse error; callers should log a
+// warning upstream if this is unexpected. A CSV legacy format
+// ("3,3,2,2,1,1,0") is also accepted for backwards compatibility with any
+// manually-edited rows in production — detected by the absence of a leading
+// '{' after trimming whitespace.
 func parseCrowdScale(raw string) []int {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return defaultCrowdScale
 	}
+
+	// JSON object form (the canonical format written by admin CLI).
+	if strings.HasPrefix(raw, "{") {
+		var m map[string]int
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			return defaultCrowdScale
+		}
+		if len(m) == 0 {
+			return defaultCrowdScale
+		}
+		// Find the highest int key so we can size the slice.
+		maxKey := -1
+		parsed := make(map[int]int, len(m))
+		for k, v := range m {
+			n, err := strconv.Atoi(k)
+			if err != nil || n < 0 || v < 0 {
+				return defaultCrowdScale
+			}
+			parsed[n] = v
+			if n > maxKey {
+				maxKey = n
+			}
+		}
+		if maxKey < 0 {
+			return defaultCrowdScale
+		}
+		out := make([]int, maxKey+1)
+		// Forward-fill: missing buckets inherit the previous bucket's value.
+		// This matches the intuition "at real_count >= N, use the last
+		// explicitly set bot count" for sparse configs.
+		last := 0
+		for i := 0; i <= maxKey; i++ {
+			if v, ok := parsed[i]; ok {
+				last = v
+			}
+			out[i] = last
+		}
+		return out
+	}
+
+	// Legacy CSV form.
 	parts := strings.Split(raw, ",")
 	out := make([]int, 0, len(parts))
 	for _, p := range parts {

@@ -19,11 +19,12 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockBotStorer struct {
-	queryConfigAllFn        func(ctx context.Context) (map[string]string, error)
-	upsertConfigFn          func(ctx context.Context, key, value string) error
-	queryBotAccountsFn      func(ctx context.Context) ([]Bot, error)
-	queryBotAccountByIDFn   func(ctx context.Context, accountID uuid.UUID) (Bot, error)
-	sumRefillsSinceFn       func(ctx context.Context, since time.Time) (decimal.Decimal, error)
+	queryConfigAllFn         func(ctx context.Context) (map[string]string, error)
+	upsertConfigFn           func(ctx context.Context, key, value string) error
+	queryBotAccountsFn       func(ctx context.Context) ([]Bot, error)
+	queryBotAccountByIDFn    func(ctx context.Context, accountID uuid.UUID) (Bot, error)
+	sumRefillsSinceFn        func(ctx context.Context, since time.Time) (decimal.Decimal, error)
+	queryPausedAccountIDsFn  func(ctx context.Context) (map[uuid.UUID]struct{}, error)
 }
 
 func (m *mockBotStorer) QueryConfigAll(ctx context.Context) (map[string]string, error) {
@@ -59,6 +60,13 @@ func (m *mockBotStorer) SumRefillsSince(ctx context.Context, since time.Time) (d
 		return m.sumRefillsSinceFn(ctx, since)
 	}
 	return decimal.Zero, nil
+}
+
+func (m *mockBotStorer) QueryPausedAccountIDs(ctx context.Context) (map[uuid.UUID]struct{}, error) {
+	if m.queryPausedAccountIDsFn != nil {
+		return m.queryPausedAccountIDsFn(ctx)
+	}
+	return map[uuid.UUID]struct{}{}, nil
 }
 
 // mockAcctStorer stubs just the accounting.Storer methods exercised by

@@ -286,6 +286,19 @@ func TestParseCrowdScale(t *testing.T) {
 		{"whitespace tolerated", " 3 , 2 , 1 ", []int{3, 2, 1}},
 		{"negative falls back", "1,-1,2", defaultCrowdScale},
 		{"non-numeric falls back", "1,abc,2", defaultCrowdScale},
+
+		// JSON object form — the canonical format written by admin CLI.
+		// Each JSON case double-covers: parseCrowdScale accepts what
+		// validateConfigValue in admin/bot.go writes. See also
+		// TestCrowdScaleRoundtrip for the seeder/default alignment check.
+		{"JSON dense", `{"0":3,"1":4,"2":4,"3":3,"4":3,"5":2}`, []int{3, 4, 4, 3, 3, 2}},
+		{"JSON sparse forward-fills", `{"0":3,"3":2}`, []int{3, 3, 3, 2}},
+		{"JSON with surrounding whitespace", `  {"0":5, "1":4}  `, []int{5, 4}},
+		{"JSON negative bucket falls back", `{"0":3,"-1":2}`, defaultCrowdScale},
+		{"JSON negative value falls back", `{"0":-1}`, defaultCrowdScale},
+		{"JSON empty falls back", `{}`, defaultCrowdScale},
+		{"JSON non-int key falls back", `{"zero":3}`, defaultCrowdScale},
+		{"JSON malformed falls back", `{"0":`, defaultCrowdScale},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -301,6 +314,50 @@ func TestParseCrowdScale(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCrowdScaleRoundtrip pins the contract between the admin CLI's seeded
+// default crowd_scale (JSON) and parseCrowdScale (scheduler-side reader).
+// Drift here silently reverts every operator config to the hardcoded
+// defaultCrowdScale — the class of bug the ce:review auto-catch flagged.
+// The literal below MUST match the seed default in
+// backend/app/tooling/admin/bot.go (defaultBotConfig[ConfigKeyCrowdScale]).
+func TestCrowdScaleRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	// Keep in sync with admin/bot.go defaultBotConfig.
+	seedDefault := `{"0":3,"1":4,"2":4,"3":3,"4":3,"5":2}`
+	want := []int{3, 4, 4, 3, 3, 2}
+
+	got := parseCrowdScale(seedDefault)
+	if len(got) != len(want) {
+		t.Fatalf("roundtrip len mismatch: got %v want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("roundtrip pos %d: got %d want %d (full %v vs %v)",
+				i, got[i], want[i], got, want)
+		}
+	}
+
+	// Also confirm that if parseCrowdScale had rejected this and fallen
+	// back to defaultCrowdScale, we'd observe a different slice. This
+	// guards against a false-green where defaultCrowdScale happens to
+	// equal want.
+	fallback := parseCrowdScale("not json, not csv... {broken}")
+	if len(fallback) == len(want) {
+		allEq := true
+		for i := range fallback {
+			if fallback[i] != want[i] {
+				allEq = false
+				break
+			}
+		}
+		if allEq {
+			t.Fatal("defaultCrowdScale happens to equal the seed-default; " +
+				"this test would not detect a fallback — update the test literal")
+		}
 	}
 }
 
@@ -491,6 +548,88 @@ func TestEligibleOfflineBots_RespectsWarmupWindow(t *testing.T) {
 	eligible := h.sched.eligibleOfflineBots(h.clock.Now())
 	if len(eligible) != len(bots) {
 		t.Errorf("after warmup window, want %d eligible, got %d", len(bots), len(eligible))
+	}
+}
+
+// TestEligibleOfflineBots_ExcludesPausedBots pins the bot_paused_accounts
+// integration: a bot whose accountID is in the paused set must not appear as
+// eligible for onlining even after warmup + any offlineUntil has elapsed.
+// This is the test that would have caught the "pause is a no-op" review
+// finding.
+func TestEligibleOfflineBots_ExcludesPausedBots(t *testing.T) {
+	t.Parallel()
+
+	bots := makeBots(3, 100)
+	h := newHarness(t, bots, nil)
+	// Bypass warmup so eligibility is only gated by the paused set.
+	for _, st := range h.sched.state {
+		st.offlineUntil = time.Time{}
+	}
+
+	// Pause the first bot.
+	var pausedID uuid.UUID
+	for id := range h.sched.state {
+		pausedID = id
+		break
+	}
+	h.sched.pausedIDs = map[uuid.UUID]struct{}{pausedID: {}}
+
+	eligible := h.sched.eligibleOfflineBots(h.clock.Now())
+	if len(eligible) != len(bots)-1 {
+		t.Errorf("want %d eligible (paused bot excluded), got %d", len(bots)-1, len(eligible))
+	}
+	for _, st := range eligible {
+		if st.accountID == pausedID {
+			t.Errorf("paused bot %s should not be in eligible pool", pausedID)
+		}
+	}
+
+	// Unpause — bot returns to eligible set.
+	h.sched.pausedIDs = map[uuid.UUID]struct{}{}
+	eligible = h.sched.eligibleOfflineBots(h.clock.Now())
+	if len(eligible) != len(bots) {
+		t.Errorf("after unpause, want %d eligible, got %d", len(bots), len(eligible))
+	}
+}
+
+// TestRunTick_PausedBotForcedOffline verifies that a currently-online bot
+// added to bot_paused_accounts is taken offline on the next tick, not just
+// excluded from future onboarding.
+func TestRunTick_PausedBotForcedOffline(t *testing.T) {
+	t.Parallel()
+
+	bots := makeBots(3, 100)
+	h := newHarness(t, bots, nil)
+
+	// Bring all bots online manually.
+	var pausedID uuid.UUID
+	for id, st := range h.sched.state {
+		st.online = true
+		if pausedID == (uuid.UUID{}) {
+			pausedID = id
+		}
+	}
+
+	// Mock the storer to report pausedID as paused.
+	h.storer.queryPausedAccountIDsFn = func(context.Context) (map[uuid.UUID]struct{}, error) {
+		return map[uuid.UUID]struct{}{pausedID: {}}, nil
+	}
+	// Force cache expiry so the tick reloads.
+	h.sched.pausedCachedAt = time.Time{}
+
+	h.sched.runTick(context.Background())
+
+	if h.sched.state[pausedID].online {
+		t.Errorf("paused bot %s should have been forced offline by runTick", pausedID)
+	}
+	// Other bots should remain online (no pause applied to them).
+	for id, st := range h.sched.state {
+		if id == pausedID {
+			continue
+		}
+		if !st.online {
+			t.Errorf("non-paused bot %s was unexpectedly taken offline", id)
+		}
 	}
 }
 

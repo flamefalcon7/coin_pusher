@@ -137,3 +137,20 @@ func (s *Store) SumRefillsSince(ctx context.Context, since time.Time) (decimal.D
 	}
 	return total, nil
 }
+
+// QueryPausedAccountIDs returns the set of bot account_ids currently in
+// bot_paused_accounts. Scheduler calls this per tick (cache-fronted) to
+// exclude paused bots from the eligible pool.
+func (s *Store) QueryPausedAccountIDs(ctx context.Context) (map[uuid.UUID]struct{}, error) {
+	const q = `SELECT account_id FROM bot_paused_accounts`
+
+	var ids []uuid.UUID
+	if err := s.db.SelectContext(ctx, &ids, q); err != nil {
+		return nil, fmt.Errorf("querying paused bot account_ids: %w", err)
+	}
+	out := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}

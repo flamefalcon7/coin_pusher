@@ -65,7 +65,10 @@ func setupBotIntegration(t *testing.T) (*sqlx.DB, func()) {
 	runTag := uuid.New().String()[:8]
 
 	cleanup := func() {
-		// Best-effort cleanup in dependency order.
+		// Best-effort cleanup in dependency order. bot_paused_accounts must
+		// be cleared before accounts (FK constraint) since this PR added the
+		// reference.
+		db.Exec(`DELETE FROM bot_paused_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE referral_code LIKE $1)`, "BOTI"+runTag[:4]+"%")
 		db.Exec(`DELETE FROM accounting_logs WHERE reference_id LIKE $1`, "bot-integ-"+runTag+"%")
 		db.Exec(`DELETE FROM auth_providers WHERE provider_uid LIKE $1`, "bot-integ-"+runTag+"%")
 		db.Exec(`DELETE FROM accounts WHERE referral_code LIKE $1`, "BOTI"+runTag[:4]+"%")

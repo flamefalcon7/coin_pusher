@@ -37,4 +37,13 @@ type Storer interface {
 	// SumRefillsSince returns the sum of BOT_REFILL ledger amounts with
 	// created_at >= since. Used by the scheduler to enforce the daily cap.
 	SumRefillsSince(ctx context.Context, since time.Time) (decimal.Decimal, error)
+
+	// QueryPausedAccountIDs returns the set of bot account_ids currently
+	// flagged in bot_paused_accounts. The scheduler reads this per tick
+	// (with a short cache) and skips paused bots in fireDueInserts and
+	// adjustOnlineSet. Writes come from `admin bot pause`/`resume`.
+	//
+	// Returning a map rather than a slice lets callers do O(1) membership
+	// checks during the per-bot tick loop.
+	QueryPausedAccountIDs(ctx context.Context) (map[uuid.UUID]struct{}, error)
 }
