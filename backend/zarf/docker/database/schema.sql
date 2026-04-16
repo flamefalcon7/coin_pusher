@@ -171,7 +171,8 @@ CREATE TABLE IF NOT EXISTS accounting_logs (
         'WITHDRAW_FEE',
         'WITHDRAW_FEE_REFUND',
         'PROGRESS_REWARD',
-        'REFERRAL_REWARD'
+        'REFERRAL_REWARD',
+        'BOT_REFILL'
     )),
     amount              NUMERIC(20,6) NOT NULL,
     currency            TEXT          NOT NULL CHECK (currency IN ('USDC','PLAY','CASH')),
