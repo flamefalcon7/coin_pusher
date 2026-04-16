@@ -45,6 +45,7 @@ func run() error {
 		fmt.Println("  dlq retry <dlq-id>             move a DLQ row back to nats_outbox (attempt_count=0)")
 		fmt.Println("  dlq retry-all                  move every DLQ row back (use after incident recovery)")
 		fmt.Println("  dlq delete <dlq-id> --confirm  permanently delete a DLQ row (needs --confirm)")
+		fmt.Println("  bot <subcommand>               manage play bots (seed|list|stats|pause|resume|kill-switch|refill|config)")
 		return nil
 	}
 
@@ -78,6 +79,8 @@ func run() error {
 		return outboxCmd(db)
 	case "dlq":
 		return dlqCmd(db)
+	case "bot":
+		return botCmd(db)
 	default:
 		return fmt.Errorf("unknown command: %s", os.Args[1])
 	}
