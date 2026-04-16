@@ -452,6 +452,7 @@ func printBotListJSON(rows []botListRow) error {
 
 func botStats(db *sqlx.DB) error {
 	since := 24 * time.Hour
+	jsonOut := false
 	args := os.Args[3:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--since" && i+1 < len(args) {
@@ -464,6 +465,10 @@ func botStats(db *sqlx.DB) error {
 			}
 			since = d
 			i++
+			continue
+		}
+		if args[i] == "--json" {
+			jsonOut = true
 		}
 	}
 
@@ -491,6 +496,20 @@ func botStats(db *sqlx.DB) error {
 	}
 
 	netFlow := s.RewardTotal.Sub(s.InsertTotal)
+
+	if jsonOut {
+		out := map[string]any{
+			"since":        cutoff.Format(time.RFC3339),
+			"window":       since.String(),
+			"insert_total": s.InsertTotal.StringFixed(2),
+			"reward_total": s.RewardTotal.StringFixed(2),
+			"refill_total": s.RefillTotal.StringFixed(2),
+			"net_flow":     netFlow.StringFixed(2),
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
 
 	fmt.Printf("=== bot stats (last %s, since %s) ===\n",
 		since, cutoff.Format(time.RFC3339))
@@ -648,16 +667,31 @@ func botConfigCmd(db *sqlx.DB) error {
 }
 
 func botConfigShow(db *sqlx.DB) error {
+	jsonOut := false
+	for _, a := range os.Args[3:] {
+		if a == "--json" {
+			jsonOut = true
+		}
+	}
+
 	type row struct {
-		Key       string    `db:"config_key"`
-		Value     string    `db:"config_value"`
-		UpdatedAt time.Time `db:"updated_at"`
+		Key       string    `db:"config_key" json:"key"`
+		Value     string    `db:"config_value" json:"value"`
+		UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 	}
 	var rows []row
 	if err := db.SelectContext(context.Background(), &rows,
 		`SELECT config_key, config_value, updated_at FROM bot_config ORDER BY config_key ASC`,
 	); err != nil {
 		return fmt.Errorf("select bot_config: %w", err)
+	}
+
+	if jsonOut {
+		// Emit the full, untruncated map so agents parsing this never miss a
+		// long value (e.g., crowd_scale JSON beyond 50 chars).
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(rows)
 	}
 
 	if len(rows) == 0 {

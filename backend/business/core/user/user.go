@@ -145,7 +145,17 @@ func (c *Core) QueryByIDForUpdate(ctx context.Context, accountID uuid.UUID) (Acc
 }
 
 // SetRole updates the role of an account.
+//
+// Rejects RoleBot at the core layer as defense in depth. Bot accounts are
+// provisioned exclusively via `admin bot seed` (direct DB INSERT with
+// role='bot' + auth_provider rows); any other code path — admin set-role
+// CLI, a hypothetical future HTTP admin endpoint, a migration script — is
+// not allowed to promote accounts to bot. The admin CLI allowlist is the
+// operator-facing gate; this check is the last-line-of-defense domain gate.
 func (c *Core) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	if role == RoleBot {
+		return fmt.Errorf("cannot promote account to role=bot via SetRole; use 'admin bot seed' for bot provisioning")
+	}
 	return c.storer.SetRole(ctx, accountID, role)
 }
 
