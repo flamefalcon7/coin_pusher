@@ -1306,6 +1306,147 @@ func TestFindOrCreate_ReferralCodeCollisionExhausted(t *testing.T) {
 // FindOrCreate — initialBalance
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Bot provider rejection — four-layer login defense
+// ---------------------------------------------------------------------------
+
+// TestFindOrCreate_RejectsBotProviderType pins that FindOrCreate returns an
+// auth-failed error at entry when a caller tries to provision or lookup an
+// account with provider_type='bot'. Bot accounts must only be created via
+// `admin bot seed`; this is the public-login gate.
+func TestFindOrCreate_RejectsBotProviderType(t *testing.T) {
+	t.Parallel()
+
+	// Storer should never be consulted — rejection happens before any DB hit.
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			t.Errorf("storer must not be called for provider_type='bot', got (%s, %s)", pt, uid)
+			return Account{}, nil
+		},
+	}
+	core := NewCore(storer)
+
+	_, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: ProviderTypeBot,
+		ProviderUID:  "any-uid",
+	})
+	if err == nil {
+		t.Fatal("expected rejection, got nil")
+	}
+	if !errors.Is(err, v1.ErrAuthFailed) {
+		t.Errorf("error = %v, want wrapped v1.ErrAuthFailed", err)
+	}
+}
+
+// TestFindOrCreate_RejectsBotRoleOnLookup pins the belt-and-suspenders check:
+// even if a bot somehow ended up with provider_type='wallet' (data drift,
+// manual insert, bug), a login attempt that surfaces the account via
+// QueryByProvider must still be rejected because the account has role='bot'.
+// Without this, a bot's hex provider_uid colliding with a real wallet address
+// (or a deliberately crafted auth_provider row) would grant a JWT to a bot
+// account.
+func TestFindOrCreate_RejectsBotRoleOnLookup(t *testing.T) {
+	t.Parallel()
+
+	botAcct := Account{
+		ID:   uuid.New(),
+		Role: RoleBot,
+	}
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			return botAcct, nil
+		},
+	}
+	core := NewCore(storer)
+
+	_, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: "wallet", // intentionally non-bot
+		ProviderUID:  "0xcollision",
+	})
+	if err == nil {
+		t.Fatal("expected rejection on role='bot' lookup, got nil")
+	}
+	if !errors.Is(err, v1.ErrAuthFailed) {
+		t.Errorf("error = %v, want wrapped v1.ErrAuthFailed", err)
+	}
+}
+
+func TestFindOrCreateWithMeta_RejectsBotProviderType(t *testing.T) {
+	t.Parallel()
+
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			t.Errorf("storer must not be called for provider_type='bot'")
+			return Account{}, nil
+		},
+	}
+	core := NewCore(storer)
+
+	_, err := core.FindOrCreateWithMeta(context.Background(), NewAccountWithMeta{
+		ProviderType: ProviderTypeBot,
+		ProviderUID:  "any-uid",
+	})
+	if err == nil {
+		t.Fatal("expected rejection, got nil")
+	}
+	if !errors.Is(err, v1.ErrAuthFailed) {
+		t.Errorf("error = %v, want wrapped v1.ErrAuthFailed", err)
+	}
+}
+
+func TestFindOrCreateWithMeta_RejectsBotRoleOnLookup(t *testing.T) {
+	t.Parallel()
+
+	botAcct := Account{
+		ID:   uuid.New(),
+		Role: RoleBot,
+	}
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			return botAcct, nil
+		},
+	}
+	core := NewCore(storer)
+
+	_, err := core.FindOrCreateWithMeta(context.Background(), NewAccountWithMeta{
+		ProviderType: "wallet",
+		ProviderUID:  "0xcollision",
+	})
+	if err == nil {
+		t.Fatal("expected rejection on role='bot' lookup, got nil")
+	}
+	if !errors.Is(err, v1.ErrAuthFailed) {
+		t.Errorf("error = %v, want wrapped v1.ErrAuthFailed", err)
+	}
+}
+
+// Regression guard: non-bot lookups must continue to work unchanged.
+func TestFindOrCreate_AllowsNonBotAccount(t *testing.T) {
+	t.Parallel()
+
+	realAcct := Account{
+		ID:   uuid.New(),
+		Role: RoleUser,
+	}
+	storer := &mockStorer{
+		queryByProviderFn: func(ctx context.Context, pt, uid string) (Account, error) {
+			return realAcct, nil
+		},
+	}
+	core := NewCore(storer)
+
+	got, err := core.FindOrCreate(context.Background(), NewAccount{
+		ProviderType: "wallet",
+		ProviderUID:  "0xreal",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ID != realAcct.ID {
+		t.Errorf("ID = %v, want %v", got.ID, realAcct.ID)
+	}
+}
+
 func TestFindOrCreate_InitialBalance(t *testing.T) {
 	t.Parallel()
 

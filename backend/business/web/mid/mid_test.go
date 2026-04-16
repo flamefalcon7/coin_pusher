@@ -260,6 +260,42 @@ func TestAuthenticate(t *testing.T) {
 	}
 }
 
+// TestAuthenticate_RejectsBotRole pins that the Authenticate middleware
+// rejects any JWT whose claims.Role == "bot". Bots are never supposed to hold
+// tokens — this is the last-resort backstop if upstream login gates fail.
+func TestAuthenticate_RejectsBotRole(t *testing.T) {
+	t.Parallel()
+
+	devAuth := auth.NewDevAuth("test-issuer")
+	accountID := uuid.New()
+
+	botToken, err := devAuth.GenerateToken(accountID, "bot")
+	if err != nil {
+		t.Fatalf("generating bot token: %v", err)
+	}
+
+	innerCalled := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		innerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := Authenticate(devAuth)(inner)
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer "+botToken)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+	if innerCalled {
+		t.Error("inner handler should not be called for bot-role tokens")
+	}
+}
+
 func TestAuthenticate_AdminRole(t *testing.T) {
 	t.Parallel()
 

@@ -48,6 +48,14 @@ func (g *Group) Login(ctx context.Context, w http.ResponseWriter, r *http.Reques
 		return v1.NewRequestError(v1.ErrAuthFailed, http.StatusBadRequest)
 	}
 
+	// Early reject bot provider_type at HTTP boundary. Core-layer
+	// FindOrCreate also rejects; this is defense in depth so the generic
+	// login endpoint never even reaches core code for bot provisioning
+	// attempts.
+	if req.ProviderType == user.ProviderTypeBot {
+		return v1.NewRequestError(v1.ErrAuthFailed, http.StatusBadRequest)
+	}
+
 	// Find or create account.
 	acct, err := g.user.FindOrCreate(ctx, user.NewAccount{
 		ProviderType: req.ProviderType,

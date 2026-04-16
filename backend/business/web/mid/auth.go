@@ -34,6 +34,17 @@ func Authenticate(a *auth.Auth) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Last-resort block for role='bot' tokens. Bots are provisioned
+			// exclusively via `admin bot seed` and the login pipeline rejects
+			// them at multiple upstream layers; a JWT reaching this point with
+			// role='bot' indicates either a severe upstream bug or a crafted
+			// token. Fail closed with a generic "invalid token" response.
+			if claims.Role == "bot" {
+				metrics.AuthFailures.WithLabelValues("bot_token").Inc()
+				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+				return
+			}
+
 			ctx := SetClaims(r.Context(), Claims{
 				AccountID: claims.AccountID,
 				Role:      claims.Role,

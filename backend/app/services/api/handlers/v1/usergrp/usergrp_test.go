@@ -163,6 +163,21 @@ func TestLogin(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			// Bot provider_type must be rejected at the HTTP layer, before any
+			// core-level call. Core also rejects (defense in depth), but the
+			// handler early-rejects so bot-login attempts never even consult
+			// the storer.
+			name: "rejects provider_type=bot",
+			body: `{"provider_type":"bot","provider_uid":"any"}`,
+			storer: &mockStorer{
+				queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+					t.Errorf("storer must not be called for bot provider; got (%s, %s)", pt, uid)
+					return user.Account{}, nil
+				},
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
 			name:       "missing provider_uid",
 			body:       `{"provider_type":"wallet","provider_uid":""}`,
 			storer:     &mockStorer{},

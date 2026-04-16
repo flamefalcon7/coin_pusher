@@ -36,9 +36,26 @@ func (c *Core) SetInitialBalance(amount decimal.Decimal) {
 }
 
 // FindOrCreate looks up an account by provider, creating one if not found.
+//
+// Bot accounts (role='bot' or provider_type='bot') are created exclusively via
+// `admin bot seed` and must never authenticate externally. Two-layer guard:
+//  1. Reject provider_type='bot' at entry — a caller passing this type is
+//     either a bug or an attempt to provision a bot via the public login path.
+//  2. After a successful lookup, reject if the existing account has role='bot'.
+//     This covers the rare case where a bot's auth_provider row was somehow
+//     seeded with a non-bot provider_type (data drift, manual fix gone wrong).
+// Both return a generic authentication failure so the caller can't distinguish
+// "bot exists" from "wrong credentials".
 func (c *Core) FindOrCreate(ctx context.Context, na NewAccount) (Account, error) {
+	if na.ProviderType == ProviderTypeBot {
+		return Account{}, v1.NewAuthError()
+	}
+
 	acct, err := c.storer.QueryByProvider(ctx, na.ProviderType, na.ProviderUID)
 	if err == nil {
+		if acct.Role == RoleBot {
+			return Account{}, v1.NewAuthError()
+		}
 		return acct, nil
 	}
 
@@ -299,9 +316,17 @@ func (c *Core) VerifyWalletLogin(ctx context.Context, nonce, signature, claimedA
 }
 
 // FindOrCreateWithMeta is like FindOrCreate but also sets metadata_json on the auth provider.
+// See FindOrCreate for the bot-rejection rationale.
 func (c *Core) FindOrCreateWithMeta(ctx context.Context, na NewAccountWithMeta) (Account, error) {
+	if na.ProviderType == ProviderTypeBot {
+		return Account{}, v1.NewAuthError()
+	}
+
 	acct, err := c.storer.QueryByProvider(ctx, na.ProviderType, na.ProviderUID)
 	if err == nil {
+		if acct.Role == RoleBot {
+			return Account{}, v1.NewAuthError()
+		}
 		return acct, nil
 	}
 
