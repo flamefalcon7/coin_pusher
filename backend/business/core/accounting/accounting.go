@@ -324,6 +324,75 @@ func (c *Core) ProcessGameInsertRefund(ctx context.Context, accountID uuid.UUID,
 	return newPlay, newCash, nil
 }
 
+// ProcessBotRefill credits a bot account's balance_play idempotently.
+//
+// Mirrors ProcessDeposit shape: inside a single transaction, (a) check the
+// (ActionBotRefill, referenceID) pair for prior processing, (b) if already
+// processed, short-circuit with the current balance_play, (c) otherwise write
+// one ActionBotRefill ledger entry and credit balance_play.
+//
+// Caller is responsible for policy: verifying the target account has role='bot'
+// (bot.Core.RefillBalance does this), rejecting non-positive amounts, and
+// constructing a unique reference_id (e.g., "bot-refill:<account_id>:<yyyymmdd>").
+// The unique-constraint index on (action_type, reference_id, currency) backs
+// up this guard at the DB level.
+func (c *Core) ProcessBotRefill(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, referenceID string) (newPlay decimal.Decimal, err error) {
+	if amount.Sign() <= 0 {
+		return decimal.Zero, fmt.Errorf("bot refill amount must be positive: %s", amount)
+	}
+	if referenceID == "" {
+		return decimal.Zero, fmt.Errorf("bot refill reference_id must be non-empty")
+	}
+
+	err = c.execTx(ctx, func(s txStores) error {
+		// Idempotency check inside tx to prevent TOCTOU race.
+		_, qerr := s.storer.QueryByReference(ctx, ActionBotRefill, referenceID)
+		if qerr == nil {
+			// Already processed — return current balance_play.
+			acct, aerr := s.userCore.QueryByID(ctx, accountID)
+			if aerr != nil {
+				return fmt.Errorf("querying bot account on idempotent replay: %w", aerr)
+			}
+			newPlay = acct.BalancePlay
+			return nil
+		}
+		if !errors.Is(qerr, v1.ErrNotFound) {
+			return fmt.Errorf("checking bot refill reference: %w", qerr)
+		}
+
+		now := time.Now().UTC()
+		logEntry := AccountingLog{
+			LogID:       uuid.New(),
+			AccountID:   accountID,
+			ActionType:  ActionBotRefill,
+			Amount:      amount,
+			Currency:    CurrencyPlay,
+			ReferenceID: referenceID,
+			CreatedAt:   now,
+		}
+		if cerr := s.storer.Create(ctx, logEntry); cerr != nil {
+			return fmt.Errorf("creating bot refill log: %w", cerr)
+		}
+
+		if ierr := s.userCore.IncrementPlayBalance(ctx, accountID, amount); ierr != nil {
+			return fmt.Errorf("crediting bot play balance: %w", ierr)
+		}
+
+		// Re-read balance post-credit for return value.
+		acct, aerr := s.userCore.QueryByID(ctx, accountID)
+		if aerr != nil {
+			return fmt.Errorf("querying bot account post-credit: %w", aerr)
+		}
+		newPlay = acct.BalancePlay
+		return nil
+	})
+
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return newPlay, nil
+}
+
 // ProcessGameReward handles a game reward event (coins distributed via heat shares).
 // Credits the account's cash balance and creates a ledger entry atomically.
 func (c *Core) ProcessGameReward(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal, referenceID string) error {
