@@ -22,6 +22,7 @@ const (
 	ActionWithdrawFeeRefund = "WITHDRAW_FEE_REFUND"
 	ActionProgressReward    = "PROGRESS_REWARD"
 	ActionReferralReward    = "REFERRAL_REWARD"
+	ActionBotRefill         = "BOT_REFILL"
 )
 
 // Currency types.

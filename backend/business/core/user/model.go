@@ -67,6 +67,26 @@ const (
 	CurrencyCash = "CASH"
 )
 
+// Role values for accounts.role. 'bot' is reserved for server-controlled NPC
+// accounts provisioned exclusively via `admin bot seed` — the generic
+// `admin set-role` CLI rejects it to prevent accidental promotion.
+const (
+	RoleUser  = "user"
+	RoleAdmin = "admin"
+	RoleBot   = "bot"
+)
+
+// Provider types for auth_providers.provider_type. 'bot' accounts never
+// authenticate externally; the login pipeline rejects this provider type at
+// multiple layers (see user.FindOrCreate, user.VerifyWalletLogin, and the
+// Authenticate middleware).
+const (
+	ProviderTypeWallet = "wallet"
+	ProviderTypeEmail  = "email"
+	ProviderTypeGoogle = "google"
+	ProviderTypeBot    = "bot"
+)
+
 // UpdateBalance describes an atomic balance change.
 type UpdateBalance struct {
 	AccountID uuid.UUID

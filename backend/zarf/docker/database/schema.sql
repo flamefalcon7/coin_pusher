@@ -418,3 +418,32 @@ CREATE TABLE IF NOT EXISTS nats_outbox_dlq (
 
 CREATE INDEX IF NOT EXISTS idx_nats_outbox_dlq_moved_at
     ON nats_outbox_dlq(moved_at DESC);
+
+-- ==========================================================================
+-- 19. bot_config (key-value store for runtime-configurable bot parameters)
+-- ==========================================================================
+-- Global bot scheduler configuration. Read per-tick with 5s memory cache;
+-- admin CLI writes via UPSERT. Only 5 keys are runtime-configurable (behavioral
+-- params like insert interval, session length are Go-level constants):
+--   kill_switch              -- "on" | "off"
+--   refill_amount            -- decimal string, e.g. "1000"
+--   refill_threshold         -- decimal string, e.g. "100"
+--   daily_global_refill_cap  -- decimal string, e.g. "50000"
+--   crowd_scale              -- JSON map, e.g. '{"0":3,"1":4,"2":4,"3":3,"4":3,"5":2}'
+CREATE TABLE IF NOT EXISTS bot_config (
+    config_key      TEXT          PRIMARY KEY,
+    config_value    TEXT          NOT NULL,
+    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ==========================================================================
+-- 20. bot_paused_accounts (per-bot pause state, restart-durable)
+-- ==========================================================================
+-- Operator-set pause on individual bot accounts. Survives process restart so
+-- pausing during debug doesn't get silently unpaused after a deploy. Scheduler
+-- reads per-tick with 5s cache. Not overloaded onto bot_config to keep that
+-- table purely global-config and not a per-entity state bag.
+CREATE TABLE IF NOT EXISTS bot_paused_accounts (
+    account_id      UUID          PRIMARY KEY REFERENCES accounts(account_id),
+    paused_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
