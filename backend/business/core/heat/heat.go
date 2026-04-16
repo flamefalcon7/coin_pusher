@@ -9,9 +9,18 @@ import (
 )
 
 // PlayerHeat tracks a single player's raw heat value and when it was last updated.
+//
+// IsBot flags the player as a server-controlled NPC account (role='bot'). Bot
+// entries are included in the heat denominator (so the competitive pool
+// correctly accounts for their raw heat) but are excluded from the guaranteed
+// floor distribution — otherwise 5 active bots would absorb 25% of rewards
+// with near-zero investment. The flag is maintained last-write-wins by
+// AddHeat (sets false) and AddHeatForBot (sets true); role authority lives at
+// the caller, not sticky in the heat map.
 type PlayerHeat struct {
 	RawHeat     float64
 	LastUpdated time.Time
+	IsBot       bool
 }
 
 // HeatEngine manages per-player heat and computes share distributions.
@@ -38,9 +47,24 @@ func New() *HeatEngine {
 	}
 }
 
-// AddHeat is called on batch insert commit. It decays existing heat before
-// adding the new coins to ensure monotonic decay between updates.
+// AddHeat is called on real-player batch insert commit. It decays existing
+// heat before adding the new coins to ensure monotonic decay between updates.
+// IsBot is always reset to false on every call (last-write-wins with
+// AddHeatForBot).
 func (h *HeatEngine) AddHeat(userID uuid.UUID, coins int) {
+	h.addHeatInternal(userID, coins, false)
+}
+
+// AddHeatForBot is called on bot batch insert commit. Behaves identically to
+// AddHeat but flags the entry as IsBot=true so the share formula excludes
+// this player from the 5% guaranteed floor. If a real user ever receives
+// AddHeatForBot by mistake, the next AddHeat call flips the flag back — no
+// permanent corruption.
+func (h *HeatEngine) AddHeatForBot(userID uuid.UUID, coins int) {
+	h.addHeatInternal(userID, coins, true)
+}
+
+func (h *HeatEngine) addHeatInternal(userID uuid.UUID, coins int, isBot bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -59,6 +83,7 @@ func (h *HeatEngine) AddHeat(userID uuid.UUID, coins int) {
 
 	ph.RawHeat += float64(coins)
 	ph.LastUpdated = now
+	ph.IsBot = isBot
 }
 
 // PlayerShare represents a single player's heat share for external consumption.
@@ -77,12 +102,14 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 	now := time.Now()
 
 	type entry struct {
-		id  uuid.UUID
-		eff float64
-		raw float64
+		id    uuid.UUID
+		eff   float64
+		raw   float64
+		isBot bool
 	}
 	var active []entry
 	var totalEff float64
+	var realCount float64
 
 	for id, ph := range h.players {
 		dt := now.Sub(ph.LastUpdated).Seconds()
@@ -92,25 +119,42 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 		}
 
 		eff := math.Pow(decayed, h.alpha) // diminishing returns
-		active = append(active, entry{id, eff, decayed})
+		active = append(active, entry{id, eff, decayed, ph.IsBot})
 		totalEff += eff
+		if !ph.IsBot {
+			realCount++
+		}
 	}
 
 	if len(active) == 0 {
 		return nil
 	}
 
-	n := float64(len(active))
-	// Smooth guaranteed: shrinks with player count, competitive pool ≥ 50%.
-	// n≤10 → 0.05 each (total 0.05n), n>10 → 1/(2n) each (total 0.50).
-	guaranteed := math.Min(h.guaranteed, 1.0/(2.0*n))
-	competitivePool := 1.0 - n*guaranteed
+	// Guaranteed floor is applied to non-bot (real) players only. Bots are
+	// excluded so they don't absorb reward share with near-zero investment,
+	// but they remain in totalEff so the competitive pool is apportioned
+	// correctly across all active participants.
+	//
+	// The smooth-guarantee cap uses realCount (not total) to keep the real
+	// player baseline independent of bot population: with 2 real + many
+	// bots, real players still get the full 0.05 floor each.
+	var guaranteed float64
+	var floorTotal float64
+	if realCount > 0 {
+		guaranteed = math.Min(h.guaranteed, 1.0/(2.0*realCount))
+		floorTotal = realCount * guaranteed
+	}
+	competitivePool := 1.0 - floorTotal
 
 	shares := make([]PlayerShare, 0, len(active))
 	for _, e := range active {
+		share := competitivePool * (e.eff / totalEff)
+		if !e.isBot {
+			share += guaranteed
+		}
 		shares = append(shares, PlayerShare{
 			UserID:  e.id,
-			Share:   guaranteed + competitivePool*(e.eff/totalEff),
+			Share:   share,
 			RawHeat: e.raw,
 		})
 	}
@@ -136,6 +180,9 @@ func (h *HeatEngine) DistributeFrontEdgeDrop(coinCount int) map[uuid.UUID]float6
 // GetShareForUser returns the current share for a specific user.
 // Inlines the share computation for a single user without building the
 // intermediate []PlayerShare slice. Single RLock, no allocation, single pass.
+//
+// Bots are excluded from the guaranteed floor (5% or 1/(2*realCount), whichever
+// smaller) but still participate in the competitive pool via totalEff.
 func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -154,10 +201,11 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	}
 
 	targetEff := math.Pow(targetDecayed, h.alpha)
+	targetIsBot := ph.IsBot
 
-	// Compute total effective heat and count active players.
+	// Compute total effective heat and count real (non-bot) players.
 	var totalEff float64
-	var activeCount float64
+	var realCount float64
 	for _, p := range h.players {
 		dt := now.Sub(p.LastUpdated).Seconds()
 		decayed := p.RawHeat * math.Exp(-h.lambda*dt)
@@ -165,17 +213,28 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 			continue
 		}
 		totalEff += math.Pow(decayed, h.alpha)
-		activeCount++
+		if !p.IsBot {
+			realCount++
+		}
 	}
 
-	if activeCount == 0 {
+	if totalEff == 0 {
 		return 0
 	}
 
-	guaranteed := math.Min(h.guaranteed, 1.0/(2.0*activeCount))
-	competitivePool := 1.0 - activeCount*guaranteed
+	var guaranteed float64
+	var floorTotal float64
+	if realCount > 0 {
+		guaranteed = math.Min(h.guaranteed, 1.0/(2.0*realCount))
+		floorTotal = realCount * guaranteed
+	}
+	competitivePool := 1.0 - floorTotal
 
-	return guaranteed + competitivePool*(targetEff/totalEff)
+	share := competitivePool * (targetEff / totalEff)
+	if !targetIsBot {
+		share += guaranteed
+	}
+	return share
 }
 
 // Prune removes players with negligible heat to prevent unbounded growth.

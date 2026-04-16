@@ -50,11 +50,22 @@ lambda  = ln(2) / halfLife
    effective = decayed ^ alpha
    ```
 
-2. Sum all effective heat. If player count `n * guaranteed >= 1.0`, split evenly.
-   Otherwise:
+2. Sum all effective heat. The guaranteed floor is applied to **real (non-bot) players only**:
    ```
-   share = guaranteed + (1 - n * guaranteed) * (effective / totalEffective)
+   realCount    = count of active players with IsBot == false
+   guaranteed   = min(GUARANTEED_MIN, 1 / (2 * realCount))     // 0 if realCount=0
+   floorTotal   = guaranteed * realCount
+   pool         = 1 - floorTotal
+
+   share_real = guaranteed + pool * (effective / totalEffective)
+   share_bot  =              pool * (effective / totalEffective)
    ```
+
+   Bots are kept in `totalEffective` (denominator) so the pool is apportioned
+   correctly across all active participants, but they never receive the floor.
+   This prevents N bot accounts from absorbing `N * 5%` of rewards with near-zero
+   investment. The `realCount` smooth-cap keeps real-player floor independent of
+   bot population: with 2 real + many bots, each real still gets the full 5% floor.
 
 3. Front-edge distribution:
    ```
@@ -104,3 +115,4 @@ Coins are classified when they leave the play area:
 - **Ephemeral heat** — in-memory only, no DB persistence. Half-life is 3 min so state is inherently short-lived
 - **Batch reward flush** — accumulate fractional rewards, write to DB every 10s to reduce writes
 - **Coin highlighting** — client shows own coins in cyan for 2s via separate thin-instance mesh, then reverts to theme color
+- **Bots excluded from 5% floor** — `PlayerHeat.IsBot` flag (set via `AddHeatForBot`) zeros the guaranteed-floor contribution for server-controlled NPC accounts, preventing them from absorbing reward share with near-zero investment. Flag is last-write-wins across `AddHeat` / `AddHeatForBot` calls, so a mis-flagged real player recovers on their next legitimate insert.

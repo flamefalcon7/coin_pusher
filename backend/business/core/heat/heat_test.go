@@ -278,3 +278,233 @@ func TestGetShareForUser(t *testing.T) {
 		t.Errorf("share for unknown = %f, want 0", share)
 	}
 }
+
+func TestShares_OneRealOneBot(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	real := uuid.New()
+	bot := uuid.New()
+
+	h.AddHeat(real, 100)
+	h.AddHeatForBot(bot, 100)
+
+	shares := h.GetShares()
+	if len(shares) != 2 {
+		t.Fatalf("expected 2 shares, got %d", len(shares))
+	}
+
+	var realShare, botShare float64
+	for _, s := range shares {
+		switch s.UserID {
+		case real:
+			realShare = s.Share
+		case bot:
+			botShare = s.Share
+		}
+	}
+
+	// Formula: realCount=1, guaranteed=min(0.05, 1/2)=0.05, floorTotal=0.05.
+	// competitivePool=0.95, equal heat → competitivePool * 0.5 = 0.475.
+	// real: 0.05 + 0.475 = 0.525; bot: 0 + 0.475 = 0.475.
+	if math.Abs(realShare-0.525) > 0.01 {
+		t.Errorf("real share = %f, want 0.525", realShare)
+	}
+	if math.Abs(botShare-0.475) > 0.01 {
+		t.Errorf("bot share = %f, want 0.475", botShare)
+	}
+
+	// Total must sum to 1.
+	if math.Abs(realShare+botShare-1.0) > 0.001 {
+		t.Errorf("shares sum = %f, want 1.0", realShare+botShare)
+	}
+}
+
+func TestShares_TwoRealThreeBots(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	reals := []uuid.UUID{uuid.New(), uuid.New()}
+	bots := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
+
+	for _, u := range reals {
+		h.AddHeat(u, 100)
+	}
+	for _, b := range bots {
+		h.AddHeatForBot(b, 100)
+	}
+
+	shares := h.GetShares()
+	if len(shares) != 5 {
+		t.Fatalf("expected 5 shares, got %d", len(shares))
+	}
+
+	// realCount=2, guaranteed=min(0.05, 1/4)=0.05, floorTotal=0.10.
+	// competitivePool=0.90, equal heat → each gets competitivePool/5 = 0.18.
+	// real: 0.05 + 0.18 = 0.23. bot: 0.18.
+	realSet := map[uuid.UUID]bool{reals[0]: true, reals[1]: true}
+	var total float64
+	for _, s := range shares {
+		total += s.Share
+		if realSet[s.UserID] {
+			if math.Abs(s.Share-0.23) > 0.01 {
+				t.Errorf("real %s share = %f, want 0.23", s.UserID, s.Share)
+			}
+		} else {
+			if math.Abs(s.Share-0.18) > 0.01 {
+				t.Errorf("bot %s share = %f, want 0.18", s.UserID, s.Share)
+			}
+		}
+	}
+	if math.Abs(total-1.0) > 0.001 {
+		t.Errorf("total shares = %f, want 1.0", total)
+	}
+}
+
+func TestShares_AllBotsNoReal(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	b1 := uuid.New()
+	b2 := uuid.New()
+
+	h.AddHeatForBot(b1, 100)
+	h.AddHeatForBot(b2, 100)
+
+	shares := h.GetShares()
+	if len(shares) != 2 {
+		t.Fatalf("expected 2 shares, got %d", len(shares))
+	}
+
+	// realCount=0, floorTotal=0, competitivePool=1.0. Equal heat → each 0.5.
+	for _, s := range shares {
+		if math.Abs(s.Share-0.5) > 0.01 {
+			t.Errorf("bot %s share = %f, want 0.5", s.UserID, s.Share)
+		}
+	}
+}
+
+func TestShares_BotDoesNotDiluteRealFloor(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	real := uuid.New()
+	h.AddHeat(real, 100)
+
+	// Add 50 bots with equal heat.
+	for i := 0; i < 50; i++ {
+		h.AddHeatForBot(uuid.New(), 100)
+	}
+
+	// Real still gets guaranteed=0.05 floor (realCount=1, so no cap kick-in).
+	share := h.GetShareForUser(real)
+	if share < 0.05 {
+		t.Errorf("real share = %f, must be >= guaranteed floor 0.05", share)
+	}
+}
+
+func TestAddHeat_LastWriteWinsFlag(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	uid := uuid.New()
+
+	h.AddHeat(uid, 10)
+	h.mu.RLock()
+	isBotAfterReal := h.players[uid].IsBot
+	h.mu.RUnlock()
+	if isBotAfterReal {
+		t.Errorf("after AddHeat, IsBot=%v, want false", isBotAfterReal)
+	}
+
+	h.AddHeatForBot(uid, 5)
+	h.mu.RLock()
+	isBotAfterBot := h.players[uid].IsBot
+	h.mu.RUnlock()
+	if !isBotAfterBot {
+		t.Errorf("after AddHeatForBot, IsBot=%v, want true", isBotAfterBot)
+	}
+
+	// Reverse: AddHeat after AddHeatForBot flips back to false.
+	h.AddHeat(uid, 5)
+	h.mu.RLock()
+	isBotAfterRealAgain := h.players[uid].IsBot
+	h.mu.RUnlock()
+	if isBotAfterRealAgain {
+		t.Errorf("after AddHeat (flip back), IsBot=%v, want false", isBotAfterRealAgain)
+	}
+}
+
+func TestAddHeatForBot_AfterPruneRestoresFlag(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	bot := uuid.New()
+
+	// Set bot heat to decay below threshold.
+	h.mu.Lock()
+	h.players[bot] = &PlayerHeat{
+		RawHeat:     1.0,
+		LastUpdated: time.Now().Add(-3600 * time.Second), // 1hr ago
+		IsBot:       true,
+	}
+	h.mu.Unlock()
+
+	h.Prune()
+
+	// Bot entry should be removed.
+	h.mu.RLock()
+	_, exists := h.players[bot]
+	h.mu.RUnlock()
+	if exists {
+		t.Fatal("bot entry should be pruned")
+	}
+
+	// Re-add via AddHeatForBot → fresh entry must also be IsBot=true.
+	h.AddHeatForBot(bot, 100)
+
+	// Now compute share with a real player also present: bot must NOT get floor.
+	real := uuid.New()
+	h.AddHeat(real, 100)
+
+	botShare := h.GetShareForUser(bot)
+	realShare := h.GetShareForUser(real)
+
+	// Bot is IsBot=true post-prune, gets no floor. 1 real + 1 bot equal heat.
+	// real: 0.525, bot: 0.475.
+	if math.Abs(botShare-0.475) > 0.01 {
+		t.Errorf("bot share after prune+re-add = %f, want 0.475", botShare)
+	}
+	if math.Abs(realShare-0.525) > 0.01 {
+		t.Errorf("real share = %f, want 0.525", realShare)
+	}
+}
+
+func TestDistributeFrontEdgeDrop_MixedRealAndBot(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	real := uuid.New()
+	bot := uuid.New()
+
+	h.AddHeat(real, 100)
+	h.AddHeatForBot(bot, 100)
+
+	dist := h.DistributeFrontEdgeDrop(100)
+	if len(dist) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(dist))
+	}
+
+	total := dist[real] + dist[bot]
+	if math.Abs(total-100.0) > 0.1 {
+		t.Errorf("total distributed = %f, want 100.0", total)
+	}
+
+	// Real gets ~52.5, bot ~47.5.
+	if math.Abs(dist[real]-52.5) > 1 {
+		t.Errorf("real got %f, want ~52.5", dist[real])
+	}
+	if math.Abs(dist[bot]-47.5) > 1 {
+		t.Errorf("bot got %f, want ~47.5", dist[bot])
+	}
+}
