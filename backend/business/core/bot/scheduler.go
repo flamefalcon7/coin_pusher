@@ -461,9 +461,13 @@ func (s *Scheduler) loadBotPool(ctx context.Context) error {
 // thundering-herd insert burst.
 func (s *Scheduler) applyWarmupStagger() {
 	now := s.clock.Now()
-	span := warmupMaxSec - warmupMinSec
+	minSec, maxSec := warmupMinSec, warmupMaxSec
+	if os.Getenv("BOT_WARMUP_FAST") == "1" {
+		minSec, maxSec = 5, 10
+	}
+	span := maxSec - minSec
 	for _, st := range s.state {
-		offset := warmupMinSec + s.rng.Intn(span+1)
+		offset := minSec + s.rng.Intn(span+1)
 		st.offlineUntil = now.Add(time.Duration(offset) * time.Second)
 	}
 }

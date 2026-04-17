@@ -109,6 +109,7 @@ services:
     ports:
       - "4000:4000"
       - "4010:4010"
+    command: sh -c "/bin/admin migrate && /bin/admin bot seed && /bin/api"
     environment:
       - BACKEND_DB_HOST=postgres:5432
       - BACKEND_DB_USER=postgres
@@ -119,6 +120,7 @@ services:
       - BACKEND_GAME_API_KEY=dev-secret
       - BACKEND_NATS_URL=nats://nats:4222
       - IDLE_TEST=${IDLE_TEST:-0}
+      - BOT_WARMUP_FAST=1
     networks:
       - coin-pusher-network
     depends_on:
