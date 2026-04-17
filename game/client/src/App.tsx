@@ -1002,7 +1002,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
         <PlayerInfo balancePlay={balance} balanceCash={balanceCash} displayName={account?.display_name ?? null} address={address} role={account?.role} onLogout={onAuthFailure} />
       )}
 
-      {sponsorBalances.length > 0 && <SponsorBalances balances={sponsorBalances} />}
+
 
       <HUD fps={fps} ping={ping} activeCoin={activeCoinCount} />
 
@@ -1239,13 +1239,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
         />
       )}
 
-      {!isSpectator && showSponsorPage && (
-        <SponsorPage token={token!} apiUrl={API_URL} />
-      )}
-
-      {!isSpectator && showAdminSponsors && (
-        <AdminSponsorsPage token={token!} apiUrl={API_URL} />
-      )}
+      {/* Sponsor pages disabled until deposit gate is implemented */}
 
       {/* MegaspeakerPanel — read-only for spectators (disable send) */}
       <MegaspeakerPanel

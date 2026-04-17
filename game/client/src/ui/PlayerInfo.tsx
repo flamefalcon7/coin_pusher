@@ -102,10 +102,7 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, rol
         <Link to="/progress" className="player-info-action-btn player-info-missions">Missions</Link>
         <Link to="/deposit" className="player-info-action-btn player-info-deposit">Deposit</Link>
         <Link to="/withdraw" className="player-info-action-btn player-info-withdraw">Withdraw</Link>
-        <Link to="/sponsor" className="player-info-action-btn player-info-sponsor">Sponsor</Link>
-        {role === 'admin' && (
-          <Link to="/admin/sponsors" className="player-info-action-btn player-info-admin-sponsors">Admin: Sponsors</Link>
-        )}
+        {/* Sponsor UI disabled until deposit gate is implemented */}
         <button className="player-info-logout" onClick={onLogout}>
           Logout
         </button>
