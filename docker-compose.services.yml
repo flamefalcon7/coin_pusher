@@ -49,6 +49,7 @@ services:
       BACKEND_WEB_CORS_ORIGINS: ${CORS_ORIGINS}
       BACKEND_GAME_API_KEY: ${GAME_API_KEY}
       BACKEND_WALLET_SEED: ${WALLET_SEED}
+    command: sh -c "/bin/admin migrate && /bin/admin bot seed && /bin/api"
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
