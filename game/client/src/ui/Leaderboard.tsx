@@ -3,6 +3,7 @@ import './Leaderboard.css';
 import { InfoTip } from './InfoTip';
 import { useIsMobile } from './useIsMobile';
 import { useIsLandscape } from './useIsLandscape';
+import { RANK_COLORS } from '@coin-pusher/shared';
 
 export interface LeaderboardEntry {
   user_id: string;
@@ -106,10 +107,10 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
           '--to-y': `${toY}px`,
         } as React.CSSProperties}
       >
-        <span className="lb-rank">{entry.rank}.</span>
+        <span className="lb-rank" style={{ color: RANK_COLORS[i] }}>{entry.rank}.</span>
         {isTop1 && <span className="fire-icon">&#x1F525;</span>}
-        <span className="lb-name">{isMe ? 'You' : entry.username}</span>
-        <span className="lb-share">
+        <span className="lb-name" style={{ color: RANK_COLORS[i] }}>{isMe ? 'You' : entry.username}</span>
+        <span className="lb-share" style={{ color: RANK_COLORS[i] }}>
           {(entry.share * 100).toFixed(1)}%
           {isMe && shareDelta && (
             <span
@@ -135,7 +136,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ entries, myEntry, myUs
         HEAT RANKING {collapsed ? '▸' : '▾'} <InfoTip text="Insert more coins = higher Heat = bigger share of rewards. Heat decays over time — keep inserting to maintain your rank." position="right" />
       </div>
       {collapsed && myInfo && (
-        <div className="lb-collapsed-summary">
+        <div className="lb-collapsed-summary" style={myInfo.rank <= 5 ? { color: RANK_COLORS[myInfo.rank - 1] } : undefined}>
           #{myInfo.rank} — {(myInfo.share * 100).toFixed(1)}%
         </div>
       )}

@@ -34,7 +34,7 @@ import { SceneManager } from "./scene/SceneManager";
 import { BonusDropVFX } from "./scene/BonusDropVFX";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
 import { GameClient } from "./net/GameClient";
-import { SLOT_CONFIG, RATE_LIMIT_CONFIG, type EditorObjectNet } from "@coin-pusher/shared";
+import { SLOT_CONFIG, RATE_LIMIT_CONFIG, RANK_NONE, type EditorObjectNet } from "@coin-pusher/shared";
 import { Vector3 } from "@babylonjs/core";
 import { EditorManager, GizmoMode } from "./editor/EditorManager";
 import { EditorPanel } from "./editor/EditorPanel";
@@ -156,6 +156,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   const keyCoinIdsRef = useRef<Set<number>>(new Set());
   // Track which coin IDs are sponsor coins (coinId -> sponsorId)
   const sponsorCoinIdsRef = useRef<Map<number, string>>(new Map());
+  // Top-5 leaderboard userId -> rank color index (0-4)
+  const top5MapRef = useRef<Map<string, number>>(new Map());
   const bonusDropVFXRef = useRef<BonusDropVFX | null>(null);
   const [sponsorBalances, setSponsorBalances] = useState<Array<{ campaign_id: string; token_symbol: string; balance: string }>>([]);
   const lastRequestedAmount = useRef(0);
@@ -289,8 +291,11 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     gameClient.onCoinSpawn((coins) => {
       const myUserId = gameClient.getUserId();
       for (const coin of coins) {
-        if (coin.owner_id === myUserId) {
-          sceneManager.addCoinHighlight(coin.id);
+        const rankIndex = coin.owner_id ? top5MapRef.current.get(coin.owner_id) : undefined;
+        if (rankIndex !== undefined) {
+          sceneManager.addCoinHighlight(coin.id, rankIndex);
+        } else if (coin.owner_id === myUserId) {
+          sceneManager.addCoinHighlight(coin.id, RANK_NONE);
         }
         if (coin.is_key_coin) {
           keyCoinIdsRef.current.add(coin.id);
@@ -311,6 +316,12 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
         rank: i + 1,
       }));
       setLeaderboard(top5);
+
+      const newMap = new Map<string, number>();
+      for (let i = 0; i < top5.length; i++) {
+        newMap.set(top5[i].user_id, i);
+      }
+      top5MapRef.current = newMap;
 
       const myIdx = sorted.findIndex(p => p.user_id === myUserId);
       if (myIdx >= 0) {

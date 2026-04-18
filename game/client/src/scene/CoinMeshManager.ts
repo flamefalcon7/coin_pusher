@@ -8,7 +8,7 @@ import {
   Matrix,
   DynamicTexture,
 } from "@babylonjs/core";
-import { COIN_CONFIG, KEY_COIN_CONFIG, SPONSOR_COIN_CONFIG } from "@coin-pusher/shared";
+import { COIN_CONFIG, KEY_COIN_CONFIG, SPONSOR_COIN_CONFIG, RANK_COLORS, RANK_NONE } from "@coin-pusher/shared";
 import { createToonMaterial } from "./ToonMaterial";
 
 // ── Spiral spawn animation constants ─────────────────────────────────
@@ -62,16 +62,20 @@ export class CoinMeshManager {
   private pendingNewCoins: { id: number; pos: [number, number, number]; rot: [number, number, number, number]; isKeyCoin?: boolean; sponsorId?: string }[] = [];
   private batchAnimationUntil: number = 0; // timestamp until which batch animation is allowed
 
-  // ── Highlight mesh for owned coins ────────────────────────────────
-  private highlightMesh!: Mesh;
-  private hlBuffer: Float32Array;
-  private hlIdToIndex: Map<number, number> = new Map();
-  private hlIndexToId: Int32Array;
-  private hlActive: number = 0;
-  private hlCapacity: number = 50;
-  private hlTimers: Map<number, number> = new Map(); // coinId -> expiry timestamp (Date.now())
-  private hlPending: Set<number> = new Set(); // coinIds waiting for addCoin before highlight
+  // ── Rank-colored highlight meshes (one per rank + grey) ────────────
+  private rankHl: {
+    mesh: Mesh;
+    buffer: Float32Array;
+    idToIndex: Map<number, number>;
+    indexToId: Int32Array;
+    active: number;
+    capacity: number;
+    timers: Map<number, number>;
+    pending: Set<number>;
+  }[] = [];
+  private coinToColorIndex: Map<number, number> = new Map(); // coinId -> RANK_COLORS index
   private static readonly HIGHLIGHT_DURATION = 2000; // 2 seconds in ms
+  private static readonly RANK_HL_COUNT = RANK_COLORS.length; // 6 (5 ranks + grey)
 
   // Reusable temporary objects to avoid GC per coin per frame
   private static tmpVector = new Vector3();
@@ -89,12 +93,9 @@ export class CoinMeshManager {
     // Initialize key coin buffers
     this.kcBuffer = new Float32Array(this.kcCapacity * 16);
     this.kcIndexToId = new Int32Array(this.kcCapacity);
-    // Initialize highlight buffers
-    this.hlBuffer = new Float32Array(this.hlCapacity * 16);
-    this.hlIndexToId = new Int32Array(this.hlCapacity);
     this.createPrototype();
     this.createKeyCoinPrototype();
-    this.createHighlightPrototype();
+    this.createRankHighlightPrototypes();
   }
 
   private createPrototype(): void {
@@ -194,25 +195,38 @@ export class CoinMeshManager {
     return dt;
   }
 
-  private createHighlightPrototype(): void {
+  private createRankHighlightPrototypes(): void {
     const { RADIUS, THICKNESS } = COIN_CONFIG;
-    this.highlightMesh = MeshBuilder.CreateCylinder(
-      "coinHighlight",
-      {
-        height: THICKNESS + 0.001,
-        diameter: RADIUS * 2 + 0.001,
-        tessellation: 32,
-      },
-      this.scene
-    );
+    for (let i = 0; i < CoinMeshManager.RANK_HL_COUNT; i++) {
+      const capacity = i === RANK_NONE ? 20 : 10;
+      const mesh = MeshBuilder.CreateCylinder(
+        `rankHighlight_${i}`,
+        {
+          height: THICKNESS + 0.001,
+          diameter: RADIUS * 2 + 0.001,
+          tessellation: 32,
+        },
+        this.scene
+      );
+      const material = createToonMaterial(this.scene, {
+        name: `rankHighlightMat_${i}`,
+        baseColor: Color3.FromHexString(RANK_COLORS[i]),
+        thinInstances: true,
+      });
+      mesh.material = material;
+      mesh.thinInstanceEnablePicking = false;
 
-    const material = createToonMaterial(this.scene, {
-      name: "coinHighlightMat",
-      baseColor: new Color3(0, 1, 1), // bright cyan
-      thinInstances: true,
-    });
-    this.highlightMesh.material = material;
-    this.highlightMesh.thinInstanceEnablePicking = false;
+      this.rankHl.push({
+        mesh,
+        buffer: new Float32Array(capacity * 16),
+        idToIndex: new Map(),
+        indexToId: new Int32Array(capacity),
+        active: 0,
+        capacity,
+        timers: new Map(),
+        pending: new Set(),
+      });
+    }
   }
 
   addCoin(
@@ -325,11 +339,17 @@ export class CoinMeshManager {
     }
 
     // Flush deferred highlights for coins that are now allocated
-    if (this.hlPending.size > 0) {
-      for (const coinId of this.hlPending) {
+    for (const hl of this.rankHl) {
+      if (hl.pending.size === 0) continue;
+      for (const coinId of hl.pending) {
         if (this.idToIndex.has(coinId) || this.kcIdToIndex.has(coinId)) {
-          this.hlPending.delete(coinId);
-          this.addHighlight(coinId);
+          hl.pending.delete(coinId);
+          const colorIndex = this.coinToColorIndex.get(coinId);
+          if (colorIndex !== undefined) {
+            // Remove from map so addRankHighlight doesn't early-return
+            this.coinToColorIndex.delete(coinId);
+            this.addRankHighlight(coinId, colorIndex);
+          }
         }
       }
     }
@@ -542,8 +562,7 @@ export class CoinMeshManager {
     this.activeCoins--;
 
     // Clean up highlight if present
-    this.removeHighlight(id);
-    this.hlPending.delete(id);
+    this.removeRankHighlight(id);
   }
 
   private removeKeyCoin(id: number): void {
@@ -564,8 +583,7 @@ export class CoinMeshManager {
     this.kcActive--;
 
     // Clean up highlight if present
-    this.removeHighlight(id);
-    this.hlPending.delete(id);
+    this.removeRankHighlight(id);
   }
 
   // ── Sponsor Coin Methods ──────────────────────────────────────────────
@@ -712,8 +730,7 @@ export class CoinMeshManager {
     buf.count--;
 
     // Clean up highlight if present
-    this.removeHighlight(id);
-    this.hlPending.delete(id);
+    this.removeRankHighlight(id);
   }
 
   private resizeSponsorBuffer(sponsorId: string): void {
@@ -749,110 +766,124 @@ export class CoinMeshManager {
     this.coinSponsorLookup.clear();
   }
 
-  // ── Highlight Methods ─────────────────────────────────────────────────
+  // ── Rank Highlight Methods ────────────────────────────────────────────
 
-  addHighlight(coinId: number): void {
-    if (this.hlIdToIndex.has(coinId)) return;
+  addRankHighlight(coinId: number, colorIndex: number): void {
+    if (this.coinToColorIndex.has(coinId)) return;
 
-    // Get the main mesh matrix for this coin (check both regular and key coin buffers)
+    const hl = this.rankHl[colorIndex];
+    if (!hl) return;
+
     const mainIndex = this.idToIndex.get(coinId);
     const kcIndex = this.kcIdToIndex.get(coinId);
     const srcBuffer = mainIndex !== undefined ? this.matrixBuffer : (kcIndex !== undefined ? this.kcBuffer : null);
     const srcIndex = mainIndex !== undefined ? mainIndex : kcIndex;
 
     if (srcBuffer === null || srcIndex === undefined) {
-      // Coin not yet added (coin_spawn arrives before state delta) — defer
-      this.hlPending.add(coinId);
+      this.coinToColorIndex.set(coinId, colorIndex);
+      hl.pending.add(coinId);
       return;
     }
 
-    if (this.hlActive >= this.hlCapacity) {
-      this.resizeHighlightBuffer();
+    if (hl.active >= hl.capacity) {
+      this.resizeRankHlBuffer(colorIndex);
     }
 
-    const index = this.hlActive;
-    this.hlActive++;
-    this.hlIdToIndex.set(coinId, index);
-    this.hlIndexToId[index] = coinId;
+    const index = hl.active;
+    hl.active++;
+    hl.idToIndex.set(coinId, index);
+    hl.indexToId[index] = coinId;
+    this.coinToColorIndex.set(coinId, colorIndex);
 
-    // Copy matrix from source buffer
-    this.hlBuffer.set(
+    hl.buffer.set(
       srcBuffer.subarray(srcIndex * 16, (srcIndex + 1) * 16),
       index * 16
     );
 
-    // Set timer
-    this.hlTimers.set(coinId, Date.now() + CoinMeshManager.HIGHLIGHT_DURATION);
+    hl.timers.set(coinId, Date.now() + CoinMeshManager.HIGHLIGHT_DURATION);
   }
 
-  removeHighlight(coinId: number): void {
-    const index = this.hlIdToIndex.get(coinId);
-    if (index === undefined) return;
-
-    const lastIndex = this.hlActive - 1;
-
-    if (index !== lastIndex) {
-      const lastCoinId = this.hlIndexToId[lastIndex];
-      this.hlBuffer.copyWithin(index * 16, lastIndex * 16, (lastIndex + 1) * 16);
-      this.hlIdToIndex.set(lastCoinId, index);
-      this.hlIndexToId[index] = lastCoinId;
+  removeRankHighlight(coinId: number): void {
+    const colorIndex = this.coinToColorIndex.get(coinId);
+    if (colorIndex === undefined) {
+      // Also clean from any pending sets
+      for (const hl of this.rankHl) hl.pending.delete(coinId);
+      return;
     }
 
-    this.hlIdToIndex.delete(coinId);
-    this.hlTimers.delete(coinId);
-    this.hlActive--;
+    const hl = this.rankHl[colorIndex];
+    const index = hl.idToIndex.get(coinId);
+
+    if (index !== undefined) {
+      const lastIndex = hl.active - 1;
+      if (index !== lastIndex) {
+        const lastCoinId = hl.indexToId[lastIndex];
+        hl.buffer.copyWithin(index * 16, lastIndex * 16, (lastIndex + 1) * 16);
+        hl.idToIndex.set(lastCoinId, index);
+        hl.indexToId[index] = lastCoinId;
+      }
+      hl.idToIndex.delete(coinId);
+      hl.timers.delete(coinId);
+      hl.active--;
+    }
+
+    hl.pending.delete(coinId);
+    this.coinToColorIndex.delete(coinId);
   }
 
   updateHighlights(): void {
     const now = Date.now();
 
-    // Check expired highlights
-    for (const [coinId, expiry] of this.hlTimers) {
-      if (now >= expiry) {
-        this.removeHighlight(coinId);
+    for (const hl of this.rankHl) {
+      // Expire
+      for (const [coinId, expiry] of hl.timers) {
+        if (now >= expiry) {
+          this.removeRankHighlight(coinId);
+        }
       }
-    }
 
-    // Update positions from main/key coin buffer for active highlights
-    for (const [coinId, hlIndex] of this.hlIdToIndex) {
-      const mainIndex = this.idToIndex.get(coinId);
-      const kcIndex = this.kcIdToIndex.get(coinId);
-      if (mainIndex !== undefined) {
-        this.hlBuffer.set(
-          this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
-          hlIndex * 16
-        );
-      } else if (kcIndex !== undefined) {
-        this.hlBuffer.set(
-          this.kcBuffer.subarray(kcIndex * 16, (kcIndex + 1) * 16),
-          hlIndex * 16
-        );
+      // Sync positions
+      for (const [coinId, hlIndex] of hl.idToIndex) {
+        const mainIndex = this.idToIndex.get(coinId);
+        const kcIndex = this.kcIdToIndex.get(coinId);
+        if (mainIndex !== undefined) {
+          hl.buffer.set(
+            this.matrixBuffer.subarray(mainIndex * 16, (mainIndex + 1) * 16),
+            hlIndex * 16
+          );
+        } else if (kcIndex !== undefined) {
+          hl.buffer.set(
+            this.kcBuffer.subarray(kcIndex * 16, (kcIndex + 1) * 16),
+            hlIndex * 16
+          );
+        } else {
+          this.removeRankHighlight(coinId);
+          continue;
+        }
+      }
+
+      // Push to GPU
+      if (hl.active === 0) {
+        hl.mesh.thinInstanceSetBuffer("matrix", null);
+        hl.mesh.isVisible = false;
       } else {
-        this.removeHighlight(coinId);
-        continue;
+        hl.mesh.isVisible = true;
+        const activeData = hl.buffer.subarray(0, hl.active * 16);
+        hl.mesh.thinInstanceSetBuffer("matrix", activeData, 16, false);
       }
-    }
-
-    // Update instances
-    if (this.hlActive === 0) {
-      this.highlightMesh.thinInstanceSetBuffer("matrix", null);
-      this.highlightMesh.isVisible = false;
-    } else {
-      this.highlightMesh.isVisible = true;
-      const activeData = this.hlBuffer.subarray(0, this.hlActive * 16);
-      this.highlightMesh.thinInstanceSetBuffer("matrix", activeData, 16, false);
     }
   }
 
-  private resizeHighlightBuffer(): void {
-    const newCapacity = this.hlCapacity * 2;
+  private resizeRankHlBuffer(colorIndex: number): void {
+    const hl = this.rankHl[colorIndex];
+    const newCapacity = hl.capacity * 2;
     const newBuffer = new Float32Array(newCapacity * 16);
-    newBuffer.set(this.hlBuffer);
-    this.hlBuffer = newBuffer;
+    newBuffer.set(hl.buffer);
+    hl.buffer = newBuffer;
     const newIndexToId = new Int32Array(newCapacity);
-    newIndexToId.set(this.hlIndexToId);
-    this.hlIndexToId = newIndexToId;
-    this.hlCapacity = newCapacity;
+    newIndexToId.set(hl.indexToId);
+    hl.indexToId = newIndexToId;
+    hl.capacity = newCapacity;
   }
 
   public updateInstances(): void {
@@ -996,8 +1027,10 @@ export class CoinMeshManager {
     this.prototypeMesh.dispose();
     this.keyCoinPrototype.material?.dispose();
     this.keyCoinPrototype.dispose();
-    this.highlightMesh.material?.dispose();
-    this.highlightMesh.dispose();
+    for (const hl of this.rankHl) {
+      hl.mesh.material?.dispose();
+      hl.mesh.dispose();
+    }
   }
 
   clear(): void {
@@ -1018,12 +1051,14 @@ export class CoinMeshManager {
     }
     this.updateInstances();
     // Clear highlights
-    this.hlIdToIndex.clear();
-    this.hlTimers.clear();
-    this.hlActive = 0;
-    if (this.highlightMesh) {
-      this.highlightMesh.thinInstanceSetBuffer("matrix", null);
-      this.highlightMesh.isVisible = false;
+    this.coinToColorIndex.clear();
+    for (const hl of this.rankHl) {
+      hl.idToIndex.clear();
+      hl.timers.clear();
+      hl.pending.clear();
+      hl.active = 0;
+      hl.mesh.thinInstanceSetBuffer("matrix", null);
+      hl.mesh.isVisible = false;
     }
   }
 }
