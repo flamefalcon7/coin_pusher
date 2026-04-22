@@ -659,6 +659,17 @@ export const HEAT_CONFIG = {
   REWARD_FLUSH_INTERVAL: 10000, // ms
 } as const;
 
+export const RANK_COLORS = [
+  "#FF3333", // Rank 1 — Red
+  "#FF8C00", // Rank 2 — Orange
+  "#9B30FF", // Rank 3 — Purple
+  "#3399FF", // Rank 4 — Blue
+  "#33CC33", // Rank 5 — Green
+  "#999999", // Unranked — Grey
+] as const;
+
+export const RANK_NONE = RANK_COLORS.length - 1;
+
 // Drop scheduler configuration (per-slot independent queues)
 export const DROP_SCHEDULER_CONFIG = {
   DROP_INTERVAL_TICKS: 4, // 1 drop every 4 ticks per slot = ~7.5 drops/sec/slot

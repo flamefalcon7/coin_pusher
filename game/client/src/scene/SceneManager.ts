@@ -298,8 +298,8 @@ export class SceneManager {
     this.coinManager.enableBatchAnimation(durationMs);
   }
 
-  addCoinHighlight(coinId: number): void {
-    this.coinManager.addHighlight(coinId);
+  addCoinHighlight(coinId: number, colorIndex: number): void {
+    this.coinManager.addRankHighlight(coinId, colorIndex);
   }
 
   updateCoinHighlights(): void {
