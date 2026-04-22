@@ -20,15 +20,15 @@ import { MegaspeakerPanel, type MegaspeakerMsg } from "./ui/MegaspeakerPanel";
 import { TargetingHint } from "./ui/TargetingHint";
 import { IdleWarningBanner, IdleTimeoutOverlay } from "./ui/IdleOverlay";
 import { PlayerInfo } from "./ui/PlayerInfo";
-import { SponsorBalances } from "./ui/SponsorBalances";
+// import { SponsorBalances } from "./ui/SponsorBalances"; // hidden until deposit gate
 import { TutorialOverlay, shouldShowTutorial } from "./ui/TutorialOverlay";
 import { ChestPage } from "./pages/ChestPage";
 import { DepositPage } from "./pages/DepositPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
 import { ProgressPage } from "./pages/ProgressPage";
 import { ProfilePage } from "./pages/ProfilePage";
-import { SponsorPage } from "./pages/SponsorPage";
-import { AdminSponsorsPage } from "./pages/AdminSponsorsPage";
+// import { SponsorPage } from "./pages/SponsorPage"; // hidden until deposit gate
+// import { AdminSponsorsPage } from "./pages/AdminSponsorsPage"; // hidden until deposit gate
 
 import { SceneManager } from "./scene/SceneManager";
 import { BonusDropVFX } from "./scene/BonusDropVFX";
@@ -159,7 +159,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   // Top-5 leaderboard userId -> rank color index (0-4)
   const top5MapRef = useRef<Map<string, number>>(new Map());
   const bonusDropVFXRef = useRef<BonusDropVFX | null>(null);
-  const [sponsorBalances, setSponsorBalances] = useState<Array<{ campaign_id: string; token_symbol: string; balance: string }>>([]);
+  const [_sponsorBalances, setSponsorBalances] = useState<Array<{ campaign_id: string; token_symbol: string; balance: string }>>([]);
   const lastRequestedAmount = useRef(0);
   const [balance, _setBalance] = useState<string>(account?.balance_play ?? "0");
   const [balanceCash, _setBalanceCash] = useState<string>(account?.balance_cash ?? "0");
@@ -995,8 +995,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   const showWithdrawPage = location.pathname === '/withdraw';
   const showProgressPage = location.pathname === '/progress';
   const showProfilePage = location.pathname === '/profile';
-  const showSponsorPage = location.pathname === '/sponsor';
-  const showAdminSponsors = location.pathname === '/admin/sponsors';
+  // const showSponsorPage = location.pathname === '/sponsor'; // hidden until deposit gate
+  // const showAdminSponsors = location.pathname === '/admin/sponsors'; // hidden until deposit gate
 
   const handleCashBalanceChange = useCallback((newBalance: string) => {
     setBalanceCash(newBalance);

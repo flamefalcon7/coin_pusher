@@ -44,7 +44,7 @@ function truncAddr(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-export function PlayerInfo({ balancePlay, balanceCash, displayName, address, role, onLogout }: PlayerInfoProps) {
+export function PlayerInfo({ balancePlay, balanceCash, displayName, address, role: _role, onLogout }: PlayerInfoProps) {
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
