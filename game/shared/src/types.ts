@@ -668,7 +668,7 @@ export const RANK_COLORS = [
   "#999999", // Unranked — Grey
 ] as const;
 
-export const RANK_NONE = 5;
+export const RANK_NONE = RANK_COLORS.length - 1;
 
 // Drop scheduler configuration (per-slot independent queues)
 export const DROP_SCHEDULER_CONFIG = {
