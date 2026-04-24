@@ -73,7 +73,11 @@ services:
       BACKEND_DB_NAME: ${DB_NAME}
       BACKEND_DB_DISABLE_TLS: "true"
       BACKEND_WALLET_SEED: ${WALLET_SEED}
-      BACKEND_EXECUTOR_RPCURL: ${ALCHEMY_RPC_URL:-https://mainnet.base.org}
+      # Executor uses multi-provider RPC fallback. Write-path (SendTransaction)
+      # deliberately excludes public RPC — dropped/stuck broadcasts on a shared
+      # public endpoint are worse than a brief outage. Both vars must be set.
+      BACKEND_EXECUTOR_RPCURLS: "${ALCHEMY_RPC_URL:-},${ANKR_RPC_URL:-}"
+      BACKEND_EXECUTOR_RPCTIMEOUT: ${EXECUTOR_RPC_TIMEOUT:-3s}
       BACKEND_EXECUTOR_USDC_CONTRACT: ${EXECUTOR_USDC_CONTRACT:-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913}
     depends_on:
       postgres: { condition: service_healthy }
@@ -97,9 +101,12 @@ services:
       BACKEND_DB_NAME: ${DB_NAME}
       BACKEND_DB_DISABLE_TLS: "true"
       BACKEND_WALLET_SEED: ${WALLET_SEED}
-      BACKEND_INDEXER_RPCURL: ${ALCHEMY_RPC_URL:-https://mainnet.base.org}
+      # Indexer uses multi-provider RPC fallback. Read-only, so public RPC
+      # first is fine and spares Alchemy/Ankr quota.
+      BACKEND_INDEXER_RPCURLS: "${BASE_PUBLIC_RPC_URL:-https://mainnet.base.org},${ALCHEMY_RPC_URL:-},${ANKR_RPC_URL:-}"
+      BACKEND_INDEXER_RPCTIMEOUT: ${INDEXER_RPC_TIMEOUT:-3s}
       BACKEND_INDEXER_USDC_CONTRACT: ${INDEXER_USDC_CONTRACT:-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913}
-      BACKEND_INDEXER_BLOCK_RANGE: "10"
+      BACKEND_INDEXER_BLOCK_RANGE: ${INDEXER_BLOCK_RANGE:-50}
       BACKEND_INDEXER_POLL_INTERVAL: ${INDEXER_POLL_INTERVAL:-2s}
     depends_on:
       postgres: { condition: service_healthy }

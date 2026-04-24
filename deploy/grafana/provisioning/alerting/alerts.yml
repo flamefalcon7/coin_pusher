@@ -320,6 +320,63 @@ groups:
         annotations:
           summary: "Global RTP ratio outside safe range — possible exploit or physics bug"
 
+      # --- RPC fallback health (added 2026-04-24) ---
+      # These alerts fire when the multi-provider ethrpc client cannot
+      # successfully complete any call — primary + all fallbacks failing.
+      # Metric emitted by backend/foundation/ethrpc/.
+
+      - uid: p0-indexer-rpc-all-down
+        title: "P0: Indexer — ALL RPC providers failing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              # `or on() vector(0)` ensures the ok-rate series exists even when
+              # no ok-result samples have been produced yet (e.g., after a
+              # fresh container restart), so the "0 ok AND >0 total" pattern
+              # fires correctly instead of evaluating to empty.
+              expr: (sum(rate(coinpusher_rpc_attempts_total{service="indexer"}[5m])) > 0) and ((sum(rate(coinpusher_rpc_attempts_total{service="indexer",result="ok"}[5m])) or on() vector(0)) == 0)
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Indexer: every RPC provider (public + Alchemy + Ankr) is returning errors. Deposits are NOT being indexed."
+
+      - uid: p0-executor-rpc-all-down
+        title: "P0: Executor — ALL RPC providers failing"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: (sum(rate(coinpusher_rpc_attempts_total{service="executor"}[5m])) > 0) and ((sum(rate(coinpusher_rpc_attempts_total{service="executor",result="ok"}[5m])) or on() vector(0)) == 0)
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 2m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Executor: every RPC provider (Alchemy + Ankr) is returning errors. Withdrawals are stuck."
+
   - orgId: 1
     name: P1 - Urgent
     folder: Alerts
@@ -662,6 +719,98 @@ groups:
           severity: P1
         annotations:
           summary: "Indexer poll errors sustained — deposits may be delayed"
+
+      # --- RPC per-provider degradation (added 2026-04-24) ---
+      # Fires when a specific provider is failing >30% of calls over 10min.
+      # Fallback is absorbing the impact but the degraded provider should
+      # be investigated / swapped before other providers also degrade.
+
+      - uid: p1-rpc-provider-degraded
+        title: "P1: RPC provider degraded (fallback absorbing)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              # Only rate-limit, timeout, and network errors count as
+              # "degraded" — `result="other"` includes app-level things
+              # like CallContract reverts and nonce-rejections that don't
+              # indicate provider health.
+              expr: (sum by (service, provider) (rate(coinpusher_rpc_attempts_total{result=~"rate_limited|timeout|network"}[10m]))) / (sum by (service, provider) (rate(coinpusher_rpc_attempts_total[10m]))) > 0.3
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 10m
+        labels:
+          severity: P1
+        annotations:
+          summary: "RPC provider failure rate >30% for 10min — fallback is carrying load, investigate before other providers also degrade"
+
+      - uid: p1-executor-rpc-fallback-active
+        title: "P1: Executor using fallback RPC provider"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              # Fires only when Alchemy (primary) ok-rate is zero AND Ankr
+              # (fallback) ok-rate > 0. The `or on() vector(0)` guards the
+              # alchemy series: if Alchemy isn't configured at all there's
+              # no series, which would otherwise leave the expression
+              # empty (alert never fires). The providers-configured alert
+              # below catches the "alchemy entirely missing" case.
+              expr: ((sum(rate(coinpusher_rpc_attempts_total{service="executor",provider="alchemy",result="ok"}[5m])) or on() vector(0)) == 0) and (sum(rate(coinpusher_rpc_attempts_total{service="executor",provider="ankr",result="ok"}[5m])) > 0)
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Executor is successfully using Ankr (fallback) for 5min while Alchemy (primary) has zero ok-rate — investigate primary"
+
+      - uid: p1-rpc-providers-degraded-set
+        title: "P1: RPC provider set degraded at startup"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              # Fires when fewer providers dialed successfully than were
+              # configured (e.g., an env var went missing or a URL is bad).
+              # This is the exact "container Up, actually broken" pattern:
+              # service is running but with reduced redundancy and no other
+              # signal until the remaining providers also fail.
+              expr: coinpusher_rpc_providers_configured < coinpusher_rpc_providers_intended
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "RPC provider set degraded on {{ $labels.service }} — fewer providers dialed than configured. Check env vars and provider URLs."
 
 
   - orgId: 1
