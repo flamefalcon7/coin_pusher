@@ -29,21 +29,23 @@ type HeatEngine struct {
 	mu      sync.RWMutex
 	players map[uuid.UUID]*PlayerHeat
 
-	halfLife   float64 // 180s
-	lambda     float64 // ln(2) / halfLife
-	alpha      float64 // 0.7 diminishing returns
-	guaranteed float64 // 0.05 per active player
+	halfLife               float64 // 180s
+	lambda                 float64 // ln(2) / halfLife
+	alpha                  float64 // 0.7 diminishing returns
+	guaranteed             float64 // 0.05 per active player
+	floorActivityThreshold float64 // 10 coins — decayed heat at/above this gets full floor; below, scaled linearly to 0
 }
 
 // New constructs a HeatEngine with default parameters.
 func New() *HeatEngine {
 	halfLife := 180.0
 	return &HeatEngine{
-		players:    make(map[uuid.UUID]*PlayerHeat),
-		halfLife:   halfLife,
-		lambda:     math.Log(2) / halfLife,
-		alpha:      0.7,
-		guaranteed: 0.05,
+		players:                make(map[uuid.UUID]*PlayerHeat),
+		halfLife:               halfLife,
+		lambda:                 math.Log(2) / halfLife,
+		alpha:                  0.7,
+		guaranteed:             0.05,
+		floorActivityThreshold: 10.0,
 	}
 }
 
@@ -110,6 +112,7 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 	var active []entry
 	var totalEff float64
 	var realCount float64
+	var sumRealActivity float64 // sum of min(1, decayed/threshold) across real players
 
 	for id, ph := range h.players {
 		dt := now.Sub(ph.LastUpdated).Seconds()
@@ -123,6 +126,7 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 		totalEff += eff
 		if !ph.IsBot {
 			realCount++
+			sumRealActivity += math.Min(1.0, decayed/h.floorActivityThreshold)
 		}
 	}
 
@@ -135,22 +139,27 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 	// but they remain in totalEff so the competitive pool is apportioned
 	// correctly across all active participants.
 	//
-	// The smooth-guarantee cap uses realCount (not total) to keep the real
-	// player baseline independent of bot population: with 2 real + many
-	// bots, real players still get the full 0.05 floor each.
+	// Floor is activity-scaled by decayed heat: a real player's floor is
+	// guaranteed * min(1, decayed/threshold). This prevents an AFK player
+	// (heat decays past threshold but not yet pruned) from passively
+	// collecting 5% of bot-generated drops for up to 40 minutes.
+	//
+	// The per-player guaranteed cap uses realCount (not total) to keep the
+	// real baseline independent of bot population: with 2 real + many bots,
+	// active real players still get the full 0.05 floor each.
 	var guaranteed float64
-	var floorTotal float64
 	if realCount > 0 {
 		guaranteed = math.Min(h.guaranteed, 1.0/(2.0*realCount))
-		floorTotal = realCount * guaranteed
 	}
+	floorTotal := guaranteed * sumRealActivity
 	competitivePool := 1.0 - floorTotal
 
 	shares := make([]PlayerShare, 0, len(active))
 	for _, e := range active {
 		share := competitivePool * (e.eff / totalEff)
 		if !e.isBot {
-			share += guaranteed
+			activity := math.Min(1.0, e.raw/h.floorActivityThreshold)
+			share += guaranteed * activity
 		}
 		shares = append(shares, PlayerShare{
 			UserID:  e.id,
@@ -182,7 +191,9 @@ func (h *HeatEngine) DistributeFrontEdgeDrop(coinCount int) map[uuid.UUID]float6
 // intermediate []PlayerShare slice. Single RLock, no allocation, single pass.
 //
 // Bots are excluded from the guaranteed floor (5% or 1/(2*realCount), whichever
-// smaller) but still participate in the competitive pool via totalEff.
+// smaller) but still participate in the competitive pool via totalEff. Floor
+// is activity-scaled per real player by min(1, decayed/floorActivityThreshold);
+// see GetShares for rationale.
 func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -203,9 +214,10 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	targetEff := math.Pow(targetDecayed, h.alpha)
 	targetIsBot := ph.IsBot
 
-	// Compute total effective heat and count real (non-bot) players.
+	// Compute total effective heat, real count, and summed real-player activity.
 	var totalEff float64
 	var realCount float64
+	var sumRealActivity float64
 	for _, p := range h.players {
 		dt := now.Sub(p.LastUpdated).Seconds()
 		decayed := p.RawHeat * math.Exp(-h.lambda*dt)
@@ -215,6 +227,7 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 		totalEff += math.Pow(decayed, h.alpha)
 		if !p.IsBot {
 			realCount++
+			sumRealActivity += math.Min(1.0, decayed/h.floorActivityThreshold)
 		}
 	}
 
@@ -223,16 +236,16 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	}
 
 	var guaranteed float64
-	var floorTotal float64
 	if realCount > 0 {
 		guaranteed = math.Min(h.guaranteed, 1.0/(2.0*realCount))
-		floorTotal = realCount * guaranteed
 	}
+	floorTotal := guaranteed * sumRealActivity
 	competitivePool := 1.0 - floorTotal
 
 	share := competitivePool * (targetEff / totalEff)
 	if !targetIsBot {
-		share += guaranteed
+		activity := math.Min(1.0, targetDecayed/h.floorActivityThreshold)
+		share += guaranteed * activity
 	}
 	return share
 }

@@ -112,7 +112,7 @@ func TestShares_Whale(t *testing.T) {
 	small := uuid.New()
 
 	h.AddHeat(whale, 10000)
-	h.AddHeat(small, 1)
+	h.AddHeat(small, 10) // at/above floorActivityThreshold: full floor
 
 	shares := h.GetShares()
 	if len(shares) != 2 {
@@ -133,9 +133,77 @@ func TestShares_Whale(t *testing.T) {
 		t.Errorf("whale share (%f) should be > small share (%f)", whaleShare, smallShare)
 	}
 
-	// Small player should get at least the guaranteed minimum.
+	// Small player at/above activity threshold gets full guaranteed floor.
 	if smallShare < h.guaranteed {
 		t.Errorf("small player share = %f, want >= guaranteed %f", smallShare, h.guaranteed)
+	}
+}
+
+// TestShares_FloorScalesWithActivity verifies that the guaranteed floor is
+// activity-gated by decayed heat. An AFK real player whose heat has decayed
+// below floorActivityThreshold must not absorb a full 5% of drops while bots
+// continue to generate activity.
+func TestShares_FloorScalesWithActivity(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	active := uuid.New()
+	afk := uuid.New()
+
+	h.AddHeat(active, 100) // well above threshold → full floor
+	h.AddHeat(afk, 1)      // 1/10 of threshold → 10% of floor
+
+	shares := h.GetShares()
+	var activeShare, afkShare float64
+	for _, s := range shares {
+		if s.UserID == active {
+			activeShare = s.Share
+		} else {
+			afkShare = s.Share
+		}
+	}
+
+	// Active player's floor component is full 0.05.
+	// AFK player's floor component is 0.05 * (1/10) = 0.005.
+	// Competitive pool = 1 - 0.05 - 0.005 = 0.945, split by eff ratio.
+	// AFK's total share must be well below a passive 0.05.
+	if afkShare >= h.guaranteed {
+		t.Errorf("AFK player share = %f, must be < full guaranteed floor %f", afkShare, h.guaranteed)
+	}
+	if activeShare <= afkShare {
+		t.Errorf("active (%f) should beat AFK (%f)", activeShare, afkShare)
+	}
+}
+
+// TestShares_FloorZeroWhenHeatBarelyAboveNoise verifies that a real player
+// with near-prune-threshold heat (e.g., last coin inserted 30+ minutes ago)
+// receives a vanishingly small floor, effectively 0.
+func TestShares_FloorZeroWhenHeatBarelyAboveNoise(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+	active := uuid.New()
+	ghost := uuid.New()
+
+	// Active player with heat = 100 (full floor).
+	h.AddHeat(active, 100)
+	// Ghost: 1 coin inserted, then decayed down near the prune floor of 0.01.
+	// Simulate by directly setting RawHeat to 0.02 (just above prune, far
+	// below activity threshold of 10).
+	h.AddHeat(ghost, 1)
+	h.mu.Lock()
+	h.players[ghost].RawHeat = 0.02
+	h.mu.Unlock()
+
+	shares := h.GetShares()
+	for _, s := range shares {
+		if s.UserID == ghost {
+			// Ghost's floor = 0.05 * (0.02/10) = 0.0001. Total share must
+			// be tiny — well under 1%.
+			if s.Share >= 0.01 {
+				t.Errorf("ghost share = %f, expected near-zero (<0.01)", s.Share)
+			}
+		}
 	}
 }
 
