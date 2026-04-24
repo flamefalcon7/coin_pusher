@@ -48,10 +48,14 @@ type config struct {
 		Seed string `conf:"mask"`
 	}
 	Indexer struct {
-		// RPCURLs is a comma-separated list of RPC endpoints tried in
+		// RPCURLS is a comma-separated list of RPC endpoints tried in
 		// order. On any error (429, timeout, network) the client falls
 		// over to the next. See foundation/ethrpc for details.
-		RPCURLs            string        `conf:"default:https://mainnet.base.org"`
+		// Field must be all-caps "RPCURLS" (not "RPCURLs") so ardanlabs
+		// conf maps it to env var BACKEND_INDEXER_RPCURLS — a lowercase
+		// `s` causes conf to split at the case boundary and silently
+		// fall back to the default (production bug 2026-04-24).
+		RPCURLS            string        `conf:"default:https://mainnet.base.org"`
 		RPCTimeout         time.Duration `conf:"default:3s"`
 		USDCContract       string        `conf:"default:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"`
 		PollInterval       time.Duration `conf:"default:10s"`
@@ -186,7 +190,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Ethereum Client (multi-provider fallback)
-	rpcURLs := parseRPCURLs(cfg.Indexer.RPCURLs)
+	rpcURLs := parseRPCURLs(cfg.Indexer.RPCURLS)
 	if len(rpcURLs) == 0 {
 		return fmt.Errorf("BACKEND_INDEXER_RPCURLS must list at least one URL")
 	}

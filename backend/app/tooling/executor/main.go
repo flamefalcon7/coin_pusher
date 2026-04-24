@@ -52,11 +52,13 @@ type config struct {
 		Seed string `conf:"mask"`
 	}
 	Executor struct {
-		// RPCURLs is a comma-separated list of RPC endpoints tried in
+		// RPCURLS is a comma-separated list of RPC endpoints tried in
 		// order. Executor intentionally excludes the public RPC from its
 		// priority list — write-path calls (SendTransaction) need
 		// reliable endpoints. See foundation/ethrpc for fallback details.
-		RPCURLs        string        `conf:"default:https://mainnet.base.org"`
+		// Field must be all-caps "RPCURLS" (not "RPCURLs"); see the
+		// indexer config for why (env var mapping).
+		RPCURLS        string        `conf:"default:https://mainnet.base.org"`
 		RPCTimeout     time.Duration `conf:"default:3s"`
 		USDCContract   string        `conf:"default:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"`
 		HotWalletIndex int           `conf:"default:999999"`
@@ -238,7 +240,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Ethereum Client (multi-provider fallback)
-	rpcURLs := parseRPCURLs(cfg.Executor.RPCURLs)
+	rpcURLs := parseRPCURLs(cfg.Executor.RPCURLS)
 	if len(rpcURLs) == 0 {
 		return fmt.Errorf("BACKEND_EXECUTOR_RPCURLS must list at least one URL")
 	}
