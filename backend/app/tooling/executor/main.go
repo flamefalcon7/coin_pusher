@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,6 +32,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 	ethutil "github.com/flamefalcon/coin-pusher/backend/foundation/ethereum"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/ethrpc"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/logger"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/wallet"
@@ -51,7 +52,12 @@ type config struct {
 		Seed string `conf:"mask"`
 	}
 	Executor struct {
-		RPCURL         string        `conf:"default:https://mainnet.base.org"`
+		// RPCURLs is a comma-separated list of RPC endpoints tried in
+		// order. Executor intentionally excludes the public RPC from its
+		// priority list — write-path calls (SendTransaction) need
+		// reliable endpoints. See foundation/ethrpc for fallback details.
+		RPCURLs        string        `conf:"default:https://mainnet.base.org"`
+		RPCTimeout     time.Duration `conf:"default:3s"`
 		USDCContract   string        `conf:"default:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"`
 		HotWalletIndex int           `conf:"default:999999"`
 		PollInterval   time.Duration `conf:"default:15s"`
@@ -231,10 +237,16 @@ func run() error {
 	)
 
 	// -------------------------------------------------------------------------
-	// Ethereum Client
-	client, err := ethclient.Dial(cfg.Executor.RPCURL)
+	// Ethereum Client (multi-provider fallback)
+	rpcURLs := parseRPCURLs(cfg.Executor.RPCURLs)
+	if len(rpcURLs) == 0 {
+		return fmt.Errorf("BACKEND_EXECUTOR_RPCURLS must list at least one URL")
+	}
+	ctxDial, cancelDial := context.WithTimeout(context.Background(), 10*time.Second)
+	client, err := ethrpc.New(ctxDial, log, "executor", rpcURLs, cfg.Executor.RPCTimeout)
+	cancelDial()
 	if err != nil {
-		return fmt.Errorf("connecting to rpc: %w", err)
+		return fmt.Errorf("initializing rpc client: %w", err)
 	}
 	defer client.Close()
 
@@ -244,7 +256,7 @@ func run() error {
 	maxGasPriceWei := gweiToWei(cfg.Executor.MaxGasPrice)
 
 	log.Infow("executor starting",
-		"rpc", cfg.Executor.RPCURL,
+		"providers", client.ProviderNames(),
 		"hot_wallet", hotAddr,
 		"usdc_contract", cfg.Executor.USDCContract,
 		"poll_interval", cfg.Executor.PollInterval,
@@ -253,6 +265,7 @@ func run() error {
 		"gas_fund_amount", cfg.Executor.GasFundAmount,
 		"max_gas_price_gwei", cfg.Executor.MaxGasPrice,
 		"batch_size", cfg.Executor.BatchSize,
+		"rpc_timeout", cfg.Executor.RPCTimeout,
 	)
 
 	hotWalletInfo.WithLabelValues(hotAddr).Set(1)
@@ -324,6 +337,23 @@ func run() error {
 }
 
 // =========================================================================
+// Config helpers
+// =========================================================================
+
+// parseRPCURLs splits a comma-separated RPC URL list, trimming whitespace
+// and dropping empty entries.
+func parseRPCURLs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// =========================================================================
 // Recovery
 // =========================================================================
 
@@ -332,7 +362,7 @@ func run() error {
 func recoverSubmittedWithdrawals(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	receiptTimeout time.Duration,
 ) error {
@@ -399,7 +429,7 @@ func recoverSubmittedWithdrawals(
 func recoverStuckSweeps(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	receiptTimeout time.Duration,
 ) error {
@@ -498,7 +528,7 @@ func recoverStuckSweeps(
 func processWithdrawals(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	hotKey *ecdsa.PrivateKey,
 	hotAddr string,
@@ -552,7 +582,7 @@ func processWithdrawals(
 func executeWithdrawal(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	hotKey *ecdsa.PrivateKey,
 	hotAddress common.Address,
@@ -707,7 +737,7 @@ func executeWithdrawal(
 func processSweeps(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	w *wallet.Wallet,
 	hotKey *ecdsa.PrivateKey,
@@ -783,7 +813,7 @@ func processSweeps(
 func executeSweep(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	w *wallet.Wallet,
 	hotKey *ecdsa.PrivateKey,
@@ -1012,7 +1042,7 @@ func executeSweep(
 func collectHotWalletMetrics(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	hotAddress common.Address,
 	usdcAddr common.Address,
 	depositCore *deposit.Core,
@@ -1083,7 +1113,7 @@ func collectHotWalletMetrics(
 // Helpers
 // =========================================================================
 
-func waitForReceipt(ctx context.Context, client *ethclient.Client, txHash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+func waitForReceipt(ctx context.Context, client *ethrpc.Client, txHash common.Hash, timeout time.Duration) (*types.Receipt, error) {
 	deadline := time.Now().Add(timeout)
 	for {
 		receipt, err := client.TransactionReceipt(ctx, txHash)
@@ -1105,7 +1135,7 @@ func waitForReceipt(ctx context.Context, client *ethclient.Client, txHash common
 
 // gasTooExpensive checks if the current base fee exceeds the configured max.
 // Returns true (skip this tick) if gas is too expensive or if the check fails.
-func gasTooExpensive(ctx context.Context, log *zap.SugaredLogger, client *ethclient.Client, maxGasPriceWei *big.Int) bool {
+func gasTooExpensive(ctx context.Context, log *zap.SugaredLogger, client *ethrpc.Client, maxGasPriceWei *big.Int) bool {
 	rpcStart := time.Now()
 	head, err := client.HeaderByNumber(ctx, nil)
 	executorRPCLatency.Observe(time.Since(rpcStart).Seconds())

@@ -15,7 +15,6 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -30,6 +29,7 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/ethrpc"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/logger"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/wallet"
 )
@@ -48,7 +48,11 @@ type config struct {
 		Seed string `conf:"mask"`
 	}
 	Indexer struct {
-		RPCURL             string        `conf:"default:https://mainnet.base.org"`
+		// RPCURLs is a comma-separated list of RPC endpoints tried in
+		// order. On any error (429, timeout, network) the client falls
+		// over to the next. See foundation/ethrpc for details.
+		RPCURLs            string        `conf:"default:https://mainnet.base.org"`
+		RPCTimeout         time.Duration `conf:"default:3s"`
 		USDCContract       string        `conf:"default:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"`
 		PollInterval       time.Duration `conf:"default:10s"`
 		StartBlock         int64         `conf:"default:0"`
@@ -181,17 +185,24 @@ func run() error {
 	)
 
 	// -------------------------------------------------------------------------
-	// Ethereum Client
-	client, err := ethclient.Dial(cfg.Indexer.RPCURL)
+	// Ethereum Client (multi-provider fallback)
+	rpcURLs := parseRPCURLs(cfg.Indexer.RPCURLs)
+	if len(rpcURLs) == 0 {
+		return fmt.Errorf("BACKEND_INDEXER_RPCURLS must list at least one URL")
+	}
+	ctxDial, cancelDial := context.WithTimeout(context.Background(), 10*time.Second)
+	client, err := ethrpc.New(ctxDial, log, "indexer", rpcURLs, cfg.Indexer.RPCTimeout)
+	cancelDial()
 	if err != nil {
-		return fmt.Errorf("connecting to rpc: %w", err)
+		return fmt.Errorf("initializing rpc client: %w", err)
 	}
 	defer client.Close()
 
 	log.Infow("indexer starting",
-		"rpc", cfg.Indexer.RPCURL,
+		"providers", client.ProviderNames(),
 		"usdc", cfg.Indexer.USDCContract,
 		"poll_interval", cfg.Indexer.PollInterval,
+		"rpc_timeout", cfg.Indexer.RPCTimeout,
 	)
 
 	// -------------------------------------------------------------------------
@@ -248,10 +259,23 @@ func run() error {
 	}
 }
 
+// parseRPCURLs splits a comma-separated RPC URL list, trimming whitespace
+// and dropping empty entries.
+func parseRPCURLs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func pollOnce(
 	ctx context.Context,
 	log *zap.SugaredLogger,
-	client *ethclient.Client,
+	client *ethrpc.Client,
 	depositCore *deposit.Core,
 	usdcAddr common.Address,
 	lastBlock *int64,
