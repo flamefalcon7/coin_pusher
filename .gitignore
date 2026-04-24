@@ -55,6 +55,8 @@ logs/
 # Go build artifacts
 backend/api
 backend/admin
+backend/indexer
+backend/executor
 
 # ssl
 backend/zarf/keys/
