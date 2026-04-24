@@ -630,7 +630,7 @@ export const SUPER_PUSH_CONFIG = {
 
 // Slot machine configuration
 export const SLOT_MACHINE_CONFIG = {
-  TRIGGER_COUNT: 10, // coins through left wall to trigger spin
+  TRIGGER_COUNT: 50, // coins through left wall to trigger spin
   BONUS_AMOUNT: 100, // coins awarded on jackpot
   X_THRESHOLD: -0.5, // coins with x < this count as left-wall drops
   Z_MAX_THRESHOLD: 0.55, // coins through left opening have Z < 0.5; front-edge coins have Z > 0.7
@@ -642,7 +642,7 @@ export const SLOT_MACHINE_CONFIG = {
 
 // Jackpot wheel configuration
 export const JACKPOT_WHEEL_CONFIG = {
-  TRIGGER_COUNT: 10, // coins through right wall to trigger spin
+  TRIGGER_COUNT: 50, // coins through right wall to trigger spin
   SEGMENTS: 6,
   SEGMENT_REWARDS: [3, 3, 3, 6, 6, 9] as const,
   SPIN_DURATION: 4000, // ms total spin animation time
