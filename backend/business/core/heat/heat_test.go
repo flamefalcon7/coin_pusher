@@ -140,13 +140,13 @@ func TestShares_Whale(t *testing.T) {
 }
 
 // TestShares_FloorScalesWithActivity verifies that the guaranteed floor is
-// activity-gated by decayed heat. An AFK real player whose heat has decayed
-// below floorActivityThreshold must not absorb a full 5% of drops while bots
-// continue to generate activity.
+// activity-gated by decayed heat when the floor is enabled. The production
+// default is floor=0 (heatsim showed any non-zero floor opens a heartbeat
+// exploit), so this test opts in via WithGuaranteed.
 func TestShares_FloorScalesWithActivity(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	h := New(WithGuaranteed(0.05))
 	active := uuid.New()
 	afk := uuid.New()
 
@@ -177,11 +177,11 @@ func TestShares_FloorScalesWithActivity(t *testing.T) {
 
 // TestShares_FloorZeroWhenHeatBarelyAboveNoise verifies that a real player
 // with near-prune-threshold heat (e.g., last coin inserted 30+ minutes ago)
-// receives a vanishingly small floor, effectively 0.
+// receives a vanishingly small floor, effectively 0. Uses opt-in floor.
 func TestShares_FloorZeroWhenHeatBarelyAboveNoise(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	h := New(WithGuaranteed(0.05))
 	active := uuid.New()
 	ghost := uuid.New()
 
@@ -350,7 +350,9 @@ func TestGetShareForUser(t *testing.T) {
 func TestShares_OneRealOneBot(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	// Opt-in floor: tests the floor's bot/real distinction. Default (floor=0)
+	// gives equal shares to real and bot — covered by TestShares_NoFloorDefault.
+	h := New(WithGuaranteed(0.05))
 	real := uuid.New()
 	bot := uuid.New()
 
@@ -391,7 +393,7 @@ func TestShares_OneRealOneBot(t *testing.T) {
 func TestShares_TwoRealThreeBots(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	h := New(WithGuaranteed(0.05))
 	reals := []uuid.UUID{uuid.New(), uuid.New()}
 	bots := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 
@@ -455,7 +457,7 @@ func TestShares_AllBotsNoReal(t *testing.T) {
 func TestShares_BotDoesNotDiluteRealFloor(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	h := New(WithGuaranteed(0.05))
 	real := uuid.New()
 	h.AddHeat(real, 100)
 
@@ -506,7 +508,7 @@ func TestAddHeat_LastWriteWinsFlag(t *testing.T) {
 func TestAddHeatForBot_AfterPruneRestoresFlag(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	h := New(WithGuaranteed(0.05))
 	bot := uuid.New()
 
 	// Set bot heat to decay below threshold.
@@ -551,7 +553,7 @@ func TestAddHeatForBot_AfterPruneRestoresFlag(t *testing.T) {
 func TestDistributeFrontEdgeDrop_MixedRealAndBot(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	h := New(WithGuaranteed(0.05))
 	real := uuid.New()
 	bot := uuid.New()
 
@@ -574,5 +576,39 @@ func TestDistributeFrontEdgeDrop_MixedRealAndBot(t *testing.T) {
 	}
 	if math.Abs(dist[bot]-47.5) > 1 {
 		t.Errorf("bot got %f, want ~47.5", dist[bot])
+	}
+}
+
+// TestShares_NoFloorDefault locks in the production default: with
+// guaranteed=0, real and bot players with equal heat receive equal shares.
+// This is the contract that closes the heartbeat-exploit attack surface.
+func TestShares_NoFloorDefault(t *testing.T) {
+	t.Parallel()
+
+	h := New() // default: floor disabled
+	real := uuid.New()
+	bot := uuid.New()
+
+	h.AddHeat(real, 100)
+	h.AddHeatForBot(bot, 100)
+
+	shares := h.GetShares()
+	if len(shares) != 2 {
+		t.Fatalf("expected 2 shares, got %d", len(shares))
+	}
+
+	for _, s := range shares {
+		if math.Abs(s.Share-0.5) > 0.001 {
+			t.Errorf("%s share = %f, want 0.5 (no-floor default treats real and bot equally)", s.UserID, s.Share)
+		}
+	}
+
+	// Single-real-player share via GetShareForUser must also be unaffected
+	// by floor: 1 of 1 active = 1.0.
+	h2 := New()
+	solo := uuid.New()
+	h2.AddHeat(solo, 100)
+	if got := h2.GetShareForUser(solo); math.Abs(got-1.0) > 0.001 {
+		t.Errorf("solo real share = %f, want 1.0", got)
 	}
 }

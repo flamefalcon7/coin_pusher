@@ -57,6 +57,7 @@ backend/api
 backend/admin
 backend/indexer
 backend/executor
+backend/heatsim
 
 # ssl
 backend/zarf/keys/

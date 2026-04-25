@@ -10,13 +10,13 @@ import (
 
 // PlayerHeat tracks a single player's raw heat value and when it was last updated.
 //
-// IsBot flags the player as a server-controlled NPC account (role='bot'). Bot
-// entries are included in the heat denominator (so the competitive pool
-// correctly accounts for their raw heat) but are excluded from the guaranteed
-// floor distribution — otherwise 5 active bots would absorb 25% of rewards
-// with near-zero investment. The flag is maintained last-write-wins by
-// AddHeat (sets false) and AddHeatForBot (sets true); role authority lives at
-// the caller, not sticky in the heat map.
+// IsBot flags the player as a server-controlled NPC account (role='bot'). The
+// flag is dormant under the production default (guaranteed=0, floor disabled)
+// — every player's share is purely proportional to effective heat regardless
+// of role. The flag still gates the floor mechanism when it is opted into via
+// WithGuaranteed(>0), in which case bot entries are excluded from the floor
+// while remaining in the competitive denominator. The flag is maintained
+// last-write-wins by AddHeat (sets false) and AddHeatForBot (sets true).
 type PlayerHeat struct {
 	RawHeat     float64
 	LastUpdated time.Time
@@ -34,19 +34,61 @@ type HeatEngine struct {
 	alpha                  float64 // 0.7 diminishing returns
 	guaranteed             float64 // 0.05 per active player
 	floorActivityThreshold float64 // 10 coins — decayed heat at/above this gets full floor; below, scaled linearly to 0
+	now                    func() time.Time
 }
 
-// New constructs a HeatEngine with default parameters.
-func New() *HeatEngine {
+// Option mutates a HeatEngine during construction. Used by simulations and
+// tests to override defaults without a wider config surface.
+type Option func(*HeatEngine)
+
+// WithGuaranteed overrides the per-real-player guaranteed floor share. The
+// production default is 0 (floor disabled). Pass a positive value (e.g.,
+// 0.05) to study the floor's behavior in simulations or regression tests.
+func WithGuaranteed(g float64) Option {
+	return func(h *HeatEngine) { h.guaranteed = g }
+}
+
+// WithHalfLife overrides the heat half-life in seconds (default 180).
+func WithHalfLife(seconds float64) Option {
+	return func(h *HeatEngine) {
+		h.halfLife = seconds
+		h.lambda = math.Log(2) / seconds
+	}
+}
+
+// WithAlpha overrides the diminishing-returns exponent (default 0.7).
+func WithAlpha(a float64) Option {
+	return func(h *HeatEngine) { h.alpha = a }
+}
+
+// WithFloorThreshold overrides the activity scaling threshold (default 10).
+func WithFloorThreshold(t float64) Option {
+	return func(h *HeatEngine) { h.floorActivityThreshold = t }
+}
+
+// New constructs a HeatEngine with default parameters and the system clock.
+func New(opts ...Option) *HeatEngine {
+	return NewWithClock(time.Now, opts...)
+}
+
+// NewWithClock constructs a HeatEngine with an injectable clock. Used by
+// simulations and time-sensitive tests so virtual time can drive decay
+// without sleeping. Production code should use New().
+func NewWithClock(now func() time.Time, opts ...Option) *HeatEngine {
 	halfLife := 180.0
-	return &HeatEngine{
+	h := &HeatEngine{
 		players:                make(map[uuid.UUID]*PlayerHeat),
 		halfLife:               halfLife,
 		lambda:                 math.Log(2) / halfLife,
 		alpha:                  0.7,
-		guaranteed:             0.05,
+		guaranteed:             0.0, // floor disabled — heatsim showed 1c/60s heartbeat hit 156% RTP with 0.05 floor
 		floorActivityThreshold: 10.0,
+		now:                    now,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // AddHeat is called on real-player batch insert commit. It decays existing
@@ -58,8 +100,9 @@ func (h *HeatEngine) AddHeat(userID uuid.UUID, coins int) {
 }
 
 // AddHeatForBot is called on bot batch insert commit. Behaves identically to
-// AddHeat but flags the entry as IsBot=true so the share formula excludes
-// this player from the 5% guaranteed floor. If a real user ever receives
+// AddHeat but flags the entry as IsBot=true. Under the production default
+// (floor disabled) the flag is dormant; if WithGuaranteed(>0) is passed the
+// flag excludes the player from the floor. If a real user ever receives
 // AddHeatForBot by mistake, the next AddHeat call flips the flag back — no
 // permanent corruption.
 func (h *HeatEngine) AddHeatForBot(userID uuid.UUID, coins int) {
@@ -70,7 +113,7 @@ func (h *HeatEngine) addHeatInternal(userID uuid.UUID, coins int, isBot bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	now := time.Now()
+	now := h.now()
 	ph, ok := h.players[userID]
 	if !ok {
 		ph = &PlayerHeat{}
@@ -101,7 +144,7 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	now := time.Now()
+	now := h.now()
 
 	type entry struct {
 		id    uuid.UUID
@@ -134,19 +177,19 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 		return nil
 	}
 
-	// Guaranteed floor is applied to non-bot (real) players only. Bots are
-	// excluded so they don't absorb reward share with near-zero investment,
-	// but they remain in totalEff so the competitive pool is apportioned
-	// correctly across all active participants.
+	// Guaranteed floor: under the production default h.guaranteed=0 every
+	// branch below resolves to floorTotal=0 and the share is purely
+	// proportional to effective heat. The floor branches remain wired up so
+	// that simulations / tests can opt into the floor via WithGuaranteed(>0)
+	// and study its behavior — but heatsim showed that any non-zero floor
+	// opens a 1c/60s heartbeat exploit (RTP ~157%) when bots provide drop
+	// activity, so it must stay 0 in prod. See app/tooling/heatsim/.
 	//
-	// Floor is activity-scaled by decayed heat: a real player's floor is
-	// guaranteed * min(1, decayed/threshold). This prevents an AFK player
-	// (heat decays past threshold but not yet pruned) from passively
-	// collecting 5% of bot-generated drops for up to 40 minutes.
-	//
-	// The per-player guaranteed cap uses realCount (not total) to keep the
-	// real baseline independent of bot population: with 2 real + many bots,
-	// active real players still get the full 0.05 floor each.
+	// When opted into: floor is applied to non-bot players only and is
+	// activity-scaled by decayed heat (guaranteed * min(1, decayed/threshold))
+	// so AFK players don't passively collect drops. The per-player guaranteed
+	// cap uses realCount, not total, so bot population doesn't dilute the
+	// real baseline.
 	var guaranteed float64
 	if realCount > 0 {
 		guaranteed = math.Min(h.guaranteed, 1.0/(2.0*realCount))
@@ -190,15 +233,13 @@ func (h *HeatEngine) DistributeFrontEdgeDrop(coinCount int) map[uuid.UUID]float6
 // Inlines the share computation for a single user without building the
 // intermediate []PlayerShare slice. Single RLock, no allocation, single pass.
 //
-// Bots are excluded from the guaranteed floor (5% or 1/(2*realCount), whichever
-// smaller) but still participate in the competitive pool via totalEff. Floor
-// is activity-scaled per real player by min(1, decayed/floorActivityThreshold);
-// see GetShares for rationale.
+// Production default has the floor disabled (h.guaranteed=0); see GetShares
+// for full rationale on why and on the opt-in floor's bot/activity logic.
 func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	now := time.Now()
+	now := h.now()
 
 	// First check if the target user has meaningful heat.
 	ph, ok := h.players[userID]
@@ -255,7 +296,7 @@ func (h *HeatEngine) Prune() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	now := time.Now()
+	now := h.now()
 	for id, ph := range h.players {
 		dt := now.Sub(ph.LastUpdated).Seconds()
 		decayed := ph.RawHeat * math.Exp(-h.lambda*dt)
