@@ -827,7 +827,9 @@ groups:
         condition: C
         data:
           - refId: A
-            relativeTimeRange: { from: 0, to: 0 }
+            # SQL uses its own NOW() - INTERVAL '24 hours', so this range
+            # only matters to Grafana's validator. Use 600s nominal.
+            relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: postgres
             model:
               format: table
@@ -846,7 +848,7 @@ groups:
                 FROM activity
                 WHERE coins_inserted >= 100 AND cash_earned > coins_inserted
           - refId: C
-            relativeTimeRange: { from: 0, to: 0 }
+            relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: "__expr__"
             model:
               type: threshold
