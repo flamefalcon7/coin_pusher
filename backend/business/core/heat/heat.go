@@ -17,14 +17,34 @@ import (
 // WithGuaranteed(>0), in which case bot entries are excluded from the floor
 // while remaining in the competitive denominator. The flag is maintained
 // last-write-wins by AddHeat (sets false) and AddHeatForBot (sets true).
+//
+// LastTickerSnapshot records HeatEngine.coinTicker at the moment LastUpdated
+// was set. Activity-driven decay reads (coinTicker - LastTickerSnapshot) to
+// learn how many coins OTHERS have inserted since this player was last
+// touched — own inserts don't count because the snapshot is taken AFTER
+// own coins are added to the ticker.
 type PlayerHeat struct {
-	RawHeat     float64
-	LastUpdated time.Time
-	IsBot       bool
+	RawHeat            float64
+	LastUpdated        time.Time
+	LastTickerSnapshot float64
+	IsBot              bool
 }
 
 // HeatEngine manages per-player heat and computes share distributions.
 // It is concurrent-safe.
+//
+// Decay model: each player's RawHeat decays by max(λ_time*dt_sec,
+// λ_coin*dt_coins_others) — whichever erodes faster wins. The time term is
+// the classic exponential decay; the coin term is "activity-driven decay"
+// that erases AFK players' shares when others (real or bot) keep pushing
+// coins in. Without the activity term, a player who inserts a small amount
+// and walks away keeps a stale share for ~30 minutes (one half-life times
+// log(threshold/raw)/log(2)) regardless of how much wealth flows through
+// the pool meanwhile — which is the c1505470 leak class.
+//
+// Default coin half-life (lambdaCoin) is 0 in production until calibrated
+// via simulator. Set WithCoinHalfLife(N) to enable: every N coins inserted
+// by OTHER players halves any given player's RawHeat (independent of time).
 type HeatEngine struct {
 	mu      sync.RWMutex
 	players map[uuid.UUID]*PlayerHeat
@@ -32,8 +52,10 @@ type HeatEngine struct {
 	halfLife               float64 // 180s
 	lambda                 float64 // ln(2) / halfLife
 	alpha                  float64 // 0.7 diminishing returns
-	guaranteed             float64 // 0.05 per active player
+	guaranteed             float64 // 0 disables floor; see WithGuaranteed
 	floorActivityThreshold float64 // 10 coins — decayed heat at/above this gets full floor; below, scaled linearly to 0
+	coinTicker             float64 // monotonically increasing total coins inserted by anyone
+	lambdaCoin             float64 // ln(2) / coinHalfLife. 0 disables activity-driven decay.
 	now                    func() time.Time
 }
 
@@ -64,6 +86,21 @@ func WithAlpha(a float64) Option {
 // WithFloorThreshold overrides the activity scaling threshold (default 10).
 func WithFloorThreshold(t float64) Option {
 	return func(h *HeatEngine) { h.floorActivityThreshold = t }
+}
+
+// WithCoinHalfLife enables activity-driven decay. Every `coins` coins
+// inserted by OTHER players halves a given player's heat, independent of
+// time. Set to 0 to disable (default — pure time-based decay). Combined
+// with the time half-life via max(λ_time*dt_sec, λ_coin*dt_coins_others),
+// so whichever erodes heat faster wins.
+func WithCoinHalfLife(coins float64) Option {
+	return func(h *HeatEngine) {
+		if coins <= 0 {
+			h.lambdaCoin = 0
+		} else {
+			h.lambdaCoin = math.Log(2) / coins
+		}
+	}
 }
 
 // New constructs a HeatEngine with default parameters and the system clock.
@@ -116,19 +153,45 @@ func (h *HeatEngine) addHeatInternal(userID uuid.UUID, coins int, isBot bool) {
 	now := h.now()
 	ph, ok := h.players[userID]
 	if !ok {
-		ph = &PlayerHeat{}
+		ph = &PlayerHeat{LastTickerSnapshot: h.coinTicker}
 		h.players[userID] = ph
 	}
 
-	// Decay existing heat before adding.
-	dt := now.Sub(ph.LastUpdated).Seconds()
-	if dt > 0 && ph.RawHeat > 0 {
-		ph.RawHeat *= math.Exp(-h.lambda * dt)
-	}
+	// Decay existing heat before adding (time + activity, whichever is larger).
+	ph.RawHeat = h.decayedLocked(ph, now)
 
 	ph.RawHeat += float64(coins)
 	ph.LastUpdated = now
 	ph.IsBot = isBot
+
+	// Bump global ticker AFTER decay so own contribution doesn't decay self;
+	// snapshot AFTER bump so next read measures only OTHERS' inserts.
+	h.coinTicker += float64(coins)
+	ph.LastTickerSnapshot = h.coinTicker
+}
+
+// decayedLocked returns ph.RawHeat after applying max(time-decay,
+// activity-decay) up to (now, h.coinTicker). Caller must hold h.mu (read
+// or write). Returns 0 when raw heat is non-positive.
+func (h *HeatEngine) decayedLocked(ph *PlayerHeat, now time.Time) float64 {
+	if ph.RawHeat <= 0 {
+		return 0
+	}
+	dtSec := now.Sub(ph.LastUpdated).Seconds()
+	if dtSec < 0 {
+		dtSec = 0
+	}
+	decayExponent := h.lambda * dtSec
+	if h.lambdaCoin > 0 {
+		dtCoins := h.coinTicker - ph.LastTickerSnapshot
+		if dtCoins < 0 {
+			dtCoins = 0
+		}
+		if act := h.lambdaCoin * dtCoins; act > decayExponent {
+			decayExponent = act
+		}
+	}
+	return ph.RawHeat * math.Exp(-decayExponent)
 }
 
 // PlayerShare represents a single player's heat share for external consumption.
@@ -158,8 +221,7 @@ func (h *HeatEngine) GetShares() []PlayerShare {
 	var sumRealActivity float64 // sum of min(1, decayed/threshold) across real players
 
 	for id, ph := range h.players {
-		dt := now.Sub(ph.LastUpdated).Seconds()
-		decayed := ph.RawHeat * math.Exp(-h.lambda*dt)
+		decayed := h.decayedLocked(ph, now)
 		if decayed < 0.01 {
 			continue // prune negligible heat
 		}
@@ -246,8 +308,7 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	if !ok {
 		return 0
 	}
-	dt := now.Sub(ph.LastUpdated).Seconds()
-	targetDecayed := ph.RawHeat * math.Exp(-h.lambda*dt)
+	targetDecayed := h.decayedLocked(ph, now)
 	if targetDecayed < 0.01 {
 		return 0
 	}
@@ -260,8 +321,7 @@ func (h *HeatEngine) GetShareForUser(userID uuid.UUID) float64 {
 	var realCount float64
 	var sumRealActivity float64
 	for _, p := range h.players {
-		dt := now.Sub(p.LastUpdated).Seconds()
-		decayed := p.RawHeat * math.Exp(-h.lambda*dt)
+		decayed := h.decayedLocked(p, now)
 		if decayed < 0.01 {
 			continue
 		}
@@ -298,9 +358,7 @@ func (h *HeatEngine) Prune() {
 
 	now := h.now()
 	for id, ph := range h.players {
-		dt := now.Sub(ph.LastUpdated).Seconds()
-		decayed := ph.RawHeat * math.Exp(-h.lambda*dt)
-		if decayed < 0.01 {
+		if h.decayedLocked(ph, now) < 0.01 {
 			delete(h.players, id)
 		}
 	}

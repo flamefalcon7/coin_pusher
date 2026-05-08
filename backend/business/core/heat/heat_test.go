@@ -612,3 +612,140 @@ func TestShares_NoFloorDefault(t *testing.T) {
 		t.Errorf("solo real share = %f, want 1.0", got)
 	}
 }
+
+// --- Activity-driven decay (WithCoinHalfLife) ---------------------------
+
+// TestActivityDecay_OthersInsertsErodeOwnHeat verifies the core promise of
+// activity-driven decay: when other players keep inserting, an idle player's
+// heat decays by max(time, activity) — and with a small coin-half-life the
+// activity term dominates within a short wall-clock window.
+func TestActivityDecay_OthersInsertsErodeOwnHeat(t *testing.T) {
+	t.Parallel()
+
+	h := New(WithCoinHalfLife(30))
+	a := uuid.New()
+	b := uuid.New()
+
+	h.AddHeat(a, 10)
+	h.AddHeat(b, 10)
+
+	// B inserts 100 more coins. A's heat must decay via activity by
+	// (ln2/30)*100 ≈ 2.31 → exp(-2.31) ≈ 0.099, so A's decayed ≈ 0.99.
+	// Time-only decay over the same near-zero dt would leave A near 10.
+	h.AddHeat(b, 100)
+
+	shares := h.GetShares()
+	var decayedA float64
+	for _, s := range shares {
+		if s.UserID == a {
+			decayedA = s.RawHeat
+		}
+	}
+
+	if decayedA == 0 {
+		t.Fatalf("A's heat fully pruned; expected non-zero but small")
+	}
+	if decayedA > 2.0 {
+		t.Errorf("A decayed heat = %f, want < 2.0 (activity decay should kick in)", decayedA)
+	}
+	if decayedA < 0.5 {
+		t.Errorf("A decayed heat = %f, want > 0.5 (not over-decayed past expected ~0.99)", decayedA)
+	}
+}
+
+// TestActivityDecay_OwnInsertsDontSelfDecay verifies snapshot-after-increment:
+// a player's own coin inserts MUST NOT decay their own heat. Without this,
+// any continuous-investing player (heartbeat, constant-low) would self-cancel
+// on each insert and eventually run out of heat to invest into.
+func TestActivityDecay_OwnInsertsDontSelfDecay(t *testing.T) {
+	t.Parallel()
+
+	h := New(WithCoinHalfLife(30))
+	a := uuid.New()
+
+	h.AddHeat(a, 100)
+	h.AddHeat(a, 100)
+	h.AddHeat(a, 100)
+
+	h.mu.RLock()
+	raw := h.players[a].RawHeat
+	h.mu.RUnlock()
+
+	// Own three 100-coin inserts in fast succession should leave raw ≈ 300.
+	// Time decay over near-zero dt is negligible; activity decay must be 0
+	// because the only inserts in the ticker are A's own.
+	if raw < 290 {
+		t.Errorf("A raw = %f after 3×100 own inserts, want ≈ 300 (own inserts must not self-decay)", raw)
+	}
+}
+
+// TestActivityDecay_NewPlayerSnapshotInit verifies that a brand-new player
+// added mid-simulation initializes their LastTickerSnapshot to the current
+// ticker value, so they don't see "all coins inserted before they joined"
+// as activity-decay against themselves on first read.
+func TestActivityDecay_NewPlayerSnapshotInit(t *testing.T) {
+	t.Parallel()
+
+	h := New(WithCoinHalfLife(30))
+	a := uuid.New()
+	b := uuid.New()
+
+	// A inserts 100 coins; ticker becomes 100. B does not exist yet.
+	h.AddHeat(a, 100)
+
+	// B's first-ever insert. After the call, B's snapshot must be 150
+	// (post-own-insert), not 0 — otherwise the next read would treat all
+	// 150 prior coins as "others' decay" against B's freshly-added 50.
+	h.AddHeat(b, 50)
+
+	h.mu.RLock()
+	bSnapshot := h.players[b].LastTickerSnapshot
+	bRaw := h.players[b].RawHeat
+	h.mu.RUnlock()
+
+	if bSnapshot != 150 {
+		t.Errorf("B snapshot = %f, want 150 (ticker after B's own insert)", bSnapshot)
+	}
+	if bRaw < 49 || bRaw > 51 {
+		t.Errorf("B raw = %f after first insert of 50, want ≈ 50 (no self-decay from prior history)", bRaw)
+	}
+}
+
+// TestActivityDecay_ComposesWithFloor verifies activity-driven decay and the
+// guaranteed floor compose without double-counting. A real player's heat
+// decays via activity, then the floor mechanic computes from the decayed
+// value. Shares must still sum to 1.
+func TestActivityDecay_ComposesWithFloor(t *testing.T) {
+	t.Parallel()
+
+	h := New(WithCoinHalfLife(30), WithGuaranteed(0.05))
+	real := uuid.New()
+	bot := uuid.New()
+
+	h.AddHeat(real, 50)
+	h.AddHeatForBot(bot, 50)
+	h.AddHeatForBot(bot, 100) // pushes activity decay onto real
+
+	shares := h.GetShares()
+	if len(shares) != 2 {
+		t.Fatalf("expected 2 shares, got %d", len(shares))
+	}
+
+	var realShare, botShare float64
+	for _, s := range shares {
+		if s.UserID == real {
+			realShare = s.Share
+		} else {
+			botShare = s.Share
+		}
+	}
+
+	if sum := realShare + botShare; math.Abs(sum-1.0) > 0.001 {
+		t.Errorf("shares sum = %f, want 1.0", sum)
+	}
+	// Bot has ~150 effective heat (no self-decay); real has ~1.55 (activity-eroded).
+	// Even with the 5% floor boost, bot's competitive lead must dominate.
+	if realShare >= botShare {
+		t.Errorf("real %f should have less share than bot %f after activity-decay erosion", realShare, botShare)
+	}
+}
