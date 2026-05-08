@@ -167,6 +167,11 @@ services:
       GF_ALERTING_ENABLED: "false"
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+      # Read-only Postgres password for the RTP dashboard datasource. Role
+      # is created by schema.sql migration; operator sets the password
+      # once post-deploy with ALTER ROLE. See
+      # deploy/grafana/provisioning/datasources/postgres.yml.
+      GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro

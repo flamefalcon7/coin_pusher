@@ -448,3 +448,22 @@ CREATE TABLE IF NOT EXISTS bot_paused_accounts (
     account_id      UUID          PRIMARY KEY REFERENCES accounts(account_id),
     paused_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
+
+-- ==========================================================================
+-- 21. grafana_ro role (read-only access for Grafana RTP dashboard / alert)
+-- ==========================================================================
+-- Role created without password by migration; operator sets password
+-- post-deploy via:
+--   docker exec coin_pusher-postgres-1 psql -U postgres -d coinpusher \
+--     -c "ALTER ROLE grafana_ro WITH PASSWORD '$GRAFANA_DB_PASSWORD'"
+-- This keeps secrets out of git while letting the migration be idempotent.
+-- Grants are minimum-privilege: SELECT only on accounting_logs and accounts.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'grafana_ro') THEN
+        CREATE ROLE grafana_ro LOGIN;
+    END IF;
+END $$;
+GRANT CONNECT ON DATABASE coinpusher TO grafana_ro;
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+GRANT SELECT ON accounting_logs, accounts TO grafana_ro;

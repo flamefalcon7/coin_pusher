@@ -812,6 +812,53 @@ groups:
         annotations:
           summary: "RPC provider set degraded on {{ $labels.service }} — fewer providers dialed than configured. Check env vars and provider URLs."
 
+      # --- Per-user RTP exploitation (added 2026-05-08) ---
+      # Fires when at least one real user has 24h RTP > 100% with >= 100
+      # coins inserted. RTP > 100% means the user is extracting more cash
+      # via heat distribution than they invested via inserts — exactly the
+      # leak class the c1505470 incident exposed. The 100-coin floor
+      # filters drive-by noise (visit-once users with tiny inserts that
+      # naturally have wide RTP variance). Investigate immediately and
+      # consider flipping bot kill_switch=on if exploitation confirmed.
+      # See docs/runbooks/bot-reenable.md for response procedure.
+
+      - uid: p1-real-user-rtp-over-100pct
+        title: "P1: Real user RTP > 100% over 24h"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: postgres
+            model:
+              format: table
+              rawSql: |
+                WITH activity AS (
+                  SELECT a.account_id,
+                    SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted,
+                    SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned
+                  FROM accounting_logs al
+                  JOIN accounts a ON a.account_id = al.account_id
+                  WHERE al.created_at > NOW() - INTERVAL '24 hours'
+                    AND a.role <> 'bot'
+                  GROUP BY a.account_id
+                )
+                SELECT COUNT(*)::int AS leaks
+                FROM activity
+                WHERE coins_inserted >= 100 AND cash_earned > coins_inserted
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Real user RTP > 100% over 24h — heat-formula exploitation suspected. Investigate via Economy RTP dashboard. If confirmed, flip `admin bot kill-switch on` immediately and post-mortem before re-enabling. Runbook: docs/runbooks/bot-reenable.md"
+
 
   - orgId: 1
     name: P2 - Important

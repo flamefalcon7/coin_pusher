@@ -1,0 +1,28 @@
+apiVersion: 1
+
+# Read-only Postgres datasource for the per-user RTP economy dashboard and
+# alert (deploy/grafana/dashboards/economy-rtp.json,
+# deploy/grafana/provisioning/alerting/alerts.yml#p1-real-user-rtp-over-100pct).
+#
+# The grafana_ro role is created by schema.sql migration with no password.
+# The operator sets the password once post-deploy:
+#   docker exec coin_pusher-postgres-1 psql -U postgres -d coinpusher \
+#     -c "ALTER ROLE grafana_ro WITH PASSWORD '$GRAFANA_DB_PASSWORD'"
+# Then sets GRAFANA_DB_PASSWORD in /opt/coin_pusher/.env and restarts grafana.
+
+datasources:
+  - name: Postgres
+    type: postgres
+    uid: postgres
+    access: proxy
+    url: postgres:5432
+    database: coinpusher
+    user: grafana_ro
+    secureJsonData:
+      password: "${GRAFANA_DB_PASSWORD}"
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    isDefault: false
+    editable: false

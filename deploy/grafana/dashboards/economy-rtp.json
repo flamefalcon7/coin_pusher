@@ -1,0 +1,118 @@
+{
+  "uid": "economy-rtp",
+  "title": "Coin Pusher - Economy RTP",
+  "tags": ["coinpusher", "economy"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Per-User RTP (last 24h)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "description": "Top real users by 24h RTP. RTP = sum(GAME_REWARD CASH amount) / sum(GAME_INSERT amount). Filtered to users with >= 100 coins inserted to suppress drive-by noise. RTP > 100% means the user is extracting more than they invested via the heat formula — investigate immediately.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "right" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "rtp_pct" }, "properties": [{ "id": "unit", "value": "percent" }, { "id": "custom.cellOptions", "value": { "type": "color-background" } }] }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "id": 1,
+      "title": "Top real users by 24h RTP",
+      "type": "table",
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH activity AS (SELECT a.account_id, COALESCE(a.display_name, '') AS display_name, SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted, SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND a.role <> 'bot' GROUP BY a.account_id, a.display_name) SELECT account_id, display_name, coins_inserted, cash_earned, (cash_earned / NULLIF(coins_inserted, 0) * 100)::numeric(8,2) AS rtp_pct FROM activity WHERE coins_inserted >= 100 ORDER BY rtp_pct DESC NULLS LAST LIMIT 20"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "description": "Count of real users with 24h RTP > 100% AND >= 100 coins inserted. Healthy = 0. Anything > 0 fires the P1 alert.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+      "id": 2,
+      "title": "Users above 100% RTP (24h)",
+      "type": "stat",
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH activity AS (SELECT a.account_id, SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted, SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND a.role <> 'bot' GROUP BY a.account_id) SELECT COUNT(*)::int AS leaks FROM activity WHERE coins_inserted >= 100 AND cash_earned > coins_inserted"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "description": "Aggregate RTP across all real users in the last 24h. Σ rewards / Σ inserts. Healthy band: 30-70%. Above 80% means the formula is bleeding wealth out of the bot pool faster than the tuning anticipated.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 100 }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        }
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 5 },
+      "id": 3,
+      "title": "Aggregate real-player RTP (24h)",
+      "type": "stat",
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) / NULLIF(SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END), 0) * 100, 0)::numeric(8,2) AS aggregate_rtp_pct FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND a.role <> 'bot'"
+        }
+      ]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "version": 1
+}
