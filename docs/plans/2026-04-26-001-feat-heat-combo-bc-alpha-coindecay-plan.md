@@ -1,7 +1,7 @@
 ---
 title: "feat: Heat combo (B+C) — α=0.95 + activity-driven decay"
 type: feat
-status: active
+status: completed
 date: 2026-04-26
 ---
 
