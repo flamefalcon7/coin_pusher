@@ -47,6 +47,21 @@ Services Machine                          Game Machine
 - Indexer: block lag, cursor, deposits processed, RPC latency
 - Executor: withdrawals processed/failed, sweeps, gas price, RPC latency
 
+### Economy RTP (`economy-rtp`)
+- Top-20 real users by 24h RTP (table, color-coded by threshold)
+- Count of real users with 24h RTP > 100% (alert source)
+- Aggregate real-player RTP across last 24h
+- Sourced from PostgreSQL `accounting_logs` via the read-only `grafana_ro` role.
+- Powers the `p1-real-user-rtp-over-100pct` alert.
+- Used during bot re-enable per [`docs/runbooks/bot-reenable.md`](runbooks/bot-reenable.md).
+
+## Datasources
+
+| Name | Type | URL | Notes |
+|------|------|-----|-------|
+| Prometheus | prometheus | `http://prometheus:9090` | Default; metrics scrape (15s, 30d retention) |
+| Postgres | postgres (grafana-postgresql-datasource) | `postgres:5432` | Read-only `grafana_ro` role; used by Economy RTP dashboard. Password set via `GRAFANA_DB_PASSWORD` env var; role created by `schema.sql` migration. |
+
 ## Alert Tiers
 
 ### P0 — Critical (eval 1min, Telegram repeat 15min)
