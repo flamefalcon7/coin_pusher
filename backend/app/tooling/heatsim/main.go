@@ -434,11 +434,14 @@ func scenarioD() scenarioPlan {
 
 func main() {
 	var (
+		// CLI defaults track heat.go's New() defaults (combo: B+C). Override
+		// any flag to study a single-mechanism alternative or the legacy
+		// (pre-combo) behavior.
 		guaranteed   = flag.Float64("guaranteed", 0.0, "per-real guaranteed floor share (PROD default 0)")
 		halfLife     = flag.Float64("half-life", 180, "heat half-life seconds")
-		alpha        = flag.Float64("alpha", 0.7, "diminishing-returns exponent")
+		alpha        = flag.Float64("alpha", 0.95, "diminishing-returns exponent (combo default 0.95; legacy 0.7)")
 		threshold    = flag.Float64("floor-threshold", 10, "decayed-heat threshold for full floor")
-		coinHalfLife = flag.Float64("coin-half-life", 0, "activity-driven decay: coins from others to halve heat. 0 disables.")
+		coinHalfLife = flag.Float64("coin-half-life", 30, "activity-driven decay: coins from others to halve heat. 0 disables. (combo default 30)")
 		seed         = flag.Int64("seed", 42, "RNG seed for reproducibility")
 		drop         = flag.Float64("drop-rate", 1.0, "front-edge coins per simulated second")
 		scenario     = flag.String("scenario", "all", "scenario: A | B | C | D | all")

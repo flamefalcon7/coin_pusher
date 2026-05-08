@@ -85,7 +85,12 @@ func TestShares_SinglePlayer(t *testing.T) {
 func TestShares_EqualPlayers(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	// Opt out of activity decay: this test's intent is the equal-input
+	// equal-share invariant. Combo's default activity decay decays the
+	// first-inserter's heat when the second player inserts (order matters
+	// with activity decay), making "equal heat" an order-sensitive notion.
+	// Activity decay is independently covered by TestActivityDecay_*.
+	h := New(WithCoinHalfLife(0))
 	u1 := uuid.New()
 	u2 := uuid.New()
 
@@ -210,7 +215,8 @@ func TestShares_FloorZeroWhenHeatBarelyAboveNoise(t *testing.T) {
 func TestShares_ManyPlayers_SmoothGuaranteed(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	// Opt out of activity decay (equal-heat invariant test under floor opt-in).
+	h := New(WithCoinHalfLife(0))
 	ids := make([]uuid.UUID, 25)
 	for i := range ids {
 		ids[i] = uuid.New()
@@ -245,7 +251,9 @@ func TestShares_ManyPlayers_SmoothGuaranteed(t *testing.T) {
 func TestDistributeFrontEdgeDrop(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	// Equal-heat invariant test; opt out of activity decay (combo default)
+	// to keep both inserts equal at evaluation time.
+	h := New(WithCoinHalfLife(0))
 	u1 := uuid.New()
 	u2 := uuid.New()
 
@@ -327,7 +335,8 @@ func TestPrune_KeepsActive(t *testing.T) {
 func TestGetShareForUser(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	// Equal-heat invariant test; opt out of activity decay.
+	h := New(WithCoinHalfLife(0))
 	u1 := uuid.New()
 	u2 := uuid.New()
 
@@ -350,9 +359,12 @@ func TestGetShareForUser(t *testing.T) {
 func TestShares_OneRealOneBot(t *testing.T) {
 	t.Parallel()
 
-	// Opt-in floor: tests the floor's bot/real distinction. Default (floor=0)
-	// gives equal shares to real and bot — covered by TestShares_NoFloorDefault.
-	h := New(WithGuaranteed(0.05))
+	// Opt-in floor + opt-out of combo defaults: this test verifies the
+	// floor mechanic's bot/real distinction with specific share values
+	// (0.525 / 0.475) computed under α=0.7 + no activity decay. Combo's
+	// new defaults (α=0.95, coinHalfLife=30) shift those values, so we
+	// pin the legacy constants here to keep the assertions meaningful.
+	h := New(WithGuaranteed(0.05), WithAlpha(0.7), WithCoinHalfLife(0))
 	real := uuid.New()
 	bot := uuid.New()
 
@@ -393,7 +405,8 @@ func TestShares_OneRealOneBot(t *testing.T) {
 func TestShares_TwoRealThreeBots(t *testing.T) {
 	t.Parallel()
 
-	h := New(WithGuaranteed(0.05))
+	// Floor-mechanic test pinned to legacy constants; see TestShares_OneRealOneBot.
+	h := New(WithGuaranteed(0.05), WithAlpha(0.7), WithCoinHalfLife(0))
 	reals := []uuid.UUID{uuid.New(), uuid.New()}
 	bots := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 
@@ -434,7 +447,8 @@ func TestShares_TwoRealThreeBots(t *testing.T) {
 func TestShares_AllBotsNoReal(t *testing.T) {
 	t.Parallel()
 
-	h := New()
+	// Equal-heat invariant test; opt out of activity decay.
+	h := New(WithCoinHalfLife(0))
 	b1 := uuid.New()
 	b2 := uuid.New()
 
@@ -457,7 +471,8 @@ func TestShares_AllBotsNoReal(t *testing.T) {
 func TestShares_BotDoesNotDiluteRealFloor(t *testing.T) {
 	t.Parallel()
 
-	h := New(WithGuaranteed(0.05))
+	// Floor-mechanic test pinned to legacy constants; see TestShares_OneRealOneBot.
+	h := New(WithGuaranteed(0.05), WithAlpha(0.7), WithCoinHalfLife(0))
 	real := uuid.New()
 	h.AddHeat(real, 100)
 
@@ -508,7 +523,8 @@ func TestAddHeat_LastWriteWinsFlag(t *testing.T) {
 func TestAddHeatForBot_AfterPruneRestoresFlag(t *testing.T) {
 	t.Parallel()
 
-	h := New(WithGuaranteed(0.05))
+	// Floor-mechanic test pinned to legacy constants; see TestShares_OneRealOneBot.
+	h := New(WithGuaranteed(0.05), WithAlpha(0.7), WithCoinHalfLife(0))
 	bot := uuid.New()
 
 	// Set bot heat to decay below threshold.
@@ -553,7 +569,8 @@ func TestAddHeatForBot_AfterPruneRestoresFlag(t *testing.T) {
 func TestDistributeFrontEdgeDrop_MixedRealAndBot(t *testing.T) {
 	t.Parallel()
 
-	h := New(WithGuaranteed(0.05))
+	// Floor-mechanic test pinned to legacy constants; see TestShares_OneRealOneBot.
+	h := New(WithGuaranteed(0.05), WithAlpha(0.7), WithCoinHalfLife(0))
 	real := uuid.New()
 	bot := uuid.New()
 
@@ -579,13 +596,18 @@ func TestDistributeFrontEdgeDrop_MixedRealAndBot(t *testing.T) {
 	}
 }
 
-// TestShares_NoFloorDefault locks in the production default: with
-// guaranteed=0, real and bot players with equal heat receive equal shares.
-// This is the contract that closes the heartbeat-exploit attack surface.
+// TestShares_NoFloorDefault locks in the role-symmetry contract: with
+// guaranteed=0 (production default), the formula does not distinguish real
+// from bot. Two players with equal effective heat get equal shares.
+//
+// Activity decay (combo default) makes order matter — the first inserter's
+// heat decays when the second inserts — so we opt out of activity decay
+// here to isolate the role-equality property. Activity decay is
+// independently covered by TestActivityDecay_*.
 func TestShares_NoFloorDefault(t *testing.T) {
 	t.Parallel()
 
-	h := New() // default: floor disabled
+	h := New(WithCoinHalfLife(0))
 	real := uuid.New()
 	bot := uuid.New()
 
@@ -604,8 +626,8 @@ func TestShares_NoFloorDefault(t *testing.T) {
 	}
 
 	// Single-real-player share via GetShareForUser must also be unaffected
-	// by floor: 1 of 1 active = 1.0.
-	h2 := New()
+	// by floor or role: 1 of 1 active = 1.0.
+	h2 := New(WithCoinHalfLife(0))
 	solo := uuid.New()
 	h2.AddHeat(solo, 100)
 	if got := h2.GetShareForUser(solo); math.Abs(got-1.0) > 0.001 {
@@ -747,5 +769,69 @@ func TestActivityDecay_ComposesWithFloor(t *testing.T) {
 	// Even with the 5% floor boost, bot's competitive lead must dominate.
 	if realShare >= botShare {
 		t.Errorf("real %f should have less share than bot %f after activity-decay erosion", realShare, botShare)
+	}
+}
+
+// --- Combo defaults regression -----------------------------------------
+
+// TestNew_CombosByDefault locks in the post-2026-04-26 production defaults.
+// If anyone changes these constants without updating heatsim and re-running
+// the scenario sweep, this test breaks loudly.
+func TestNew_CombosByDefault(t *testing.T) {
+	t.Parallel()
+
+	h := New()
+
+	if math.Abs(h.alpha-0.95) > 1e-9 {
+		t.Errorf("default alpha = %f, want 0.95 (combo)", h.alpha)
+	}
+	expectedLambdaCoin := math.Log(2) / 30.0
+	if math.Abs(h.lambdaCoin-expectedLambdaCoin) > 1e-9 {
+		t.Errorf("default lambdaCoin = %f, want ln(2)/30 ≈ %f (combo)", h.lambdaCoin, expectedLambdaCoin)
+	}
+	if h.guaranteed != 0.0 {
+		t.Errorf("default guaranteed = %f, want 0 (floor disabled)", h.guaranteed)
+	}
+	if math.Abs(h.halfLife-180.0) > 1e-9 {
+		t.Errorf("default halfLife = %f, want 180 (unchanged by combo)", h.halfLife)
+	}
+}
+
+// TestActivityDecay_PushesAFKOut verifies the combo's central economic
+// promise: an AFK player whose heat sits idle must lose share faster under
+// combo defaults than under the legacy α=0.7 + lambdaCoin=0 formula, when
+// other players keep activity flowing. Demonstrates the operational claim
+// that closed the heartbeat-exploit class.
+func TestActivityDecay_PushesAFKOut(t *testing.T) {
+	t.Parallel()
+
+	// Setup helper: A inserts 100 then goes AFK; B inserts 100 coins (split
+	// across 20 small batches to look realistic). Returns A's share at the
+	// end. 100 coins from B drives A's activity-decay exponent to ln(2)*100/30
+	// ≈ 2.31 → A's decayed ≈ 9.9 under combo; under legacy A stays at ~100.
+	run := func(opts ...Option) float64 {
+		h := New(opts...)
+		a := uuid.New()
+		b := uuid.New()
+
+		h.AddHeat(a, 100)
+		for i := 0; i < 20; i++ {
+			h.AddHeat(b, 5)
+		}
+		return h.GetShareForUser(a)
+	}
+
+	combo := run() // defaults
+	legacy := run(WithAlpha(0.7), WithCoinHalfLife(0))
+
+	if combo >= legacy {
+		t.Errorf("combo share for AFK A = %f; legacy = %f. Combo must push A out faster.", combo, legacy)
+	}
+	// Hard sanity: combo should drop A meaningfully, not be a rounding tweak.
+	// Expected combo ≈ 0.10, legacy ≈ 0.50; ratio ≈ 0.2. Allow up to 0.5
+	// (50% of legacy) to leave headroom for floating-point and edge effects.
+	if combo > legacy*0.5 {
+		t.Errorf("combo (%f) should drop A's share to ≤50%% of legacy (%f); got ratio %.2f",
+			combo, legacy, combo/legacy)
 	}
 }

@@ -51,11 +51,11 @@ type HeatEngine struct {
 
 	halfLife               float64 // 180s
 	lambda                 float64 // ln(2) / halfLife
-	alpha                  float64 // 0.7 diminishing returns
+	alpha                  float64 // 0.95 diminishing returns (near-linear; heatsim-calibrated)
 	guaranteed             float64 // 0 disables floor; see WithGuaranteed
 	floorActivityThreshold float64 // 10 coins — decayed heat at/above this gets full floor; below, scaled linearly to 0
 	coinTicker             float64 // monotonically increasing total coins inserted by anyone
-	lambdaCoin             float64 // ln(2) / coinHalfLife. 0 disables activity-driven decay.
+	lambdaCoin             float64 // ln(2) / coinHalfLife (default coinHalfLife=30). 0 disables activity-driven decay.
 	now                    func() time.Time
 }
 
@@ -111,15 +111,31 @@ func New(opts ...Option) *HeatEngine {
 // NewWithClock constructs a HeatEngine with an injectable clock. Used by
 // simulations and time-sensitive tests so virtual time can drive decay
 // without sleeping. Production code should use New().
+//
+// Defaults are the "B+C combo" calibrated by heatsim against PROD bot
+// envelopes (see docs/plans/2026-04-26-001-feat-heat-combo-bc-alpha-coindecay-plan.md):
+//   - alpha=0.95: near-linear share-by-eff so 1-coin heartbeats can't
+//     extract a disproportionate share via decayed^α boosting tiny inputs.
+//   - coinHalfLife=30: every 30 coins from OTHERS halves a player's heat,
+//     pushing AFK / drive-by patterns out of share when bots or other reals
+//     keep activity flowing. halfLife (180s) stays as the safety net for
+//     low-activity regimes.
+//   - guaranteed=0: floor disabled (any non-zero floor reopens heartbeat).
+const (
+	defaultHalfLife     = 180.0
+	defaultAlpha        = 0.95
+	defaultCoinHalfLife = 30.0
+)
+
 func NewWithClock(now func() time.Time, opts ...Option) *HeatEngine {
-	halfLife := 180.0
 	h := &HeatEngine{
 		players:                make(map[uuid.UUID]*PlayerHeat),
-		halfLife:               halfLife,
-		lambda:                 math.Log(2) / halfLife,
-		alpha:                  0.7,
-		guaranteed:             0.0, // floor disabled — heatsim showed 1c/60s heartbeat hit 156% RTP with 0.05 floor
+		halfLife:               defaultHalfLife,
+		lambda:                 math.Log(2) / defaultHalfLife,
+		alpha:                  defaultAlpha,
+		guaranteed:             0.0,
 		floorActivityThreshold: 10.0,
+		lambdaCoin:             math.Log(2) / defaultCoinHalfLife,
 		now:                    now,
 	}
 	for _, opt := range opts {
