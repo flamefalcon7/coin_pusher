@@ -430,6 +430,37 @@ func scenarioD() scenarioPlan {
 	}
 }
 
+// Scenario E: 1 whale + 3 small reals (staggered 5-min visits) + 4 bots.
+// Tests the α=0.95 regime that scenarios A-D didn't model: under near-linear
+// share-by-eff, does a sustained whale crowd small players out of the share
+// distribution?
+//
+// Pass criteria (operator-judged from RTP table):
+//   - small-real RTP ≥ 20% (small players still feel rewarded)
+//   - whale RTP ≤ 70% (no monopoly)
+//   - Σ real RTP < 100% (no aggregate leak vs bot drop pool)
+//
+// Each small real visits for 5 min (10 inserts × 5 coins = 50 coins). Visits
+// stagger so each small player is alone-with-whale, not competing with other
+// small players — the worst case for whale dominance.
+func scenarioE() scenarioPlan {
+	cfg := defaultConfig()
+	cfg.durationSec = 3600
+	const smallVisitDur = 300.0 // 5 min
+	strats := []strategy{
+		{name: "whale-1000c-30s", kind: kindFixedPeriod, period: 30, coinsPerInsert: 1000, arriveAt: 0},
+		{name: "small-A-5c-30s", kind: kindFixedPeriod, period: 30, coinsPerInsert: 5, arriveAt: 0, leaveAt: smallVisitDur},
+		{name: "small-B-5c-30s", kind: kindFixedPeriod, period: 30, coinsPerInsert: 5, arriveAt: 600, leaveAt: 600 + smallVisitDur},
+		{name: "small-C-5c-30s", kind: kindFixedPeriod, period: 30, coinsPerInsert: 5, arriveAt: 1200, leaveAt: 1200 + smallVisitDur},
+	}
+	strats = append(strats, prodBots(4)...)
+	return scenarioPlan{
+		label:  "E: 1 whale (sustained) + 3 small reals (staggered 5min visits) + 4 bots, 1h",
+		strats: strats,
+		cfg:    cfg,
+	}
+}
+
 // --- Main ---------------------------------------------------------------
 
 func main() {
@@ -444,7 +475,7 @@ func main() {
 		coinHalfLife = flag.Float64("coin-half-life", 30, "activity-driven decay: coins from others to halve heat. 0 disables. (combo default 30)")
 		seed         = flag.Int64("seed", 42, "RNG seed for reproducibility")
 		drop         = flag.Float64("drop-rate", 1.0, "front-edge coins per simulated second")
-		scenario     = flag.String("scenario", "all", "scenario: A | B | C | D | all")
+		scenario     = flag.String("scenario", "all", "scenario: A | B | C | D | E | all")
 	)
 	flag.Parse()
 
@@ -494,6 +525,8 @@ func main() {
 		exec(scenarioC())
 	case "D":
 		exec(scenarioD())
+	case "E":
+		exec(scenarioE())
 	case "ALL":
 		exec(scenarioA())
 		for _, p := range scenarioB() {
@@ -501,8 +534,9 @@ func main() {
 		}
 		exec(scenarioC())
 		exec(scenarioD())
+		exec(scenarioE())
 	default:
-		fmt.Fprintf(os.Stderr, "unknown scenario %q (use A | B | C | D | all)\n", *scenario)
+		fmt.Fprintf(os.Stderr, "unknown scenario %q (use A | B | C | D | E | all)\n", *scenario)
 		os.Exit(1)
 	}
 }
