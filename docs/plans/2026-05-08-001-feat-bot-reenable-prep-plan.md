@@ -1,7 +1,7 @@
 ---
 title: "feat: Pre-bot-reenable hardening — Scenario E + RTP monitoring + ramp runbook"
 type: feat
-status: active
+status: completed
 date: 2026-05-08
 ---
 
