@@ -59,7 +59,7 @@ Crowd scale is still at PROD default `{"0":3,"1":4,"2":4,"3":3,"4":3,"5":2}` at 
 
 ```bash
 # Cap to 1 bot online regardless of real-player count.
-docker exec coin_pusher-backend-1 /bin/admin bot config crowd_scale '{"0":1,"1":1,"2":1,"3":0,"4":0,"5":0}'
+docker exec coin_pusher-backend-1 /bin/admin bot config set crowd_scale '{"0":1,"1":1,"2":1,"3":0,"4":0,"5":0}'
 
 # Verify
 docker exec coin_pusher-postgres-1 psql -U postgres -d coinpusher -c \
@@ -84,7 +84,7 @@ If criteria met → advance. If any criterion misses → see [Stop Signals & Rol
 **Time:** day 1, 24h after Phase 0. Soak: 24h.
 
 ```bash
-docker exec coin_pusher-backend-1 /bin/admin bot config crowd_scale '{"0":2,"1":2,"2":1,"3":1,"4":0,"5":0}'
+docker exec coin_pusher-backend-1 /bin/admin bot config set crowd_scale '{"0":2,"1":2,"2":1,"3":1,"4":0,"5":0}'
 ```
 
 Same advance criteria as Phase 1.
@@ -94,7 +94,7 @@ Same advance criteria as Phase 1.
 **Time:** day 2, 48h after Phase 0. Soak: 24h ongoing.
 
 ```bash
-docker exec coin_pusher-backend-1 /bin/admin bot config crowd_scale '{"0":3,"1":4,"2":4,"3":3,"4":3,"5":2}'
+docker exec coin_pusher-backend-1 /bin/admin bot config set crowd_scale '{"0":3,"1":4,"2":4,"3":3,"4":3,"5":2}'
 ```
 
 This restores the original PROD bot density. Continue watching the RTP dashboard daily for the next week before declaring "stable".
