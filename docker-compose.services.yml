@@ -116,7 +116,11 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   nginx:
-    image: nginx:1.27-alpine
+    # 1.30-alpine: current stable, contains fix for CVE-2026-42945
+    # (ngx_http_rewrite_module heap buffer overflow, CVSS 9.2, affects
+    # 0.6.27 – 1.30.0). Our config doesn't use any `rewrite` directives,
+    # so this version bump is preventative, not a hot incident response.
+    image: nginx:1.30-alpine
     restart: unless-stopped
     depends_on:
       backend: { condition: service_started }
