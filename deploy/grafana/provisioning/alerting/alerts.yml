@@ -29,6 +29,7 @@ groups:
           severity: P0
         annotations:
           summary: "API server is DOWN"
+        noDataState: OK
 
       - uid: p0-game-down
         title: "P0: Game server down"
@@ -53,6 +54,7 @@ groups:
           severity: P0
         annotations:
           summary: "Game server is DOWN"
+        noDataState: OK
 
       - uid: p0-db-pool
         title: "P0: DB pool exhausted"
@@ -77,6 +79,7 @@ groups:
           severity: P0
         annotations:
           summary: "DB connection pool >90% utilized"
+        noDataState: OK
 
       - uid: p0-nats-disconnect
         title: "P0: NATS disconnected"
@@ -101,6 +104,7 @@ groups:
           severity: P0
         annotations:
           summary: "NATS connection lost"
+        noDataState: OK
 
       - uid: p0-indexer-lag
         title: "P0: Indexer block lag >100"
@@ -125,6 +129,7 @@ groups:
           severity: P0
         annotations:
           summary: "Indexer is >100 blocks behind chain tip"
+        noDataState: OK
 
       - uid: p0-executor-failures
         title: "P0: Executor consecutive failures"
@@ -149,6 +154,7 @@ groups:
           severity: P0
         annotations:
           summary: "Executor has >5 failed withdrawals in 10min"
+        noDataState: OK
 
       # --- NEW P0 rules ---
 
@@ -175,6 +181,7 @@ groups:
           severity: P0
         annotations:
           summary: "NATS publish failed AND refund failed — player coins permanently lost"
+        noDataState: OK
 
       - uid: p0-withdrawal-refund-fail
         title: "P0: Withdrawal refund failure (funds stuck)"
@@ -199,6 +206,7 @@ groups:
           severity: P0
         annotations:
           summary: "Failed to refund a failed withdrawal — user funds stuck in limbo"
+        noDataState: OK
 
       - uid: p0-indexer-down
         title: "P0: Indexer stopped processing"
@@ -223,6 +231,7 @@ groups:
           severity: P0
         annotations:
           summary: "Indexer process is down — deposits will not be credited"
+        noDataState: OK
 
       - uid: p0-executor-down
         title: "P0: Executor stopped processing"
@@ -247,6 +256,7 @@ groups:
           severity: P0
         annotations:
           summary: "Executor process is down — withdrawals will not be processed"
+        noDataState: OK
 
       - uid: p0-indexer-no-blocks
         title: "P0: Indexer zero blocks processed in 10m"
@@ -271,6 +281,7 @@ groups:
           severity: P0
         annotations:
           summary: "Indexer is running but not processing any blocks — possible RPC or DB issue"
+        noDataState: OK
 
       - uid: p0-reward-flush-sustained
         title: "P0: Reward flush errors sustained >5m"
@@ -295,6 +306,7 @@ groups:
           severity: P0
         annotations:
           summary: "Reward flush failing repeatedly — in-memory rewards accumulating and at risk of total loss on crash"
+        noDataState: OK
 
       - uid: p0-rtp-global-anomaly
         title: "P0: Global RTP anomaly (>120% or <30%)"
@@ -319,6 +331,7 @@ groups:
           severity: P0
         annotations:
           summary: "Global RTP ratio outside safe range — possible exploit or physics bug"
+        noDataState: OK
 
       # --- RPC fallback health (added 2026-04-24) ---
       # These alerts fire when the multi-provider ethrpc client cannot
@@ -352,6 +365,7 @@ groups:
           severity: P0
         annotations:
           summary: "Indexer: every RPC provider (public + Alchemy + Ankr) is returning errors. Deposits are NOT being indexed."
+        noDataState: OK
 
       - uid: p0-executor-rpc-all-down
         title: "P0: Executor — ALL RPC providers failing"
@@ -376,6 +390,7 @@ groups:
           severity: P0
         annotations:
           summary: "Executor: every RPC provider (Alchemy + Ankr) is returning errors. Withdrawals are stuck."
+        noDataState: OK
 
   - orgId: 1
     name: P1 - Urgent
@@ -405,6 +420,7 @@ groups:
           severity: P1
         annotations:
           summary: "HTTP 5xx error rate exceeds 5%"
+        noDataState: OK
 
       - uid: p1-latency
         title: "P1: API latency p99 >2s"
@@ -429,6 +445,7 @@ groups:
           severity: P1
         annotations:
           summary: "API p99 latency exceeds 2 seconds"
+        noDataState: OK
 
       - uid: p1-ws-mass-disconnect
         title: "P1: WS mass disconnect >50%"
@@ -453,6 +470,7 @@ groups:
           severity: P1
         annotations:
           summary: "WebSocket connections dropped >50% in 5 minutes"
+        noDataState: OK
 
       - uid: p1-tick-overrun
         title: "P1: Physics frame overrun p99 >33ms"
@@ -477,6 +495,7 @@ groups:
           severity: P1
         annotations:
           summary: "Game tick p99 exceeds 33ms budget"
+        noDataState: OK
 
       - uid: p1-reward-flush-errors
         title: "P1: Reward flush errors"
@@ -501,6 +520,7 @@ groups:
           severity: P1
         annotations:
           summary: "Reward flush encountered errors"
+        noDataState: OK
 
       # --- NEW P1 rules ---
 
@@ -527,6 +547,7 @@ groups:
           severity: P1
         annotations:
           summary: "Deposit on-chain event detected but failed to credit user balance"
+        noDataState: OK
 
       - uid: p1-executor-gas-high
         title: "P1: Gas price too high for >30m"
@@ -551,6 +572,7 @@ groups:
           severity: P1
         annotations:
           summary: "Gas price exceeds max threshold for >30m — all withdrawals/sweeps blocked"
+        noDataState: OK
 
       - uid: p1-ws-snapshot-timeout
         title: "P1: WS snapshot timeouts"
@@ -575,6 +597,7 @@ groups:
           severity: P1
         annotations:
           summary: "Multiple WS snapshot timeouts — new players joining see empty game state"
+        noDataState: OK
 
       - uid: p1-auth-brute-force
         title: "P1: Auth failure spike (brute force)"
@@ -599,6 +622,7 @@ groups:
           severity: P1
         annotations:
           summary: "Auth failures >50 in 5min — possible credential stuffing or brute force attack"
+        noDataState: OK
 
       - uid: p1-executor-rpc-latency
         title: "P1: Executor RPC latency >5s"
@@ -623,6 +647,7 @@ groups:
           severity: P1
         annotations:
           summary: "Executor RPC latency p99 >5s — Base chain RPC degraded"
+        noDataState: OK
 
       - uid: p1-indexer-rpc-latency
         title: "P1: Indexer RPC latency >5s"
@@ -647,6 +672,7 @@ groups:
           severity: P1
         annotations:
           summary: "Indexer RPC latency p99 >5s — Base chain RPC degraded"
+        noDataState: OK
 
       - uid: p1-rtp-player-anomalies
         title: "P1: Multiple players with anomalous RTP"
@@ -671,6 +697,7 @@ groups:
           severity: P1
         annotations:
           summary: ">3 players with anomalous RTP detected — possible coordinated exploit"
+        noDataState: OK
 
       - uid: p1-heat-zero-players
         title: "P1: Heat engine shows 0 active players during game activity"
@@ -695,6 +722,7 @@ groups:
           severity: P1
         annotations:
           summary: "Players inserting coins but heat engine shows 0 active — rewards not distributing"
+        noDataState: OK
 
       - uid: p1-indexer-poll-errors-sustained
         title: "P1: Indexer poll errors sustained"
@@ -719,6 +747,7 @@ groups:
           severity: P1
         annotations:
           summary: "Indexer poll errors sustained — deposits may be delayed"
+        noDataState: OK
 
       # --- RPC per-provider degradation (added 2026-04-24) ---
       # Fires when a specific provider is failing >30% of calls over 10min.
@@ -752,6 +781,7 @@ groups:
           severity: P1
         annotations:
           summary: "RPC provider failure rate >30% for 10min — fallback is carrying load, investigate before other providers also degrade"
+        noDataState: OK
 
       - uid: p1-executor-rpc-fallback-active
         title: "P1: Executor using fallback RPC provider"
@@ -782,6 +812,7 @@ groups:
           severity: P1
         annotations:
           summary: "Executor is successfully using Ankr (fallback) for 5min while Alchemy (primary) has zero ok-rate — investigate primary"
+        noDataState: OK
 
       - uid: p1-rpc-providers-degraded-set
         title: "P1: RPC provider set degraded at startup"
@@ -811,6 +842,7 @@ groups:
           severity: P1
         annotations:
           summary: "RPC provider set degraded on {{ $labels.service }} — fewer providers dialed than configured. Check env vars and provider URLs."
+        noDataState: OK
 
       # --- Per-user RTP exploitation (added 2026-05-08) ---
       # Fires when at least one real user has 24h RTP > 100% with >= 100
@@ -841,7 +873,7 @@ groups:
                   FROM accounting_logs al
                   JOIN accounts a ON a.account_id = al.account_id
                   WHERE al.created_at > NOW() - INTERVAL '24 hours'
-                    AND a.role <> 'bot'
+                    AND a.role NOT IN ('bot','admin')
                   GROUP BY a.account_id
                 )
                 SELECT COUNT(*)::int AS leaks
@@ -860,6 +892,7 @@ groups:
           severity: P1
         annotations:
           summary: "Real user RTP > 100% over 24h — heat-formula exploitation suspected. Investigate via Economy RTP dashboard. If confirmed, flip `admin bot kill-switch on` immediately and post-mortem before re-enabling. Runbook: docs/runbooks/bot-reenable.md"
+        noDataState: OK
 
 
   - orgId: 1
@@ -890,6 +923,7 @@ groups:
           severity: P2
         annotations:
           summary: "Backend RSS memory exceeds 1.5GB"
+        noDataState: OK
 
       - uid: p2-ws-buffer-overflow
         title: "P2: WS message drops"
@@ -914,6 +948,7 @@ groups:
           severity: P2
         annotations:
           summary: "WebSocket send buffer overflows detected"
+        noDataState: OK
 
       - uid: p2-worker-errors
         title: "P2: Worker errors trending"
@@ -938,6 +973,7 @@ groups:
           severity: P2
         annotations:
           summary: "Worker errors exceeding threshold (>5/hour)"
+        noDataState: OK
 
       # --- NEW P2 rules ---
 
@@ -964,6 +1000,7 @@ groups:
           severity: P2
         annotations:
           summary: "Achievement/progress metric recording failing — player progress not tracking"
+        noDataState: OK
 
       - uid: p2-ws-rate-limiting
         title: "P2: WS ability rate limiting active"
@@ -988,6 +1025,7 @@ groups:
           severity: P2
         annotations:
           summary: "High rate of ability rate limiting — possible abuse or client bug"
+        noDataState: OK
 
       - uid: p2-game-memory-high
         title: "P2: Game server memory high"
@@ -1012,6 +1050,7 @@ groups:
           severity: P2
         annotations:
           summary: "Game server RSS memory exceeds 2GB — possible physics object leak"
+        noDataState: OK
 
       - uid: p2-db-pool-wait
         title: "P2: DB pool wait count increasing"
@@ -1036,6 +1075,7 @@ groups:
           severity: P2
         annotations:
           summary: "Frequent DB connection pool waits — consider increasing pool size"
+        noDataState: OK
 
       - uid: p2-executor-sweeps-failing
         title: "P2: Executor sweep failures"
@@ -1060,6 +1100,7 @@ groups:
           severity: P2
         annotations:
           summary: "No sweeps completed in 2h despite normal gas — deposit addresses may be accumulating"
+        noDataState: OK
 
       - uid: p2-nats-reconnects
         title: "P2: Frequent NATS reconnections"
@@ -1084,6 +1125,7 @@ groups:
           severity: P2
         annotations:
           summary: "NATS reconnecting frequently — possible network instability"
+        noDataState: OK
 
       - uid: p2-no-withdrawals-processed
         title: "P2: No withdrawals processed in 30m"
@@ -1108,6 +1150,7 @@ groups:
           severity: P2
         annotations:
           summary: "Executor running but no withdrawals processed in 30min — possible stuck state or no pending withdrawals"
+        noDataState: OK
 
       - uid: p2-auth-failures-trending
         title: "P2: Auth failures trending up"
@@ -1132,6 +1175,7 @@ groups:
           severity: P2
         annotations:
           summary: "Invalid token auth failures trending — possible key rotation issue or client bug"
+        noDataState: OK
 
       # --- Outbox drainer (Unit 7 of outbox plan) ---
 
@@ -1158,6 +1202,7 @@ groups:
           severity: P0
         annotations:
           summary: "Outbox drainer has not ticked in >10s — goroutine dead or LISTEN wedged"
+        noDataState: OK
 
       - uid: p0-outbox-oldest-pending
         title: "P0: Outbox oldest row stuck"
@@ -1182,6 +1227,7 @@ groups:
           severity: P0
         annotations:
           summary: "Oldest nats_outbox row stuck >60s — drainer health broken"
+        noDataState: OK
 
       - uid: p1-outbox-pending-backlog
         title: "P1: Outbox backlog growing"
@@ -1206,6 +1252,7 @@ groups:
           severity: P1
         annotations:
           summary: "Outbox backlog >1000 rows for 2min — drainer keeping up slowly"
+        noDataState: OK
 
       - uid: p1-outbox-dlq-growth
         title: "P1: Outbox DLQ growing"
@@ -1230,6 +1277,7 @@ groups:
           severity: P1
         annotations:
           summary: "Rows exiled to nats_outbox_dlq — check last_error for root cause"
+        noDataState: OK
 
       - uid: p2-outbox-publish-errors
         title: "P2: Outbox publish errors"
@@ -1254,6 +1302,7 @@ groups:
           severity: P2
         annotations:
           summary: "nats_outbox publish errors in last 5m — transient NATS blip or deeper issue"
+        noDataState: OK
 
       - uid: p2-outbox-table-bloat
         title: "P2: Outbox table bloat"
@@ -1278,6 +1327,7 @@ groups:
           severity: P2
         annotations:
           summary: "nats_outbox table >1GB — autovacuum pressure, investigate drain rate"
+        noDataState: OK
 
       - uid: p2-outbox-notify-errors
         title: "P2: Outbox pg_notify errors"
@@ -1302,6 +1352,7 @@ groups:
           severity: P2
         annotations:
           summary: "pg_notify outbox_new failing — drainer falling back to 5s tick"
+        noDataState: OK
 
       - uid: p1-outbox-bump-errors
         title: "P1: Outbox bumpAttempt errors (subject may be wedged)"
@@ -1326,6 +1377,7 @@ groups:
           severity: P1
         annotations:
           summary: "outbox bumpAttempt failing repeatedly — row retry state stuck, subject blocked, rows not advancing to DLQ"
+        noDataState: OK
 
       - uid: p2-outbox-delete-errors
         title: "P2: Outbox DELETE-after-publish errors (duplicate delivery risk)"
@@ -1350,3 +1402,4 @@ groups:
           severity: P2
         annotations:
           summary: "outbox DELETE-after-publish failing — at-least-once relying on consumer RefIDDedup; cache exhaustion risk"
+        noDataState: OK
