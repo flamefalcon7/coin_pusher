@@ -1187,7 +1187,14 @@ groups:
             relativeTimeRange: { from: 300, to: 0 }
             datasourceUid: prometheus
             model:
-              expr: time() - coinpusher_outbox_last_tick_timestamp > 10
+              # Scope to backend job: the shared metrics package registers
+              # this gauge on executor + indexer too but only backend's
+              # drainer sets it, so without the label filter those services
+              # return 0 and time() - 0 ≈ 1.7e9 always trips the alert.
+              # Threshold bumped 10s → 30s to cover Prometheus 15s scrape
+              # interval + 5s drainer tick interval; healthy ticks can
+              # naturally observe up to ~20s lag.
+              expr: time() - coinpusher_outbox_last_tick_timestamp{job="backend"} > 30
               instant: true
           - refId: C
             relativeTimeRange: { from: 300, to: 0 }
