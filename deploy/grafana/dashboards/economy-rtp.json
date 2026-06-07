@@ -43,7 +43,7 @@
           "datasource": { "type": "postgres", "uid": "postgres" },
           "refId": "A",
           "format": "table",
-          "rawSql": "WITH activity AS (SELECT a.account_id, COALESCE(a.display_name, '') AS display_name, SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted, SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND a.role NOT IN ('bot','admin') GROUP BY a.account_id, a.display_name) SELECT account_id, display_name, coins_inserted, cash_earned, (cash_earned / NULLIF(coins_inserted, 0) * 100)::numeric(8,2) AS rtp_pct FROM activity WHERE coins_inserted >= 100 ORDER BY rtp_pct DESC NULLS LAST LIMIT 20"
+          "rawSql": "WITH activity AS (SELECT a.account_id, COALESCE(a.display_name, '') AS display_name, SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted, SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND al.action_type IN ('GAME_INSERT', 'GAME_REWARD') AND a.role NOT IN ('bot','admin') GROUP BY a.account_id, a.display_name) SELECT account_id, display_name, coins_inserted, cash_earned, (cash_earned / NULLIF(coins_inserted, 0) * 100)::numeric(8,2) AS rtp_pct FROM activity WHERE coins_inserted >= 100 ORDER BY rtp_pct DESC NULLS LAST LIMIT 20"
         }
       ]
     },
@@ -72,7 +72,7 @@
           "datasource": { "type": "postgres", "uid": "postgres" },
           "refId": "A",
           "format": "table",
-          "rawSql": "WITH activity AS (SELECT a.account_id, SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted, SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND a.role NOT IN ('bot','admin') GROUP BY a.account_id) SELECT COUNT(*)::int AS leaks FROM activity WHERE coins_inserted >= 100 AND cash_earned > coins_inserted"
+          "rawSql": "WITH activity AS (SELECT a.account_id, SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END) AS coins_inserted, SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) AS cash_earned FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND al.action_type IN ('GAME_INSERT', 'GAME_REWARD') AND a.role NOT IN ('bot','admin') GROUP BY a.account_id) SELECT COUNT(*)::int AS leaks FROM activity WHERE coins_inserted >= 100 AND cash_earned > coins_inserted"
         }
       ]
     },
@@ -103,7 +103,7 @@
           "datasource": { "type": "postgres", "uid": "postgres" },
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT COALESCE(SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) / NULLIF(SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END), 0) * 100, 0)::numeric(8,2) AS aggregate_rtp_pct FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND a.role NOT IN ('bot','admin')"
+          "rawSql": "SELECT COALESCE(SUM(CASE WHEN al.action_type = 'GAME_REWARD' AND al.currency = 'CASH' THEN al.amount ELSE 0 END) / NULLIF(SUM(CASE WHEN al.action_type = 'GAME_INSERT' THEN al.amount ELSE 0 END), 0) * 100, 0)::numeric(8,2) AS aggregate_rtp_pct FROM accounting_logs al JOIN accounts a ON a.account_id = al.account_id WHERE al.created_at > NOW() - INTERVAL '24 hours' AND al.action_type IN ('GAME_INSERT', 'GAME_REWARD') AND a.role NOT IN ('bot','admin')"
         }
       ]
     }

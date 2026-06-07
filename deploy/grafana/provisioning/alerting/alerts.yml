@@ -873,6 +873,13 @@ groups:
                   FROM accounting_logs al
                   JOIN accounts a ON a.account_id = al.account_id
                   WHERE al.created_at > NOW() - INTERVAL '24 hours'
+                    -- action_type predicate lets the planner use
+                    -- idx_accounting_logs_action_created (action_type, created_at DESC)
+                    -- for an index range scan of just the last 24h, instead of a
+                    -- seq scan whose cost grows with the whole table every 5m eval.
+                    -- Semantically a no-op: the CASE sums already only count these
+                    -- two action_types; all others contribute 0.
+                    AND al.action_type IN ('GAME_INSERT', 'GAME_REWARD')
                     AND a.role NOT IN ('bot','admin')
                   GROUP BY a.account_id
                 )
