@@ -140,9 +140,19 @@ services:
   prometheus:
     image: prom/prometheus:v2.51.0
     restart: unless-stopped
+    # Cap memory so a Prometheus spike (TSDB compaction) can only kill Prometheus
+    # itself, never trigger a GLOBAL oom-killer that takes down backend/postgres.
+    # Root cause of the 2026-06-07 incident: prometheus hit 1.1GB RSS on a 2GB/0-swap
+    # box → global OOM → DNS starvation → players couldn't connect. See
+    # docs/solutions/infrastructure/. Retention trimmed 30d→15d + 512MB hard cap to
+    # shrink the working set; with swap now present this limit is a backstop, not a
+    # hair-trigger.
+    mem_limit: 900m
+    mem_reservation: 256m
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.time=15d"
+      - "--storage.tsdb.retention.size=512MB"
       - "--web.enable-lifecycle"
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
