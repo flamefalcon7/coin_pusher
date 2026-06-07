@@ -32,6 +32,18 @@ Read `docs/spec.md` for product design intent: game loop, abilities, economy, mu
 
 `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`, `component`). Relevant when implementing or debugging in documented areas. Search by grep on tags or module before starting work in an area you don't already know.
 
+## Decisions (ADR log)
+
+`docs/decisions.md` — the **why** behind non-obvious architecture / infra / tech choices, especially the alternatives we rejected (`docs/solutions/` is the "what broke + how fixed"; this is "why we chose X"). Respect `Accepted` decisions; don't reopen unless asked. Use the template at the bottom of that file; number sequentially `D-XXX`, never reuse numbers.
+
+## Decision Capture & Incident Documentation Protocol
+
+Proactively propose documentation — don't wait to be asked:
+
+- **Before implementing a non-obvious decision** (picking one tool/library/service over another; an architectural pattern; a data model / contract shape; a tradeoff or constraint; reversing a prior decision): pause, propose a short ADR for `docs/decisions.md`, confirm the text, then implement. Skip for routine naming/layout/syntax or anything already covered in `docs/spec.md`.
+- **After resolving an incident or a bug that took > 15 min** (especially infra/outages, data-integrity, cross-layer bugs): propose a `docs/solutions/<category>/` entry using the existing frontmatter convention — symptoms, root-cause chain, the diagnostic commands that worked, the fix, and watch-items. Capture corrected misdiagnoses too (they're the most valuable part).
+- **When a fix is config/infra applied to a live server**, note in the write-up whether git is the source of truth or the server has drifted, so the next deploy reconciles deliberately.
+
 ## Skills
 
 This project has agent skills in `.agents/skills/`. Before starting a task, scan the folder for available skills by listing `.agents/skills/*/SKILL.md`. Read each relevant `SKILL.md` to check its triggers and decide if it applies to the current task.
