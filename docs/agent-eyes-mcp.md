@@ -12,20 +12,28 @@ This closes the "codes blind" feedback gap (see
   capture screenshots, read the console, inspect network/perf. This is the
   agent's primary "look at the frame and the console" tool.
 
-## Babylon docs / API MCP (open choice — KTD-4)
+## Babylon docs / API MCP — decided: not wired (use pinned source instead)
 
-A Babylon docs/API-search MCP kills `@babylonjs/core@^6` API drift (guessing v6
-APIs is a top source of bugs — see the memory note on reading library source
-first). It is **deliberately not yet wired** into `.mcp.json` so a clean boot
-stays error-free. Pick one after a quick smoke test, then add it:
+**Resolution (2026-06-25, KTD-4 open question):** we deliberately do **not** wire a
+Babylon docs/API MCP. For `@babylonjs/core` API drift, the house rule "read the
+actual `node_modules` source before matching another system's behavior" is
+**strictly more accurate** here: that source is pinned to the exact installed
+version (**v6.49**), whereas every docs MCP evaluated tracks *latest*. See ADR
+**D-002** for the full reasoning.
 
-Candidates (from the plan's Open Questions):
-- official Babylon MCP suite
-- `immersiveidea/babylon-mcp`
-- `davidvanstory/babylonjs-mcp`
+Candidates evaluated and why each was rejected:
+- **`immersiveidea/babylon-mcp`** — the only real docs/API/source-search one, but no
+  npx (local clone + build), ~2GB index + 30–45 min setup, and **no version
+  pinning** → indexes latest Babylon (v8), not our v6.49 → would *introduce* drift.
+- **`davidvanstory/babylonjs-mcp`** — a *scene-control* MCP (create/delete 3D
+  objects via text), not a docs MCP; same category we rejected as a custom MCP.
+- **Context7 (`@upstash/context7-mcp`)** — viable, npx-able, version-aware general
+  docs MCP; deferred because Babylon v6 coverage is unconfirmed and the pinned
+  `node_modules` fallback already wins on accuracy.
 
-Smoke-test the docs/API-search one first (lowest risk). When chosen, add an entry
-to `.mcp.json` under `mcpServers` and re-run the verification ritual below.
+**Revisit** Context7 if it confirms Babylon v6 coverage, or if multi-library doc
+lookup (React/Vite/etc.) becomes valuable — then add it under `mcpServers` and
+re-run the verification ritual below.
 
 ## Verification ritual (manual)
 

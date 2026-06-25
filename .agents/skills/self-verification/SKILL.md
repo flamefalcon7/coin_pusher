@@ -108,9 +108,11 @@ The Chrome DevTools MCP is committed in the repo-root `.mcp.json`; setup + the
 clean-boot verification ritual are in `docs/agent-eyes-mcp.md`, and the
 per-ability GPU smoke runbook is `docs/solutions/workflow/gpu-smoke-screenshots.md`.
 
-Babylon API unsure? Query the **Babylon docs MCP** rather than guessing — guessing
-v6 APIs is a top source of drift (repo is on `@babylonjs/core@^6`). The docs-MCP
-choice is still open (see `docs/agent-eyes-mcp.md`).
+Babylon API unsure? **Read the actual `node_modules/@babylonjs/core` source** —
+it's pinned to the exact installed version (v6.49), so it can't mislead you the
+way a latest-tracking docs site can. (A Babylon docs MCP was evaluated and
+deliberately not adopted — see ADR D-002 / `docs/agent-eyes-mcp.md`.) Guessing v6
+APIs is a top source of drift.
 
 ## Definition of Done (gate before declaring complete)
 

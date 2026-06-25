@@ -68,27 +68,41 @@ powerful option but is high-maintenance to build and keep current with engine ve
 
 ### Decision
 Commit a repo-root `.mcp.json` declaring the **Chrome DevTools MCP** (screenshot, console,
-network, perf) as the agent's eyes now, plus a **Babylon docs/API-search MCP** to kill
-`@babylonjs/core@^6` API drift. The off-the-shelf servers + the existing headless harnesses cover
-~90% of the need.
+network, perf) as the agent's eyes now. **Do NOT wire a Babylon docs/API MCP** (resolution of the
+KTD-4 open question, 2026-06-25): the candidates evaluated are either the wrong category or track
+the wrong Babylon version, and the existing **`node_modules` source-read fallback is pinned to the
+exact installed `@babylonjs/core` (v6.49) — strictly more accurate** than any docs MCP that indexes
+latest. Off-the-shelf eyes + headless harnesses + the pinned-source fallback cover the need.
 
 ### Rationale
 - Chrome DevTools MCP is zero-maintenance and immediately gives screenshots + console reads, which
   is exactly what the "can't see the frame" pain needs.
-- A docs/API MCP addresses the top drift source (guessing v6 APIs) without any custom code.
+- The top drift source (guessing v6 APIs) is already addressed by the house rule "read the actual
+  `node_modules` source before matching another system's behavior" — and that source is the *exact*
+  installed version, so it cannot answer for the wrong version the way an indexed docs MCP can.
 - Pairs with the scrapeable HUD (`window.__coinpusher_debug`) so the agent reads exact counts
   rather than eyeballing.
 
 ### Alternatives Considered
 - **Custom BabylonJS/Rapier MCP** — rejected (for now): high maintenance, must track engine
   versions; revisit only if live scene-graph introspection becomes necessary.
-- **No MCP** — rejected: leaves the agent blind, which is the root problem this work fixes.
+- **`immersiveidea/babylon-mcp`** (the only true docs/API/source-search candidate) — rejected: no
+  npx (local clone + build), ~2GB index + 30–45 min setup, and **no version pinning** (indexes the
+  latest Babylon, not our v6.49) → would *introduce* drift, the opposite of the goal.
+- **`davidvanstory/babylonjs-mcp`** — rejected: it's a *scene-control* MCP (create/delete 3D objects
+  via text), i.e. the custom-scene category already rejected above; not a docs MCP at all.
+- **Context7 (`@upstash/context7-mcp`)** — viable lightweight, npx-able, version-aware general docs
+  MCP; deferred — Babylon v6 coverage unconfirmed and the pinned-source fallback already wins on
+  accuracy. Revisit if multi-library doc lookup becomes valuable.
+- **No MCP at all** — rejected: leaves the agent blind, the root problem this work fixes.
 - **Playwright MCP for driving interactions** — deferred to follow-up (optional later).
 
 ### Consequences
 - ✅ Any session in this repo inherits screenshot + console eyes on the client.
-- ⚠️ `npx`-launched MCP servers are environment-sensitive; the Babylon docs MCP choice is left open
-  (KTD-4) and not yet wired so a clean boot stays error-free.
+- ✅ API-drift coverage comes from reading pinned `node_modules` source — exact-version accurate,
+  zero setup, no extra `npx` server to break a clean boot.
+- ⚠️ No docs-MCP convenience layer; the agent must read source for unfamiliar APIs (already the house
+  rule). Revisit Context7 if/when it confirms Babylon v6 coverage or multi-lib lookup is wanted.
 - 🔮 If scene-graph introspection is needed later, reconsider a custom MCP.
 
 ### Related
@@ -140,6 +154,74 @@ Rapier `world.bodies.len()` / `colliders.len()` baselines. Both run headless und
 ### Related
 - Plan WS2 / KTD-2 · `game/client/src/scene/__tests__/leakHarness.ts` · `game/server/vitest.config.ts`
 - Commits: U1–U4 (leak harness, client/server leak tests, server runner)
+
+---
+
+## D-004: Keep WebSocket for real-time state sync; do not adopt WebTransport/UDP
+**Status**: Accepted
+**Date**: 2026-06-25 · **Component**: networking / game-server ↔ client transport
+
+### Context
+Physics state syncs server→client over a single reliable, ordered WebSocket (binary protobuf
+`state_delta` at 15 Hz, multiplexed with chat/`megaspeaker`, rewards, slot/wheel events, abilities,
+ping/pong). This raises two head-of-line (HOL) concerns: (A) a large/slow message type stalling
+physics frames behind it on the shared socket, and (B) TCP-layer HOL — a lost physics packet forces
+retransmit and holds back later, already-arrived deltas. The question was whether to move physics to
+an unreliable channel (WebTransport datagrams over QUIC/UDP) to eliminate HOL.
+
+### Decision
+Stay on WebSocket. Do **not** adopt WebTransport (or WebRTC) for state sync. If HOL is *measured*
+to hurt real players, escalate by **splitting into two WebSocket connections** (physics on its own
+socket, everything else on a second) before considering any UDP-based transport. WebTransport stays
+on the table only as a last resort, and only ever *added in front of* WebSocket as a fallback —
+never as a replacement.
+
+### Rationale
+- **Genre doesn't need it.** Coin pusher is server-authoritative, non-twitch; the client already
+  hides latency with an adaptive 100–500 ms interpolation buffer + extrapolation. 100–200 ms is
+  imperceptible here, so UDP's "last 5–10% of jitter" win is near-zero value.
+- **Reliability is an asset, not a cost, for a money game.** Server-authoritative + reliable ordered
+  delivery aligns with the accounting ledger's correctness/anti-cheat needs.
+- **Dual-transport is the real price of UDP, and it's permanent.** WebTransport can't replace WS:
+  iOS support is gated on WebKit version (one cutoff kills all iOS browsers, since they're all
+  WebKit), and some networks block UDP/443 outright — so a WS fallback is mandatory forever. Native
+  studios pay the same tax (UDP primary + TCP fallback, e.g. Photon/GameNetworkingSockets); the only
+  reason it looks cheap for them is mature SDKs hide it.
+- **Maintenance cost is high relative to our ops capacity.** HTTP/3 + UDP 443 + nginx/QUIC
+  termination + a fallback state machine + encrypted-UDP debugging + an iOS version matrix lands on a
+  small team that still deploys by hand and just took a Prometheus-OOM outage (D-001). The expensive
+  part isn't LOC — it's the network-dependent "some users on corporate Wi-Fi silently degrade" bugs
+  that don't reproduce in our machine room.
+- **The cheap escalation covers the likely real cause.** HOL type (A) — chat/rewards stalling
+  physics — is fixable by splitting sockets with no new protocol, infra, or debugging skill (~1.1×
+  maintenance). Only HOL type (B), pure intra-stream TCP retransmit, actually requires UDP, and it's
+  the smaller effect once payloads are small + idempotent (which they already are: sleeping coins
+  omitted, full-snapshot deltas, receiver drops stale frames).
+
+### Alternatives Considered
+- **WebTransport datagrams for physics** — rejected for now: highest HOL win but mandatory permanent
+  WS fallback, HTTP/3 infra, and high maintenance for a latency-insensitive genre. Reconsider only if
+  measurement shows intra-stream TCP HOL is materially hurting players *and* the split below isn't
+  enough.
+- **WebRTC DataChannel (unreliable mode)** — rejected: designed for P2P; using it server↔client drags
+  in ICE/STUN/TURN/SFU overhead. WebTransport strictly dominates it for this use case.
+- **Smarter app-layer "drop" on the existing WS** (overwrite-latest in the send queue instead of
+  blind drop-when-full) — kept as a cheap incremental option, but it only reduces *sender-side* queue
+  bloat; it cannot defeat TCP-layer HOL, which is a kernel property the app can't override.
+
+### Consequences
+- ✅ Zero new transport/infra to operate; ops surface unchanged; reliability guarantees retained for
+  the money path.
+- ⚠️ TCP-layer HOL (type B) remains theoretically possible; we accept it as unmeasured-and-likely-
+  negligible until proven otherwise.
+- 🔮 Escalation path is staged and reversible: **measure (instrument real interp-delay / frame-drop /
+  RTT to Grafana) → split into two WebSockets → (only if still bad) WebTransport + WS fallback.** Next
+  concrete step is the two-WebSocket split, not a transport change.
+
+### Related
+- Transport map: `game/server/src/game/GameLoop.ts` (15 Hz broadcast), `game/server/src/nats/NATSClient.ts`,
+  `backend/business/web/ws/{relay,hub,connection,handler}.go`, `game/client/src/net/{WebSocketClient,StateBuffer,Interpolator}.ts`
+- `docs/spec.md` (multiplayer/economy intent) · supersedes nothing
 
 ---
 
