@@ -56,6 +56,93 @@ so it can never again trigger a *global* OOM that kills the backend/DB.
 
 ---
 
+## D-002: Adopt off-the-shelf MCP (Chrome DevTools + Babylon docs) over a custom Babylon/Rapier MCP
+**Status**: Accepted
+**Date**: 2026-06-25 · **Component**: dev-tooling / agent-feedback-loop
+
+### Context
+The AI agent codes blind — it cannot observe the rendered scene or the browser console, so it
+guesses (spec drift) and falls back to "please eyeball this". It needs **eyes** on the running
+client. A bespoke BabylonJS/Rapier MCP that introspects the live scene graph would be the most
+powerful option but is high-maintenance to build and keep current with engine versions.
+
+### Decision
+Commit a repo-root `.mcp.json` declaring the **Chrome DevTools MCP** (screenshot, console,
+network, perf) as the agent's eyes now, plus a **Babylon docs/API-search MCP** to kill
+`@babylonjs/core@^6` API drift. The off-the-shelf servers + the existing headless harnesses cover
+~90% of the need.
+
+### Rationale
+- Chrome DevTools MCP is zero-maintenance and immediately gives screenshots + console reads, which
+  is exactly what the "can't see the frame" pain needs.
+- A docs/API MCP addresses the top drift source (guessing v6 APIs) without any custom code.
+- Pairs with the scrapeable HUD (`window.__coinpusher_debug`) so the agent reads exact counts
+  rather than eyeballing.
+
+### Alternatives Considered
+- **Custom BabylonJS/Rapier MCP** — rejected (for now): high maintenance, must track engine
+  versions; revisit only if live scene-graph introspection becomes necessary.
+- **No MCP** — rejected: leaves the agent blind, which is the root problem this work fixes.
+- **Playwright MCP for driving interactions** — deferred to follow-up (optional later).
+
+### Consequences
+- ✅ Any session in this repo inherits screenshot + console eyes on the client.
+- ⚠️ `npx`-launched MCP servers are environment-sensitive; the Babylon docs MCP choice is left open
+  (KTD-4) and not yet wired so a clean boot stays error-free.
+- 🔮 If scene-graph introspection is needed later, reconsider a custom MCP.
+
+### Related
+- `docs/agent-eyes-mcp.md` · `.mcp.json` · plan WS1 / KTD-1, KTD-4 · `game/client/src/scene/DebugReadout.ts`
+
+---
+
+## D-003: Standardize count-baseline as the leak-test method; add vitest to the game server
+**Status**: Accepted
+**Date**: 2026-06-25 · **Component**: testing / game-client + game-server
+
+### Context
+No leak tests existed; resource leaks surfaced as lag, not failures. The game **server** had no
+test runner at all (only `tsx`), so server self-verification was impossible. On the **client**, the
+scene managers build `DynamicTexture` via `getContext()`/`createRadialGradient` and use
+`ToonMaterial`/`ShaderMaterial`, none of which load under a bare node `NullEngine` (no 2D canvas,
+no GL shader compile).
+
+### Decision
+Make leaks **failing tests** via count baselines. **Client:** extend the existing
+`vi.mock("@babylonjs/core")` idiom and assert the managers' *own* pool counters
+(`getActiveBurstCount()`, `activeTimers.length`, thin-instance/pool sizes) return to baseline after
+N spawn→despawn cycles + `dispose()`. **Server:** add `vitest` + a `test` script and snapshot real
+Rapier `world.bodies.len()` / `colliders.len()` baselines. Both run headless under `vitest`
+(`environment: "node"`).
+
+### Rationale
+- The mock-counter approach catches the leak class we own (forgot-to-dispose / forgot-to-unpool)
+  without needing a canvas polyfill, and reuses the idiom already in `scene/__tests__/`.
+- Real Rapier counts on the server need no canvas and measure true body/collider disposal.
+- Turning leaks into red tests means a skipped `dispose()`/`removeRigidBody` fails CI, not prod.
+
+### Alternatives Considered
+- **NullEngine + raw `scene.meshes/materials/textures` counts (client)** — rejected: the managers'
+  canvas/shader APIs don't load under bare node NullEngine, and the result would measure mock
+  bookkeeping, not real disposal.
+- **Real-GPU CI** — rejected: cost and flakiness (GPU-in-CI is a non-goal).
+- **Manual eyeballing** — rejected: that's the exact failure mode this work removes.
+
+### Consequences
+- ✅ Mesh/material/pool and physics-body leaks now fail as tests on both client and server.
+- ✅ Server has a real test runner (`pnpm --filter @coin-pusher/game test`), unblocking all server
+  self-verification (determinism, economy).
+- ⚠️ The client tests assert manager-owned counters, not raw scene totals — they catch our leak
+  class, not engine-internal leaks. Real-GPU screenshots cover the visual layer on demand.
+- ⚠️ Server vitest needs a `.js`→`.ts` resolve plugin (NodeNext specifiers) and a 30s timeout for
+  Rapier WASM + sim trials.
+
+### Related
+- Plan WS2 / KTD-2 · `game/client/src/scene/__tests__/leakHarness.ts` · `game/server/vitest.config.ts`
+- Commits: U1–U4 (leak harness, client/server leak tests, server runner)
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown
