@@ -1,6 +1,7 @@
 import type { Coin } from "../physics/Coin.js";
 import type { Pusher } from "../physics/Pusher.js";
 import { SCENE_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
+import type { Rng } from "./Rng.js";
 
 /** Which abilities to enable in a simulation run. */
 export type AbilitySet = {
@@ -40,9 +41,18 @@ export class AbilitySimulator {
 
   private readonly tickRate: number;
 
-  constructor(tickRate: number) {
+  // Optional injected RNG (seeded determinism path). When null, Math.random.
+  private readonly rng: Rng | null;
+
+  constructor(tickRate: number, rng: Rng | null = null) {
     this.tickRate = tickRate;
     this.tornadoDurationTicks = Math.ceil(RATE_LIMIT_CONFIG.TORNADO_DURATION / 1000 * tickRate);
+    this.rng = rng;
+  }
+
+  /** Float in [0,1): injected RNG when seeded, else Math.random. */
+  private nextFloat(): number {
+    return this.rng ? this.rng() : Math.random();
   }
 
   /**
@@ -59,11 +69,11 @@ export class AbilitySimulator {
 
     if (available.length === 0) return false;
 
-    const choice = available[Math.floor(Math.random() * available.length)];
+    const choice = available[Math.floor(this.nextFloat() * available.length)];
     const { PLATFORM } = SCENE_CONFIG;
     // Random position on platform
-    const rx = (Math.random() - 0.5) * PLATFORM.WIDTH * 0.8;
-    const rz = PLATFORM.POSITION.z + (Math.random() - 0.5) * PLATFORM.DEPTH * 0.6;
+    const rx = (this.nextFloat() - 0.5) * PLATFORM.WIDTH * 0.8;
+    const rz = PLATFORM.POSITION.z + (this.nextFloat() - 0.5) * PLATFORM.DEPTH * 0.6;
 
     switch (choice) {
       case "tornado":
@@ -171,14 +181,14 @@ export class AbilitySimulator {
       const nz = dz * invDist;
 
       body.applyImpulse({
-        x: nx * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+        x: nx * 0.08 * strength + (this.nextFloat() - 0.5) * 0.01,
         y: 0.06 * strength,
-        z: nz * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+        z: nz * 0.08 * strength + (this.nextFloat() - 0.5) * 0.01,
       }, true);
       body.applyTorqueImpulse({
-        x: (Math.random() - 0.5) * 0.002 * strength,
-        y: (Math.random() - 0.5) * 0.002 * strength,
-        z: (Math.random() - 0.5) * 0.002 * strength,
+        x: (this.nextFloat() - 0.5) * 0.002 * strength,
+        y: (this.nextFloat() - 0.5) * 0.002 * strength,
+        z: (this.nextFloat() - 0.5) * 0.002 * strength,
       }, true);
     });
   }
@@ -211,10 +221,10 @@ export class AbilitySimulator {
     const backZ = PUSH_POS.z - PUSH_DEPTH / 2;
     const frontZ = PLAT_POS.z + PLAT_DEPTH / 2;
 
-    const sz = backZ + Math.random() * (frontZ - backZ);
+    const sz = backZ + this.nextFloat() * (frontZ - backZ);
     let halfW = sz < FLARE_Z ? hw : hw + Math.tan(flareRad) * (sz - FLARE_Z);
     halfW -= 0.05;
-    const sx = (Math.random() * 2 - 1) * halfW;
+    const sx = (this.nextFloat() * 2 - 1) * halfW;
 
     const radius = 0.35;
     coins.forEach((coin) => {
@@ -233,14 +243,14 @@ export class AbilitySimulator {
       const nz = dz * invDist;
 
       body.applyImpulse({
-        x: nx * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+        x: nx * 0.06 * strength + (this.nextFloat() - 0.5) * 0.008,
         y: 0.055 * strength,
-        z: nz * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+        z: nz * 0.06 * strength + (this.nextFloat() - 0.5) * 0.008,
       }, true);
       body.applyTorqueImpulse({
-        x: (Math.random() - 0.5) * 0.002 * strength,
-        y: (Math.random() - 0.5) * 0.002 * strength,
-        z: (Math.random() - 0.5) * 0.002 * strength,
+        x: (this.nextFloat() - 0.5) * 0.002 * strength,
+        y: (this.nextFloat() - 0.5) * 0.002 * strength,
+        z: (this.nextFloat() - 0.5) * 0.002 * strength,
       }, true);
     });
   }
@@ -259,9 +269,9 @@ export class AbilitySimulator {
         const body = coin.getRigidBody();
         body.wakeUp();
         body.applyImpulse({
-          x: (Math.random() - 0.5) * 0.005,
+          x: (this.nextFloat() - 0.5) * 0.005,
           y: -0.002,
-          z: 0.005 + Math.random() * 0.005,
+          z: 0.005 + this.nextFloat() * 0.005,
         }, true);
       }
     });

@@ -7,12 +7,25 @@ import { SlotMachine } from "./SlotMachine.js";
 import { AbilitySimulator, type AbilitySet, NO_ABILITIES } from "./AbilitySimulator.js";
 import { classifyCoin } from "./CoinOutcome.js";
 import type { TrialResult } from "./Statistics.js";
+import type { Rng } from "./Rng.js";
 import {
   PHYSICS_CONFIG,
   SCENE_CONFIG,
   COIN_CONFIG,
   PUSHER_CONFIG,
 } from "@coin-pusher/shared";
+
+/** Per-tick observation hook for the main loop (used by determinism tests). */
+export type SimTickHook = (tick: number, coins: Map<number, Coin>) => void;
+
+/** Optional injection for the simulation path. */
+export type SimLoopOptions = {
+  /** Seeded RNG — threads into warmup/insert, SlotMachine, AbilitySimulator.
+   *  When omitted, the trial uses Math.random / crypto (production shape). */
+  rng?: Rng | null;
+  /** Called once per main-loop tick after despawns, for state snapshots. */
+  onTick?: SimTickHook;
+};
 
 export type SimLoopConfig = {
   coinsPerTrial: number;          // player coins to insert per trial
@@ -44,9 +57,18 @@ export const DEFAULT_CONFIG: SimLoopConfig = {
  */
 export class SimLoop {
   private config: SimLoopConfig;
+  private readonly rng: Rng | null;
+  private readonly onTick?: SimTickHook;
 
-  constructor(config: Partial<SimLoopConfig> = {}) {
+  constructor(config: Partial<SimLoopConfig> = {}, opts: SimLoopOptions = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.rng = opts.rng ?? null;
+    this.onTick = opts.onTick;
+  }
+
+  /** Float in [0,1): injected seeded RNG when present, else Math.random. */
+  private nextFloat(): number {
+    return this.rng ? this.rng() : Math.random();
   }
 
   /** Run a single trial. Returns the trial result. */
@@ -60,8 +82,8 @@ export class SimLoop {
     sceneBuilder.buildStaticScene();
 
     const pusher = new Pusher(physicsWorld, () => clock.now());
-    const slotMachine = new SlotMachine(PHYSICS_CONFIG.TICK_RATE);
-    const abilitySimulator = new AbilitySimulator(PHYSICS_CONFIG.TICK_RATE);
+    const slotMachine = new SlotMachine(PHYSICS_CONFIG.TICK_RATE, this.rng);
+    const abilitySimulator = new AbilitySimulator(PHYSICS_CONFIG.TICK_RATE, this.rng);
 
     const coins = new Map<number, Coin>();
     let coinIdCounter = 0;
@@ -181,13 +203,13 @@ export class SimLoop {
 
       for (let x = -halfW + xOffset; x <= halfW; x += colSpacing) {
         if (x < -halfW || x > halfW) continue;
-        if (Math.random() < 0.1) continue; // 10% skip for messiness
+        if (this.nextFloat() < 0.1) continue; // 10% skip for messiness
         if (warmupCount >= this.config.warmupCoins) break outer;
 
-        const cy = surfaceY + 0.3 + Math.random() * 0.1;
-        const rx = x + (Math.random() - 0.5) * 0.06;
-        const rz = z + (Math.random() - 0.5) * 0.06;
-        const angle = (Math.random() - 0.5) * Math.PI * 0.3;
+        const cy = surfaceY + 0.3 + this.nextFloat() * 0.1;
+        const rx = x + (this.nextFloat() - 0.5) * 0.06;
+        const rz = z + (this.nextFloat() - 0.5) * 0.06;
+        const angle = (this.nextFloat() - 0.5) * Math.PI * 0.3;
         const rot = { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) };
 
         spawnCoin(rx, cy, rz, 'warmup', rot);
@@ -241,7 +263,7 @@ export class SimLoop {
 
       // Insert coin at interval
       if (coinsInserted < this.config.coinsPerTrial && currentTick % this.config.coinInsertIntervalTicks === 0) {
-        const randomX = (Math.random() - 0.5) * 0.8;
+        const randomX = (this.nextFloat() - 0.5) * 0.8;
         spawnCoin(randomX, COIN_CONFIG.SPAWN_HEIGHT, 0, 'player');
         coinsInserted++;
       }
@@ -274,6 +296,9 @@ export class SimLoop {
 
       // Process despawns
       processDespawns(currentTick);
+
+      // Observation hook — snapshot world state at this tick (determinism test).
+      this.onTick?.(currentTick, coins);
 
       // Early exit: all player+bonus coins resolved
       if (coinsInserted >= this.config.coinsPerTrial && !hasTrackedCoins() && !slotMachine.isSpinning()) {
