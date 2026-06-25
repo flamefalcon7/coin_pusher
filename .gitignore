@@ -48,7 +48,13 @@ logs/
 
 # ai
 .shared/
-.agents/
+# .agents/ is local AI scratch, EXCEPT project-specific skills which are version-controlled
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/babylon-rapier-lifecycle/
+!.agents/skills/self-verification/
+!.agents/skills/play-bot-admin/
 .cursor/
 .context/
 
