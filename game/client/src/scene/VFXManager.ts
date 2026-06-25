@@ -178,6 +178,13 @@ export class VFXManager {
     return this.comboFlashAlpha;
   }
 
+  /** Test hook: advance VFX state by a fixed deltaTime ("frozen clock"),
+   *  bypassing the wall-clock render observer so frame stepping is
+   *  deterministic. Production code drives `update` via the render loop. */
+  stepForTest(dt: number): void {
+    this.update(dt);
+  }
+
   // ── Event Effects ──────────────────────────────────────────────────────────
 
   /** Gold spark burst at coin slot opening */
