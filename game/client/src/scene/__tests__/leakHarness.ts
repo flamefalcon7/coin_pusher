@@ -243,6 +243,11 @@ export function createBabylonCoreMock() {
     StandardMaterial: MockStandardMaterial,
     ShaderMaterial: MockShaderMaterial,
     Scene: class {},
+    SceneInstrumentation: class {
+      constructor(public scene: unknown) {}
+      drawCallsCounter = { current: 0 };
+      dispose() {}
+    },
     TransformNode: class { constructor(public name?: string) {} dispose() {} },
     NoiseProceduralTexture: class {
       animationSpeedFactor = 0;
@@ -287,6 +292,10 @@ export function createMockScene(): any {
       getRenderHeight: () => 800,
     }),
     onBeforeRenderObservable: {
+      add: vi.fn((cb: () => void) => cb),
+      remove: vi.fn(),
+    },
+    onAfterRenderObservable: {
       add: vi.fn((cb: () => void) => cb),
       remove: vi.fn(),
     },

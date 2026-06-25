@@ -9,6 +9,7 @@ import { CoinMeshManager } from "./CoinMeshManager";
 import { SoundManager } from "./SoundManager";
 import { PostProcessing } from "./PostProcessing";
 import { VFXManager } from "./VFXManager";
+import { maybeInstallDebugReadout, type DebugReadout } from "./DebugReadout";
 import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 import { SponsorAdPlacements } from "./SponsorAdPlacements";
@@ -39,6 +40,7 @@ export class SceneManager {
   private vfxManager: VFXManager;
   private targetingReticle: TargetingReticle;
   private sponsorAdPlacements: SponsorAdPlacements;
+  private debugReadout: DebugReadout | null = null;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -139,6 +141,14 @@ export class SceneManager {
     }
 
     console.log("Scene initialized successfully");
+
+    // Scrapeable debug HUD (window.__coinpusher_debug) — only when ?debug=1.
+    this.debugReadout = maybeInstallDebugReadout({
+      engine: this.engine,
+      scene: this.scene,
+      vfx: this.vfxManager,
+      getCoinCount: () => this.coinManager.getCoinCount(),
+    });
 
     window.addEventListener("resize", this.resizeHandler);
   }
@@ -340,6 +350,8 @@ export class SceneManager {
 
     window.removeEventListener("resize", this.resizeHandler);
 
+    this.debugReadout?.dispose();
+    this.debugReadout = null;
     this.targetingReticle.dispose();
     this.sponsorAdPlacements.dispose();
     this.vfxManager.dispose();

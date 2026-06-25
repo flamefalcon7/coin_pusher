@@ -12,3 +12,13 @@ export const debugConfig = {
   interpolationDelayMax: NETWORK_CONFIG.INTERPOLATION_DELAY_MAX,
   extrapolationMaxTime: NETWORK_CONFIG.EXTRAPOLATION_MAX_TIME,
 };
+
+/**
+ * Shared debug gate: true when the page is loaded with `?debug=1`.
+ * Used by the debug panel and the scrapeable debug HUD (DebugReadout) so the
+ * latter is never exposed in a normal production session.
+ */
+export function isDebugEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("debug") === "1";
+}
