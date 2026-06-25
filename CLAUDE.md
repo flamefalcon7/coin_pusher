@@ -46,12 +46,10 @@ Proactively propose documentation — don't wait to be asked:
 
 ## Skills
 
-This project has agent skills in `.agents/skills/`. Before starting a task, scan the folder for available skills by listing `.agents/skills/*/SKILL.md`. Read each relevant `SKILL.md` to check its triggers and decide if it applies to the current task.
+Project skills live in `.agents/skills/`. **Before starting any non-trivial coding or debugging task, list `.agents/skills/*/SKILL.md` and consult the ones whose triggers match the work.** They encode this project's house conventions — using them is how output stays consistent instead of drifting. Skills are added over time, so always discover from the folder; never rely on a hardcoded list.
 
-### How to use skills
+For a matching skill:
 
-1. List `.agents/skills/` to discover all available skills (do not rely on a hardcoded list)
-2. Read the matching `SKILL.md` to understand the role, constraints, and workflow
-3. Load relevant `references/*.md` files based on the specific subtask
-4. Follow the skill's constraints (MUST DO / MUST NOT DO) during implementation
-5. When spawning team agents, include the relevant skill path in the agent's prompt so it can load the skill context
+1. Read its `SKILL.md` for role, triggers, and MUST DO / MUST NOT DO constraints — and follow them.
+2. Load only the `references/*.md` files the current subtask needs.
+3. When delegating to a sub-agent, pass the skill path in its prompt so it loads the same context.
