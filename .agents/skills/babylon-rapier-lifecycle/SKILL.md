@@ -5,7 +5,7 @@ license: MIT
 metadata:
   version: "1.0.0"
   domain: game-client-server
-  triggers: dispose, memory leak, 記憶體洩漏, 物件回收, leak, GC, particle, ParticleSystem, VFX cleanup, observer leak, onBeforeRenderObservable, removeRigidBody, collider, thin instance, texture dispose, material dispose, NullEngine leak test
+  triggers: dispose, memory leak, 記憶體洩漏, 物件回收, leak, GC, particle, ParticleSystem, VFX cleanup, observer leak, onBeforeRenderObservable, removeRigidBody, collider, thin instance, texture dispose, material dispose, count-baseline leak test
   role: implementer
   scope: implementation
   output-format: code-then-test
@@ -50,69 +50,68 @@ patterns.
 - Do **not** create materials/textures inside a per-frame or per-spawn path without pooling/caching them.
 - Do **not** mark a leak bug fixed without a failing-then-passing count-baseline test.
 
-## Leak-test template (client — NullEngine + vitest)
+## Leak-test template (client — mock idiom + count baseline)
 
-NullEngine renders nothing (no GPU/DOM needed; `vitest` runs `environment: "node"`),
-so it's ideal for count-baseline leak tests.
+Do **not** use `NullEngine` for these managers: they build `DynamicTexture` via
+`getContext()`/`createRadialGradient` and use `ToonMaterial`/`ShaderMaterial`,
+none of which load under a bare node `NullEngine` (no 2D canvas, no GL shader
+compile). Instead extend the established `vi.mock("@babylonjs/core")` idiom and
+assert the manager's **own pool counters** return to baseline. This catches the
+leak class we own (forgot-to-dispose / forgot-to-unpool) and runs under `vitest`
+(`environment: "node"`). See ADR **D-003**.
+
+A shared harness factors the mock + count helpers — reuse it, don't re-author:
+`game/client/src/scene/__tests__/leakHarness.ts` exports `createBabylonCoreMock()`,
+`createMockScene()`, `snapshotPoolCounters(manager, extraFields)` and
+`expectCountersWithin(baseline, after, tolerance)`.
 
 ```ts
-// game/client/src/scene/__tests__/leak.test.ts
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { NullEngine, Scene } from "@babylonjs/core";
+// game/client/src/scene/__tests__/CoinMeshManager.leak.test.ts (worked example)
+import { describe, it, expect, vi } from "vitest";
 
-function counts(scene: Scene) {
-  return {
-    meshes: scene.meshes.length,
-    materials: scene.materials.length,
-    textures: scene.textures.length,
-    nodes: scene.transformNodes.length,
-    beforeRender: scene.onBeforeRenderObservable.observers.length,
-  };
-}
+vi.mock("@babylonjs/core", async () => {
+  const { createBabylonCoreMock } = await import("./leakHarness");
+  return createBabylonCoreMock();
+});
+vi.mock("../ToonMaterial", async () => {
+  const { createToonMaterialMock } = await import("./leakHarness");
+  return createToonMaterialMock();
+});
 
-describe("CoinMeshManager leak", () => {
-  let engine: NullEngine;
-  let scene: Scene;
-  beforeEach(() => {
-    engine = new NullEngine();
-    scene = new Scene(engine);
-  });
-  afterEach(() => {
-    scene.dispose();
-    engine.dispose();
-  });
+import { CoinMeshManager } from "../CoinMeshManager";
+import { createMockScene, snapshotPoolCounters, expectCountersWithin } from "./leakHarness";
 
-  it("returns to baseline after 500 spawn/despawn cycles", () => {
-    const mgr = new CoinMeshManager(scene);   // system under test
-    const base = counts(scene);
-    for (let i = 0; i < 500; i++) {
-      mgr.addCoin(i, [0, 1, 0], [0, 0, 0, 1]); // queues into pending batch
-      mgr.commitNewCoins();                     // creates the thin instance
-      mgr.updateInstances();                    // flush instance buffer
-      mgr.removeCoin(i);
-    }
-    mgr.dispose();
-    const after = counts(scene);
-    // allow ±1 for engine-internal singletons
-    expect(Math.abs(after.meshes - base.meshes)).toBeLessThanOrEqual(1);
-    expect(Math.abs(after.materials - base.materials)).toBeLessThanOrEqual(1);
-    expect(Math.abs(after.textures - base.textures)).toBeLessThanOrEqual(1);
-    expect(after.beforeRender).toBe(base.beforeRender); // observers fully removed
-  });
+it("returns to baseline after 500 spawn/despawn cycles", () => {
+  const mgr = new CoinMeshManager(createMockScene());
+  const fields = ["idToIndex", "kcIdToIndex", "coinSponsorLookup", "spawnAnims"];
+  const base = snapshotPoolCounters(mgr, fields);   // includes getCoinCount()
+  for (let i = 0; i < 500; i++) {
+    mgr.addCoin(i, [0, 1, 0], [0, 0, 0, 1]); // queues into pending batch
+    mgr.commitNewCoins();                     // creates the thin instance
+    mgr.updateInstances();                    // flush instance buffer
+    mgr.removeCoin(i);
+  }
+  // Assert BEFORE dispose() — dispose()'s clear() would mask a forgot-to-unpool leak.
+  expectCountersWithin(base, snapshotPoolCounters(mgr, fields), 1);
+  expect(mgr.getCoinCount()).toBe(0);
 });
 ```
 
 > Verified method names: `CoinMeshManager` → `addCoin()` then `commitNewCoins()`
 > then `updateInstances()` then `removeCoin(id)`; count via `getCoinCount()`.
-> For `VFXManager`, fire ≥100 bursts via `playCoinDespawn(pos)`, assert
-> `getActiveBurstCount() <= maxBurstSystems` (20) and `getRingPoolSize()` stays
-> capped, then `dispose()` and assert
-> `scene.onBeforeRenderObservable.observers.length` returns to baseline.
+> For `VFXManager` (see `__tests__/VFXManager.leak.test.ts`), fire ≥100 bursts via
+> `playCoinInsert`/`playCoinDespawn(pos)`, assert `getActiveBurstCount() <=
+> maxBurstSystems` (20) and `getRingPoolSize()` stays capped, then `dispose()` and
+> assert `renderObserver` is null and `activeTimers.length === 0`.
 
 ## Leak-test template (server — Rapier)
 
+The game server now has a `vitest` runner (`pnpm --filter @coin-pusher/game test`;
+see ADR **D-003** and `game/server/vitest.config.ts`). Worked example:
+`game/server/src/physics/__tests__/coinLifecycle.leak.test.ts`.
+
 ```ts
-// run with vitest or `tsx` (see self-verification skill for adding a test runner)
+// snapshot real Rapier counts — no canvas dependency
 import * as RAPIER from "@dimforge/rapier3d-compat";
 
 await RAPIER.init();

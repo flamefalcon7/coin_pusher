@@ -1,98 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { RANK_COLORS, RANK_NONE } from "@coin-pusher/shared";
 
-// ── Hoisted mocks (all mock classes must be here for vi.mock factory) ───
+// ── Module mocks (shared idiom — see leakHarness.ts) ────────────────────
 
-const {
-  MockMesh,
-  MockColor3,
-  MockVector3,
-  MockQuaternion,
-  MockMatrix,
-  mockMeshBuilder,
-  mockCtx,
-} = vi.hoisted(() => {
-  class _MockMesh {
-    material: unknown = null;
-    thinInstanceEnablePicking = true;
-    isVisible = true;
-    alwaysSelectAsActiveMesh = false;
-    name: string;
-    constructor(name: string) { this.name = name; }
-    thinInstanceSetBuffer() {}
-    dispose() {}
-  }
-
-  class _MockColor3 {
-    constructor(public r = 0, public g = 0, public b = 0) {}
-    static FromHexString() { return new _MockColor3(); }
-  }
-
-  class _MockVector3 {
-    constructor(public x = 0, public y = 0, public z = 0) {}
-    set(x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z; }
-    static Zero() { return new _MockVector3(); }
-  }
-
-  class _MockQuaternion {
-    x = 0; y = 0; z = 0; w = 1;
-    set(x: number, y: number, z: number, w: number) { this.x = x; this.y = y; this.z = z; this.w = w; }
-    static RotationYawPitchRoll() { return new _MockQuaternion(); }
-  }
-
-  class _MockMatrix {
-    m = new Float32Array(16);
-    copyToArray(arr: Float32Array, offset: number) {
-      arr.set(this.m, offset);
-    }
-    static ComposeToRef(_s: unknown, _r: unknown, _p: unknown, out: _MockMatrix) {
-      out.m.fill(0);
-      out.m[0] = 1; out.m[5] = 1; out.m[10] = 1; out.m[15] = 1;
-    }
-  }
-
-  const _mockCtx = {
-    createRadialGradient: () => ({ addColorStop: () => {} }),
-    fillStyle: "", fillRect: () => {}, strokeStyle: "",
-    lineWidth: 0, beginPath: () => {}, arc: () => {}, stroke: () => {},
-    roundRect: () => {}, fill: () => {},
-  };
-
-  return {
-    MockMesh: _MockMesh,
-    MockColor3: _MockColor3,
-    MockVector3: _MockVector3,
-    MockQuaternion: _MockQuaternion,
-    MockMatrix: _MockMatrix,
-    mockMeshBuilder: { CreateCylinder: (name: string) => new _MockMesh(name) },
-    mockCtx: _mockCtx,
-  };
+vi.mock("@babylonjs/core", async () => {
+  const { createBabylonCoreMock } = await import("./leakHarness");
+  return createBabylonCoreMock();
 });
 
-vi.mock("@babylonjs/core", () => ({
-  MeshBuilder: mockMeshBuilder,
-  Color3: MockColor3,
-  Vector3: MockVector3,
-  Quaternion: MockQuaternion,
-  Matrix: MockMatrix,
-  Mesh: MockMesh,
-  Scene: class {},
-  DynamicTexture: class {
-    getContext() { return mockCtx; }
-    update() {}
-    dispose() {}
-    hasAlpha = false;
-  },
-}));
-
-vi.mock("../ToonMaterial", () => ({
-  createToonMaterial: (_scene: unknown, opts: { name: string }) => ({
-    name: opts.name,
-    setColor3() {},
-    setFloat() {},
-    setVector3() {},
-  }),
-}));
+vi.mock("../ToonMaterial", async () => {
+  const { createToonMaterialMock } = await import("./leakHarness");
+  return createToonMaterialMock();
+});
 
 // ── Import after mocks ──────────────────────────────────────────────────
 

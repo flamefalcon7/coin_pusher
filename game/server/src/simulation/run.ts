@@ -1,12 +1,14 @@
 import { SimLoop, DEFAULT_CONFIG, type SimLoopConfig } from "./SimLoop.js";
 import { Statistics } from "./Statistics.js";
 import { ALL_ABILITIES, NO_ABILITIES, type AbilitySet } from "./AbilitySimulator.js";
+import { mulberry32 } from "./Rng.js";
 
 // ── CLI Argument Parsing ─────────────────────────────────────────
 
-function parseArgs(): { trials: number; config: Partial<SimLoopConfig> } {
+function parseArgs(): { trials: number; config: Partial<SimLoopConfig>; seed?: number } {
   const args = process.argv.slice(2);
   let trials = 100;
+  let seed: number | undefined;
   const config: Partial<SimLoopConfig> = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -63,6 +65,10 @@ function parseArgs(): { trials: number; config: Partial<SimLoopConfig> } {
         config.drainTimeoutTicks = parseInt(next, 10);
         i++;
         break;
+      case "--seed":
+        seed = parseInt(next, 10);
+        i++;
+        break;
       case "--help":
       case "-h":
         printHelp();
@@ -74,7 +80,7 @@ function parseArgs(): { trials: number; config: Partial<SimLoopConfig> } {
     }
   }
 
-  return { trials, config };
+  return { trials, config, seed };
 }
 
 function printHelp(): void {
@@ -94,6 +100,7 @@ Options:
   --ability-interval <t>  Ticks between ability fires (default: ${DEFAULT_CONFIG.abilityIntervalTicks})
   --max-bonus-depth <N>   Max slot recursion depth (default: ${DEFAULT_CONFIG.maxBonusDepth})
   --drain-timeout <ticks> Max ticks to wait for coins to clear after insertion (default: ${DEFAULT_CONFIG.drainTimeoutTicks})
+  --seed <N>              Seed the simulation RNG for reproducible runs (default: unseeded)
   --help, -h              Show this help
 
 Output:
@@ -125,11 +132,12 @@ function unmute(): void {
 // ── Main ─────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { trials, config } = parseArgs();
+  const { trials, config, seed } = parseArgs();
   const merged = { ...DEFAULT_CONFIG, ...config };
 
   log(`🎰 Monte Carlo RTP Simulation`);
   log(`   Trials: ${trials}`);
+  if (seed !== undefined) log(`   Seed: ${seed} (reproducible)`);
   log(`   Coins/trial: ${merged.coinsPerTrial}`);
   log(`   Insert interval: ${merged.coinInsertIntervalTicks} ticks`);
   log(`   Warmup: ${merged.warmupCoins} coins, ${merged.warmupSettleTicks} ticks settle`);
@@ -138,7 +146,7 @@ async function main(): Promise<void> {
   log(``);
 
   const stats = new Statistics();
-  const simLoop = new SimLoop(config);
+  const simLoop = new SimLoop(config, seed !== undefined ? { rng: mulberry32(seed) } : {});
   const startReal = Date.now();
 
   for (let i = 0; i < trials; i++) {

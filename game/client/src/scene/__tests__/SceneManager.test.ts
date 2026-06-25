@@ -218,7 +218,17 @@ vi.mock("@babylonjs/core", () => ({
 
 vi.mock("../CameraSetup", () => ({ CameraSetup: class {} }));
 vi.mock("../Lighting", () => ({ Lighting: class {} }));
-vi.mock("../StaticMeshes", () => ({ StaticMeshes: class {} }));
+vi.mock("../StaticMeshes", () => ({
+  StaticMeshes: class {
+    // Real getters return `T | null`; null makes SceneManager's sponsor-ad and
+    // hole-portal branches cleanly skip under test.
+    getBackWallGroup() { return null; }
+    getLeftWallFrontParent() { return null; }
+    getRightWallFrontParent() { return null; }
+    getSlotMachine() { return null; }
+    getJackpotWheel() { return null; }
+  },
+}));
 vi.mock("../PusherMesh", () => ({
   PusherMesh: class { updatePosition() {} },
 }));
@@ -234,6 +244,22 @@ vi.mock("../SoundManager", () => ({
     dispose() {} playTornado() {} playExplosion() {} playLightning() {}
   },
 }));
+vi.mock("../VFXManager", () => ({
+  VFXManager: class {
+    init() {} refreshWallColor() {} initHolePortals() {} initCoinSlots() {}
+    dispose() {} playShockWave() {}
+  },
+}));
+vi.mock("../PostProcessing", () => ({ PostProcessing: class { dispose() {} } }));
+vi.mock("../TargetingReticle", () => ({
+  TargetingReticle: class { show() {} hide() {} dispose() {} },
+}));
+vi.mock("../SponsorAdPlacements", () => ({
+  SponsorAdPlacements: class {
+    createBackWallAd() {} createSideWallAds() {} updateSponsorCreatives() {} dispose() {}
+  },
+}));
+vi.mock("../DebugReadout", () => ({ maybeInstallDebugReadout: () => null }));
 vi.mock("../ToonTheme", () => ({
   THEMES: [{
     label: "Test",

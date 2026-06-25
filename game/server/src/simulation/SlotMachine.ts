@@ -1,6 +1,7 @@
 import { SLOT_MACHINE_CONFIG, COIN_CONFIG, SCENE_CONFIG } from "@coin-pusher/shared";
 import { randomInt } from "node:crypto";
 import type { SlotSymbol } from "@coin-pusher/shared";
+import type { Rng } from "./Rng.js";
 
 /** Pending bonus coin spawn (scheduled by tick). */
 export type BonusCoinSpawn = {
@@ -29,10 +30,25 @@ export class SlotMachine {
   private readonly bonusDelayTicks: number;
   private readonly bonusIntervalTicks: number;
 
-  constructor(tickRate: number) {
+  // Optional injected RNG (seeded determinism path). When null, production
+  // behavior is preserved: crypto randomInt for reels, Math.random for spawns.
+  private readonly rng: Rng | null;
+
+  constructor(tickRate: number, rng: Rng | null = null) {
     this.spinDurationTicks = Math.ceil(SLOT_MACHINE_CONFIG.SPIN_DURATION / 1000 * tickRate);
     this.bonusDelayTicks = Math.ceil(SLOT_MACHINE_CONFIG.BONUS_SPAWN_DELAY / 1000 * tickRate);
     this.bonusIntervalTicks = Math.max(1, Math.ceil(SLOT_MACHINE_CONFIG.BONUS_SPAWN_INTERVAL / 1000 * tickRate));
+    this.rng = rng;
+  }
+
+  /** Float in [0,1): injected RNG when seeded, else Math.random. */
+  private nextFloat(): number {
+    return this.rng ? this.rng() : Math.random();
+  }
+
+  /** Integer in [0,n): injected RNG when seeded, else crypto randomInt. */
+  private reelIndex(n: number): number {
+    return this.rng ? Math.floor(this.rng() * n) : randomInt(n);
   }
 
   /**
@@ -85,9 +101,9 @@ export class SlotMachine {
     // Roll 3 random symbols
     const symbols = SLOT_MACHINE_CONFIG.SYMBOLS;
     const reels: [SlotSymbol, SlotSymbol, SlotSymbol] = [
-      symbols[randomInt(symbols.length)],
-      symbols[randomInt(symbols.length)],
-      symbols[randomInt(symbols.length)],
+      symbols[this.reelIndex(symbols.length)],
+      symbols[this.reelIndex(symbols.length)],
+      symbols[this.reelIndex(symbols.length)],
     ];
     const jackpot = reels[0] === reels[1] && reels[1] === reels[2];
 
@@ -109,10 +125,10 @@ export class SlotMachine {
   }
 
   private randomBonusCoinSpawn(): BonusCoinSpawn {
-    const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
-    const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
-    const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
-    const angle = (Math.random() - 0.5) * Math.PI;
+    const x = (this.nextFloat() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
+    const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + this.nextFloat() * 0.5;
+    const z = SCENE_CONFIG.PLATFORM.POSITION.z + (this.nextFloat() - 0.5) * 0.4;
+    const angle = (this.nextFloat() - 0.5) * Math.PI;
     return {
       x, y, z,
       rotation: { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) },
