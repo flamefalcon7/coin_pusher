@@ -25,8 +25,15 @@ export class SponsorAdPlacements {
   createBackWallAd(backWallGroup: TransformNode): void {
     const plane = MeshBuilder.CreatePlane("sponsorBackWall", { width: 1.0, height: 0.5 }, this.scene);
     plane.parent = backWallGroup;
-    plane.position.y = 1.4;
+    // Wall box is 2m tall centered on the group origin (local top = +1.0).
+    // y must stay below +0.75 so the 0.5m-tall plane sits on the wall, not above it.
+    plane.position.y = 0.7;
     plane.position.z = 0.03;
+    // CreatePlane's front face looks toward -Z (normals (0,0,-1) in v6.49 planeBuilder);
+    // the camera sits at +Z, so flip the plane to face it or it gets backface-culled.
+    // The Y-flip mirrors the texture horizontally; loadAdImage compensates by
+    // drawing the creative mirrored into the DynamicTexture.
+    plane.rotation.y = Math.PI;
 
     // Placeholder gray toon material (no texture)
     const mat = createToonMaterial(this.scene, {
@@ -123,9 +130,16 @@ export class SponsorAdPlacements {
 
     img.onload = () => {
       const dt = new DynamicTexture(matName + "Tex", 256, this.scene, false);
-      const ctx = dt.getContext();
+      const ctx = dt.getContext() as unknown as CanvasRenderingContext2D;
+      // Planes face the camera via a 180° Y-rotation, which mirrors the texture
+      // horizontally — draw the creative pre-mirrored so it reads correctly.
+      ctx.save();
+      ctx.translate(256, 0);
+      ctx.scale(-1, 1);
       ctx.drawImage(img, 0, 0, 256, 256);
-      dt.update(false);
+      ctx.restore();
+      // invertY=true: canvas Y-down → GL Y-up, or the creative renders upside down.
+      dt.update(true);
       dt.hasAlpha = true;
 
       // Create toon material AFTER DynamicTexture.update()
