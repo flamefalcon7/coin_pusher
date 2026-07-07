@@ -9,7 +9,12 @@ import { CoinMeshManager } from "./CoinMeshManager";
 import { SoundManager } from "./SoundManager";
 import { PostProcessing } from "./PostProcessing";
 import { VFXManager } from "./VFXManager";
-import { maybeInstallDebugReadout, type DebugReadout } from "./DebugReadout";
+import { maybeInstallDebugReadout, extendDebugApi, type DebugReadout } from "./DebugReadout";
+import { DebugCameraController } from "./DebugCamera";
+import { DebugSceneAids } from "./DebugSceneAids";
+import { ColliderWireframes, type WireframePoseProvider } from "./ColliderWireframes";
+import { debugSetParam } from "./debugParamSet";
+import { IsolateMode } from "./IsolateMode";
 import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 import { SponsorAdPlacements } from "./SponsorAdPlacements";
@@ -41,6 +46,10 @@ export class SceneManager {
   private targetingReticle: TargetingReticle;
   private sponsorAdPlacements: SponsorAdPlacements;
   private debugReadout: DebugReadout | null = null;
+  private debugCamera: DebugCameraController | null = null;
+  private debugAids: DebugSceneAids | null = null;
+  private colliderWireframes: ColliderWireframes | null = null;
+  private isolateMode: IsolateMode | null = null;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -74,7 +83,7 @@ export class SceneManager {
     this.scene.useRightHandedSystem = true;
     this.scene.clearColor = new Color4(0.02, 0.02, 0.06, 1.0);
 
-    new CameraSetup(this.scene, canvas, isAdmin);
+    const cameraSetup = new CameraSetup(this.scene, canvas, isAdmin);
     new Lighting(this.scene);
     this.staticMeshes = new StaticMeshes(this.scene);
     this.pusherMesh = new PusherMesh(this.scene);
@@ -149,6 +158,21 @@ export class SceneManager {
       vfx: this.vfxManager,
       getCoinCount: () => this.coinManager.getCoinCount(),
     });
+
+    // Agent perception aids (R2): deterministic camera presets + axis gizmo
+    // and platform grid. Gated on the readout so they share the ?debug=1 gate.
+    if (this.debugReadout) {
+      this.debugAids = new DebugSceneAids(this.scene);
+      this.debugCamera = new DebugCameraController(this.engine, cameraSetup.getCamera());
+      this.colliderWireframes = new ColliderWireframes(this.scene);
+      this.isolateMode = new IsolateMode(this.scene);
+      extendDebugApi({
+        camera: (preset) => this.debugCamera?.applyPreset(preset),
+        wireframe: (on) => this.colliderWireframes?.setVisible(on),
+        set: (path, value) => debugSetParam(this.scene, path, value),
+        isolate: (name) => this.isolateMode?.isolate(name),
+      });
+    }
 
     window.addEventListener("resize", this.resizeHandler);
   }
@@ -335,6 +359,14 @@ export class SceneManager {
     return this.vfxManager;
   }
 
+  /**
+   * Inject the authoritative network-pose source for debug overlays (R3).
+   * No-op outside ?debug=1 (the overlay only exists in debug mode).
+   */
+  setDebugPoseProvider(provider: WireframePoseProvider | null): void {
+    this.colliderWireframes?.setPoseProvider(provider);
+  }
+
   dispose(): void {
     this.stopRenderLoop();
 
@@ -350,6 +382,13 @@ export class SceneManager {
 
     window.removeEventListener("resize", this.resizeHandler);
 
+    this.isolateMode?.dispose();
+    this.isolateMode = null;
+    this.colliderWireframes?.dispose();
+    this.colliderWireframes = null;
+    this.debugAids?.dispose();
+    this.debugAids = null;
+    this.debugCamera = null;
     this.debugReadout?.dispose();
     this.debugReadout = null;
     this.targetingReticle.dispose();

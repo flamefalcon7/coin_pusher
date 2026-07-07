@@ -33,8 +33,11 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { SceneManager } from "./scene/SceneManager";
 import { BonusDropVFX } from "./scene/BonusDropVFX";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
+import { SceneDebugGUI } from "./scene/SceneDebugGUI";
+import { extendDebugApi, type DebugAbilityName, type DebugActionResult } from "./scene/DebugReadout";
+import { buildSceneDump } from "./scene/DebugDump";
 import { GameClient } from "./net/GameClient";
-import { SLOT_CONFIG, RATE_LIMIT_CONFIG, RANK_NONE, type EditorObjectNet } from "@coin-pusher/shared";
+import { SLOT_CONFIG, RATE_LIMIT_CONFIG, RANK_NONE, SCENE_CONFIG, type EditorObjectNet, type StackType } from "@coin-pusher/shared";
 import { Vector3 } from "@babylonjs/core";
 import { EditorManager, GizmoMode } from "./editor/EditorManager";
 import { EditorPanel } from "./editor/EditorPanel";
@@ -207,6 +210,41 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     // Initialize game client (token may be null for spectators)
     const gameClient = new GameClient(WS_URL, token ?? undefined);
     gameClientRef.current = gameClient;
+
+    // Agent perception debug API (no-op unless ?debug=1 installed the surface).
+    // dump() = structured scene state (R1); actions = same code paths as the
+    // real UI handlers, routed through a ref so they never go stale (R5).
+    extendDebugApi({
+      dump: () =>
+        buildSceneDump({
+          scene: sceneManager.getScene(),
+          getCoinCount: () => sceneManager.getCoinCount(),
+          getLatestAuthoritativeState: () =>
+            gameClientRef.current?.getLatestAuthoritativeState() ?? null,
+        }),
+      actions: {
+        insertCoin: (slot = 2, count = 1) => debugActionsRef.current.insertCoin(slot, count),
+        // Default placement targets the platform center (config-derived so it
+        // tracks the same value the tuning HUD exposes, not a copied literal).
+        triggerAbility: (name, x = 0, z = SCENE_CONFIG.PLATFORM.POSITION.z) =>
+          debugActionsRef.current.triggerAbility(name, x, z),
+        spawnStack: (type, x = 0) => debugActionsRef.current.spawnStack(type, x),
+        clearAll: () => debugActionsRef.current.clearAll(),
+        fillPlatform: () => debugActionsRef.current.fillPlatform(),
+      },
+    });
+    // Collider wireframes (R3) track the same authoritative poses as dump().
+    sceneManager.setDebugPoseProvider(
+      () => gameClientRef.current?.getLatestAuthoritativeState() ?? null,
+    );
+
+    // Tuning HUD (R4): only when the ?debug=1 surface was installed.
+    let sceneDebugGui: SceneDebugGUI | null = null;
+    if (window.__coinpusher_debug) {
+      sceneDebugGui = new SceneDebugGUI(sceneManager.getScene(), (on) =>
+        window.__coinpusher_debug?.wireframe?.(on),
+      );
+    }
 
     // Handle auth failure (WS closed with 4401/4403)
     gameClient.onAuthFailure(onAuthFailure);
@@ -592,6 +630,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       }
       toonGuiRef.current?.dispose();
       toonGuiRef.current = null;
+      sceneDebugGui?.dispose();
+      sceneDebugGui = null;
       editorManager.dispose();
       gameClient.dispose();
       sceneManager.dispose();
@@ -721,10 +761,27 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     };
   }, [toggleEditor, tornadoTargeting, explosionTargeting, account?.role]);
 
-  const handleInsertCoin = (slotIndex: number, count: number = 1) => {
+  // Latest UI action handlers for debug action injection (R5). The debug API
+  // closure is registered once in the init effect; routing through this ref
+  // keeps it pointing at the current render's handlers (fresh balance state).
+  const debugActionsRef = useRef<{
+    insertCoin: (slot: number, count: number) => DebugActionResult;
+    triggerAbility: (name: DebugAbilityName, x: number, z: number) => DebugActionResult;
+    spawnStack: (type: StackType, x: number) => DebugActionResult;
+    clearAll: () => DebugActionResult;
+    fillPlatform: () => DebugActionResult;
+  }>({
+    insertCoin: () => ({ ok: false, reason: "not ready" }),
+    triggerAbility: () => ({ ok: false, reason: "not ready" }),
+    spawnStack: () => ({ ok: false, reason: "not ready" }),
+    clearAll: () => ({ ok: false, reason: "not ready" }),
+    fillPlatform: () => ({ ok: false, reason: "not ready" }),
+  });
+
+  const handleInsertCoin = (slotIndex: number, count: number = 1): DebugActionResult => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
       console.warn("Not connected to server");
-      return;
+      return { ok: false, reason: "not connected" };
     }
 
     // Unified wallet: guard against the combined total (play + withdrawable).
@@ -736,7 +793,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       setInsertAckMsg("Not enough coins!");
       setInsertRejected(true);
       setTimeout(() => { setInsertAckMsg(null); setInsertRejected(false); }, 2000);
-      return;
+      return { ok: false, reason: "insufficient balance" };
     }
 
     setIdleWarning(false);
@@ -747,6 +804,7 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
 
     setButtonDisabled(true);
     setTimeout(() => setButtonDisabled(false), 100);
+    return { ok: true };
   };
 
   const handleShock = () => {
@@ -828,6 +886,64 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     setIdleWarning(false);
     gameClientRef.current.superPush();
     // VFX/cooldown now synced via server ability broadcast
+  };
+
+  // Refresh debug action injection targets every render (see debugActionsRef).
+  // Reassigned each render so these closures capture the current cooldown /
+  // balance / connection state and can report an accurate {ok, reason}.
+  debugActionsRef.current = {
+    insertCoin: handleInsertCoin,
+    triggerAbility: (name, x, z) => {
+      const gc = gameClientRef.current;
+      if (!gc || !gc.isConnected()) return { ok: false, reason: "not connected" };
+      switch (name) {
+        case "shock":
+          if (shockCooldown) return { ok: false, reason: "on cooldown" };
+          handleShock();
+          return { ok: true };
+        case "tornado":
+          if (tornadoCooldown) return { ok: false, reason: "on cooldown" };
+          handleTornadoPlace(x, z);
+          return { ok: true };
+        case "explosion":
+          if (explosionCooldown) return { ok: false, reason: "on cooldown" };
+          handleExplosionPlace(x, z);
+          return { ok: true };
+        case "lightning":
+          if (lightningCooldown) return { ok: false, reason: "on cooldown" };
+          handleLightning();
+          return { ok: true };
+        case "superPush":
+        case "super_push":
+          if (superPushCooldown) return { ok: false, reason: "on cooldown" };
+          handleSuperPush();
+          return { ok: true };
+        default:
+          // Surface a mistyped ability name instead of silently no-op'ing —
+          // an agent driving this via evaluate_script gets no other signal.
+          console.warn(`[debug] triggerAbility: unknown ability "${name}"`);
+          return { ok: false, reason: `unknown ability "${name}"` };
+      }
+    },
+    spawnStack: (type, x) => {
+      const gc = gameClientRef.current;
+      if (!gc || !gc.isConnected()) return { ok: false, reason: "not connected" };
+      sceneManagerRef.current?.enableBatchAnimation();
+      gc.spawnStack(type, x);
+      return { ok: true };
+    },
+    clearAll: () => {
+      const gc = gameClientRef.current;
+      if (!gc || !gc.isConnected()) return { ok: false, reason: "not connected" };
+      gc.clearAll();
+      return { ok: true };
+    },
+    fillPlatform: () => {
+      const gc = gameClientRef.current;
+      if (!gc || !gc.isConnected()) return { ok: false, reason: "not connected" };
+      gc.fillPlatform();
+      return { ok: true };
+    },
   };
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {

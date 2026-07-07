@@ -7,7 +7,12 @@ vi.mock("@babylonjs/core", async () => {
   return createBabylonCoreMock();
 });
 
-import { DebugReadout, maybeInstallDebugReadout, type DebugReadoutSources } from "../DebugReadout";
+import {
+  DebugReadout,
+  maybeInstallDebugReadout,
+  extendDebugApi,
+  type DebugReadoutSources,
+} from "../DebugReadout";
 import { createMockScene } from "./leakHarness";
 
 function makeSources(overrides: Partial<DebugReadoutSources> = {}): DebugReadoutSources {
@@ -88,6 +93,44 @@ describe("DebugReadout", () => {
     (globalThis as any).window = { location: { search: "" } };
     const readout = maybeInstallDebugReadout(makeSources());
     expect(readout).toBeNull();
+    expect((globalThis as any).window.__coinpusher_debug).toBeUndefined();
+  });
+});
+
+describe("extendDebugApi", () => {
+  beforeEach(() => {
+    (globalThis as any).window = { location: { search: "?debug=1" } };
+  });
+  afterEach(() => {
+    delete (globalThis as any).window;
+  });
+
+  it("attaches capabilities onto the live surface (same object identity)", () => {
+    const sources = makeSources();
+    const readout = new DebugReadout(sources);
+
+    const dump = () => ({ meshes: [] }) as any;
+    extendDebugApi({ dump });
+
+    const surface = (globalThis as any).window.__coinpusher_debug;
+    expect(surface.dump).toBe(dump);
+    // Counters still refresh in place on the extended object
+    triggerRefresh(sources.scene);
+    expect(surface.fps).toBe(60);
+
+    readout.dispose();
+  });
+
+  it("is a no-op when the surface is absent (debug off)", () => {
+    delete (globalThis as any).window.__coinpusher_debug;
+    expect(() => extendDebugApi({ dump: (() => null) as any })).not.toThrow();
+    expect((globalThis as any).window.__coinpusher_debug).toBeUndefined();
+  });
+
+  it("extensions disappear with the surface on dispose", () => {
+    const readout = new DebugReadout(makeSources());
+    extendDebugApi({ wireframe: () => {} });
+    readout.dispose();
     expect((globalThis as any).window.__coinpusher_debug).toBeUndefined();
   });
 });

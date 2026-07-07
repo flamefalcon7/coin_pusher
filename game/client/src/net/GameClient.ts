@@ -9,11 +9,14 @@ import type {
   BonusDropMessage,
   SponsorRewardMessage,
 } from "@coin-pusher/shared";
+import { toAuthoritativeState, type AuthoritativeState } from "./authoritativeState";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
 import { StateBuffer } from "./StateBuffer";
 import { Interpolator, type InterpolatedState } from "./Interpolator";
 import { maybeCreateDebugPanel, type DebugPanel } from "./DebugPanel";
+
+export type { AuthoritativeState } from "./authoritativeState";
 
 export type ConnectionStatusCallback = (
   status: "connecting" | "connected" | "disconnected",
@@ -557,6 +560,15 @@ export class GameClient {
 
   getInterpolatedState(): InterpolatedState | null {
     return this.interpolator.getInterpolatedState();
+  }
+
+  /**
+   * Latest raw server state (newest buffered state_delta, pre-interpolation).
+   * This is the physics ground truth the debug dump (R1) reports as
+   * `authoritative` poses. Null before the first state arrives.
+   */
+  getLatestAuthoritativeState(): AuthoritativeState | null {
+    return toAuthoritativeState(this.stateBuffer.getNewestState());
   }
 
   onConnectionStatus(callback: ConnectionStatusCallback): void {

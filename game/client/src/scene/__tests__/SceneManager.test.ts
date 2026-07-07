@@ -216,7 +216,7 @@ vi.mock("@babylonjs/core", () => ({
   },
 }));
 
-vi.mock("../CameraSetup", () => ({ CameraSetup: class {} }));
+vi.mock("../CameraSetup", () => ({ CameraSetup: class { getCamera() { return {}; } } }));
 vi.mock("../Lighting", () => ({ Lighting: class {} }));
 vi.mock("../StaticMeshes", () => ({
   StaticMeshes: class {
@@ -259,7 +259,50 @@ vi.mock("../SponsorAdPlacements", () => ({
     createBackWallAd() {} createSideWallAds() {} updateSponsorCreatives() {} dispose() {}
   },
 }));
-vi.mock("../DebugReadout", () => ({ maybeInstallDebugReadout: () => null }));
+// Controllable DebugReadout mock: defaults to "debug off" (null readout) so the
+// existing tests skip the debug branch; a single test overrides it truthy to
+// exercise the ?debug=1 wiring (R2/R3/R6/R7) that a real session hits.
+const debugReadoutMock = vi.hoisted(() => ({
+  maybeInstallDebugReadout: vi.fn(() => null as unknown),
+  extendDebugApi: vi.fn(),
+}));
+vi.mock("../DebugReadout", () => debugReadoutMock);
+
+// Registries capturing constructed debug-module instances so the debug-branch
+// test can assert construction and disposal.
+const debugModuleInstances = vi.hoisted(() => ({
+  camera: [] as any[],
+  aids: [] as any[],
+  wireframes: [] as any[],
+  isolate: [] as any[],
+}));
+vi.mock("../DebugCamera", () => ({
+  DebugCameraController: class {
+    applyPreset = vi.fn();
+    constructor() { debugModuleInstances.camera.push(this); }
+  },
+}));
+vi.mock("../DebugSceneAids", () => ({
+  DebugSceneAids: class {
+    dispose = vi.fn();
+    constructor() { debugModuleInstances.aids.push(this); }
+  },
+}));
+vi.mock("../ColliderWireframes", () => ({
+  ColliderWireframes: class {
+    setVisible = vi.fn();
+    setPoseProvider = vi.fn();
+    dispose = vi.fn();
+    constructor() { debugModuleInstances.wireframes.push(this); }
+  },
+}));
+vi.mock("../IsolateMode", () => ({
+  IsolateMode: class {
+    isolate = vi.fn();
+    dispose = vi.fn();
+    constructor() { debugModuleInstances.isolate.push(this); }
+  },
+}));
 vi.mock("../ToonTheme", () => ({
   THEMES: [{
     label: "Test",
@@ -287,11 +330,54 @@ describe("SceneManager", () => {
 
   beforeEach(() => {
     resetAll();
+    debugReadoutMock.maybeInstallDebugReadout.mockReset();
+    debugReadoutMock.maybeInstallDebugReadout.mockReturnValue(null);
+    debugReadoutMock.extendDebugApi.mockReset();
+    debugModuleInstances.camera.length = 0;
+    debugModuleInstances.aids.length = 0;
+    debugModuleInstances.wireframes.length = 0;
+    debugModuleInstances.isolate.length = 0;
     sm = new SceneManager({} as HTMLCanvasElement);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe("debug-mode wiring (?debug=1 branch)", () => {
+    it("constructs the debug modules, wires the API, and disposes them all", () => {
+      debugReadoutMock.maybeInstallDebugReadout.mockReturnValue({ dispose: vi.fn() });
+
+      const debugSm = new SceneManager({} as HTMLCanvasElement);
+
+      // All four agent-perception modules constructed exactly once.
+      expect(debugModuleInstances.camera).toHaveLength(1);
+      expect(debugModuleInstances.aids).toHaveLength(1);
+      expect(debugModuleInstances.wireframes).toHaveLength(1);
+      expect(debugModuleInstances.isolate).toHaveLength(1);
+
+      // The debug API surface got camera/wireframe/set/isolate wired as functions.
+      const lastCall =
+        debugReadoutMock.extendDebugApi.mock.calls[
+          debugReadoutMock.extendDebugApi.mock.calls.length - 1
+        ];
+      const ext = lastCall[0];
+      for (const key of ["camera", "wireframe", "set", "isolate"]) {
+        expect(typeof ext[key]).toBe("function");
+      }
+
+      // dispose() tears down every debug module exactly once.
+      debugSm.dispose();
+      expect(debugModuleInstances.wireframes[0].dispose).toHaveBeenCalledTimes(1);
+      expect(debugModuleInstances.isolate[0].dispose).toHaveBeenCalledTimes(1);
+      expect(debugModuleInstances.aids[0].dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips debug-module construction when the readout is absent (debug off)", () => {
+      // Default beforeEach state: maybeInstallDebugReadout returns null.
+      expect(debugModuleInstances.camera).toHaveLength(0);
+      expect(debugModuleInstances.wireframes).toHaveLength(0);
+    });
   });
 
   describe("dispose", () => {

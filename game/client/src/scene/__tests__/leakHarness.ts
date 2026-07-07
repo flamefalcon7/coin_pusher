@@ -71,9 +71,13 @@ export class MockColor4 {
 
 export class MockQuaternion {
   x = 0; y = 0; z = 0; w = 1;
+  constructor(x = 0, y = 0, z = 0, w = 1) {
+    this.x = x; this.y = y; this.z = z; this.w = w;
+  }
   set(x: number, y: number, z: number, w: number) {
     this.x = x; this.y = y; this.z = z; this.w = w; return this;
   }
+  clone() { return new MockQuaternion(this.x, this.y, this.z, this.w); }
   multiplyInPlace(_q: MockQuaternion) { return this; }
   static RotationYawPitchRoll() { return new MockQuaternion(); }
   static FromEulerAnglesToRef(_x: number, _y: number, _z: number, out: MockQuaternion) {
@@ -143,6 +147,7 @@ export class MockMesh {
   position = new MockVector3();
   scaling = new MockVector3(1, 1, 1);
   rotation = new MockVector3();
+  rotationQuaternion: MockQuaternion | null = null;
   isPickable = true;
   isVisible = true;
   renderingGroupId = 0;
@@ -152,9 +157,19 @@ export class MockMesh {
   parent: unknown = null;
   material: unknown = null;
   name: string;
+  private _enabled = true;
 
   constructor(name: string) { this.name = name; }
   thinInstanceSetBuffer() {}
+  setEnabled(v: boolean) { this._enabled = v; }
+  // Mirror Babylon: isEnabled(checkAncestors=true) walks parents; a mesh under a
+  // disabled ancestor reports false even when its own flag is true.
+  isEnabled(checkAncestors = true): boolean {
+    if (checkAncestors && this.parent && typeof (this.parent as any).isEnabled === "function") {
+      if (!(this.parent as any).isEnabled(true)) return false;
+    }
+    return this._enabled;
+  }
   dispose() {}
 
   static BILLBOARDMODE_NONE = 0;
@@ -222,6 +237,9 @@ const mockMeshBuilder = {
     return m;
   },
   CreateCylinder: (name: string) => new MockMesh(name),
+  CreateLines: (name: string) => new MockMesh(name),
+  CreateLineSystem: (name: string) => new MockMesh(name),
+  CreateBox: (name: string) => new MockMesh(name),
 };
 
 /**
@@ -248,7 +266,21 @@ export function createBabylonCoreMock() {
       drawCallsCounter = { current: 0 };
       dispose() {}
     },
-    TransformNode: class { constructor(public name?: string) {} dispose() {} },
+    TransformNode: class {
+      position = new MockVector3();
+      rotationQuaternion: MockQuaternion | null = null;
+      parent: unknown = null;
+      private _enabled = true;
+      constructor(public name?: string) {}
+      setEnabled(v: boolean) { this._enabled = v; }
+      isEnabled(checkAncestors = true): boolean {
+        if (checkAncestors && this.parent && typeof (this.parent as any).isEnabled === "function") {
+          if (!(this.parent as any).isEnabled(true)) return false;
+        }
+        return this._enabled;
+      }
+      dispose() {}
+    },
     NoiseProceduralTexture: class {
       animationSpeedFactor = 0;
       persistence = 0;

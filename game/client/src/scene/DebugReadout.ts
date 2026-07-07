@@ -1,12 +1,15 @@
 import { SceneInstrumentation } from "@babylonjs/core";
 import type { Scene, Engine } from "@babylonjs/core";
+import type { StackType } from "@coin-pusher/shared";
 import type { VFXManager } from "./VFXManager";
+import type { SceneDump } from "./DebugDump";
 import { isDebugEnabled } from "../net/debugConfig";
 
 /**
- * Read-only runtime counters exposed on `window.__coinpusher_debug` so the AI
- * agent (via Chrome DevTools MCP) can read ground-truth numbers instead of
- * asking a human to eyeball the frame. See WS5 / self-verification skill.
+ * Runtime debug API exposed on `window.__coinpusher_debug` so the AI agent
+ * (via Chrome DevTools MCP) can read ground-truth numbers and inject actions
+ * instead of asking a human to eyeball the frame. See WS5 / self-verification
+ * skill and the agent-perception plan (docs/plans/2026-07-07-001).
  *
  * Only installed when `?debug=1` — never present in a normal session.
  */
@@ -23,10 +26,74 @@ export interface DebugSnapshot {
   activeBursts: number;
 }
 
+/** Ability names accepted by action injection (both wire and camel casing). */
+export type DebugAbilityName =
+  | "shock"
+  | "tornado"
+  | "explosion"
+  | "lightning"
+  | "superPush"
+  | "super_push";
+
+/**
+ * Result of an injected action so an agent can detect a no-op (disconnected,
+ * on cooldown, unknown name) without a follow-up dump()/screenshot round-trip.
+ */
+export interface DebugActionResult {
+  ok: boolean;
+  reason?: string;
+}
+
+/** Agent action injection (R5) — same client code paths as the real UI. */
+export interface DebugActions {
+  /** Insert `count` coins at slot 0-4 (default: center slot, 1 coin). */
+  insertCoin(slot?: number, count?: number): DebugActionResult;
+  /** Trigger an ability; x/z used by targeted abilities (tornado/explosion). */
+  triggerAbility(name: DebugAbilityName, x?: number, z?: number): DebugActionResult;
+  /** Spawn a shaped coin stack (admin, server-enforced) for scene setup. */
+  spawnStack(type: StackType, x?: number): DebugActionResult;
+  /** Clear the board (admin, server-enforced) — resets between test loops. */
+  clearAll(): DebugActionResult;
+  /** Saturate the platform (admin, server-enforced) for stress screenshots. */
+  fillPlatform(): DebugActionResult;
+}
+
+export type DebugCameraPreset = "top" | "front" | "side" | "default";
+
+/**
+ * The full debug surface: live counters (refreshed in place per frame by
+ * DebugReadout) plus capabilities installed later via `extendDebugApi` by the
+ * modules that own them (dump/actions from App, camera/wireframe/isolate/set
+ * from the scene layer).
+ */
+export interface CoinPusherDebugApi extends DebugSnapshot {
+  /** Structured scene state (R1). */
+  dump?: () => SceneDump;
+  /** Deterministic debug camera presets (R2). */
+  camera?: (preset: DebugCameraPreset) => void;
+  /** Rapier collider wireframe overlay toggle (R3). */
+  wireframe?: (on: boolean) => void;
+  /** Action injection (R5). */
+  actions?: DebugActions;
+  /** Isolated render mode; pass null to restore (R6). */
+  isolate?: (meshName: string | null) => void;
+  /** Set a client-visual parameter by path; returns the previous value (R7). */
+  set?: (path: string, value: unknown) => unknown;
+}
+
 declare global {
   interface Window {
-    __coinpusher_debug?: DebugSnapshot;
+    __coinpusher_debug?: CoinPusherDebugApi;
   }
+}
+
+/**
+ * Attach capabilities to the debug surface. No-op when the surface is absent
+ * (i.e. not `?debug=1`), so callers never need their own debug gate.
+ */
+export function extendDebugApi(ext: Partial<CoinPusherDebugApi>): void {
+  if (typeof window === "undefined" || !window.__coinpusher_debug) return;
+  Object.assign(window.__coinpusher_debug, ext);
 }
 
 /** The minimal surface DebugReadout needs — keeps it decoupled + testable. */
