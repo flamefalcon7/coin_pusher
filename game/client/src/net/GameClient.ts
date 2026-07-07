@@ -559,6 +559,25 @@ export class GameClient {
     return this.interpolator.getInterpolatedState();
   }
 
+  /**
+   * Latest raw server state (newest buffered state_delta, pre-interpolation).
+   * This is the physics ground truth the debug dump (R1) reports as
+   * `authoritative` poses. Null before the first state arrives.
+   */
+  getLatestAuthoritativeState(): {
+    serverTime: number;
+    pusherZ: number;
+    coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[];
+  } | null {
+    const newest = this.stateBuffer.getNewestState();
+    if (!newest) return null;
+    return {
+      serverTime: newest.serverTime,
+      pusherZ: newest.pusherZ,
+      coins: newest.updates,
+    };
+  }
+
   onConnectionStatus(callback: ConnectionStatusCallback): void {
     this.connectionStatusCallback = callback;
   }

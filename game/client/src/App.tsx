@@ -33,6 +33,8 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { SceneManager } from "./scene/SceneManager";
 import { BonusDropVFX } from "./scene/BonusDropVFX";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
+import { extendDebugApi, type DebugAbilityName } from "./scene/DebugReadout";
+import { buildSceneDump } from "./scene/DebugDump";
 import { GameClient } from "./net/GameClient";
 import { SLOT_CONFIG, RATE_LIMIT_CONFIG, RANK_NONE, type EditorObjectNet } from "@coin-pusher/shared";
 import { Vector3 } from "@babylonjs/core";
@@ -207,6 +209,24 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     // Initialize game client (token may be null for spectators)
     const gameClient = new GameClient(WS_URL, token ?? undefined);
     gameClientRef.current = gameClient;
+
+    // Agent perception debug API (no-op unless ?debug=1 installed the surface).
+    // dump() = structured scene state (R1); actions = same code paths as the
+    // real UI handlers, routed through a ref so they never go stale (R5).
+    extendDebugApi({
+      dump: () =>
+        buildSceneDump({
+          scene: sceneManager.getScene(),
+          getCoinCount: () => sceneManager.getCoinCount(),
+          getLatestAuthoritativeState: () =>
+            gameClientRef.current?.getLatestAuthoritativeState() ?? null,
+        }),
+      actions: {
+        insertCoin: (slot = 2, count = 1) => debugActionsRef.current.insertCoin(slot, count),
+        triggerAbility: (name, x = 0, z = 0.05) =>
+          debugActionsRef.current.triggerAbility(name, x, z),
+      },
+    });
 
     // Handle auth failure (WS closed with 4401/4403)
     gameClient.onAuthFailure(onAuthFailure);
@@ -721,6 +741,14 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     };
   }, [toggleEditor, tornadoTargeting, explosionTargeting, account?.role]);
 
+  // Latest UI action handlers for debug action injection (R5). The debug API
+  // closure is registered once in the init effect; routing through this ref
+  // keeps it pointing at the current render's handlers (fresh balance state).
+  const debugActionsRef = useRef<{
+    insertCoin: (slot: number, count: number) => void;
+    triggerAbility: (name: DebugAbilityName, x: number, z: number) => void;
+  }>({ insertCoin: () => {}, triggerAbility: () => {} });
+
   const handleInsertCoin = (slotIndex: number, count: number = 1) => {
     if (!gameClientRef.current || !gameClientRef.current.isConnected()) {
       console.warn("Not connected to server");
@@ -828,6 +856,31 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     setIdleWarning(false);
     gameClientRef.current.superPush();
     // VFX/cooldown now synced via server ability broadcast
+  };
+
+  // Refresh debug action injection targets every render (see debugActionsRef).
+  debugActionsRef.current = {
+    insertCoin: handleInsertCoin,
+    triggerAbility: (name, x, z) => {
+      switch (name) {
+        case "shock":
+          handleShock();
+          break;
+        case "tornado":
+          handleTornadoPlace(x, z);
+          break;
+        case "explosion":
+          handleExplosionPlace(x, z);
+          break;
+        case "lightning":
+          handleLightning();
+          break;
+        case "superPush":
+        case "super_push":
+          handleSuperPush();
+          break;
+      }
+    },
   };
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
