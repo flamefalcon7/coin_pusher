@@ -1,5 +1,6 @@
 import type { Scene } from "@babylonjs/core";
-import { SCENE_CONFIG } from "@coin-pusher/shared";
+import { SCENE_CONFIG, type StateUpdate } from "@coin-pusher/shared";
+import type { AuthoritativeState } from "../net/GameClient";
 
 /**
  * Structured scene dump for the AI agent (R1, agent-perception plan).
@@ -32,12 +33,7 @@ export interface MeshDump {
 }
 
 /** Last authoritative pose received from the server for a networked body. */
-export interface AuthoritativePose {
-  id: number;
-  pos: [number, number, number];
-  rot: [number, number, number, number];
-  authoritative: true;
-}
+export type AuthoritativePose = StateUpdate & { authoritative: true };
 
 export interface SceneDump {
   /** All non-thin-instance meshes in the scene graph. */
@@ -60,13 +56,7 @@ export interface SceneDumpSources {
   scene: Pick<Scene, "meshes">;
   getCoinCount: () => number;
   /** Newest buffered server state; null before the first snapshot. */
-  getLatestAuthoritativeState?: () =>
-    | {
-        serverTime: number;
-        pusherZ: number;
-        coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[];
-      }
-    | null;
+  getLatestAuthoritativeState?: () => AuthoritativeState | null;
 }
 
 function toVec3(v: { x?: number; y?: number; z?: number } | null | undefined): DumpVec3 {

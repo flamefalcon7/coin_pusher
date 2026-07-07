@@ -236,7 +236,9 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     // Tuning HUD (R4): only when the ?debug=1 surface was installed.
     let sceneDebugGui: SceneDebugGUI | null = null;
     if (window.__coinpusher_debug) {
-      sceneDebugGui = new SceneDebugGUI(sceneManager.getScene());
+      sceneDebugGui = new SceneDebugGUI(sceneManager.getScene(), (on) =>
+        window.__coinpusher_debug?.wireframe?.(on),
+      );
     }
 
     // Handle auth failure (WS closed with 4401/4403)

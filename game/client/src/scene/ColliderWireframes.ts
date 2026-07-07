@@ -8,6 +8,7 @@ import {
 } from "@babylonjs/core";
 import type { Scene, Mesh, AbstractMesh } from "@babylonjs/core";
 import { SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG } from "@coin-pusher/shared";
+import type { AuthoritativeState } from "../net/GameClient";
 
 /**
  * Rapier collider wireframe overlay (R3, agent-perception plan).
@@ -27,10 +28,7 @@ import { SCENE_CONFIG, COIN_CONFIG, PUSHER_CONFIG } from "@coin-pusher/shared";
 export const MAX_COIN_WIREFRAMES = 20;
 
 export interface WireframePoseProvider {
-  (): {
-    pusherZ: number;
-    coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[];
-  } | null;
+  (): AuthoritativeState | null;
 }
 
 type Quat = { x: number; y: number; z: number; w: number };
@@ -71,6 +69,9 @@ export class ColliderWireframes {
   private observer: ReturnType<Scene["onBeforeRenderObservable"]["add"]> | null;
   private visible = false;
   private getPoses: WireframePoseProvider | null = null;
+  // Change-detection guard: server ticks slower than the render loop, so the
+  // same authoritative state persists across frames — skip the no-op rewrites.
+  private lastSeenServerTime = Number.NaN;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -104,6 +105,8 @@ export class ColliderWireframes {
   setVisible(on: boolean): void {
     this.visible = on;
     this.root?.setEnabled(on);
+    // Re-sync dynamic bodies on the next frame even if the tick didn't advance.
+    this.lastSeenServerTime = Number.NaN;
   }
 
   isVisible(): boolean {
@@ -411,6 +414,8 @@ export class ColliderWireframes {
     if (!this.visible) return;
     const state = this.getPoses?.() ?? null;
     if (!state) return;
+    if (state.serverTime === this.lastSeenServerTime) return;
+    this.lastSeenServerTime = state.serverTime;
 
     if (this.pusherBox) {
       this.pusherBox.position.z = state.pusherZ;

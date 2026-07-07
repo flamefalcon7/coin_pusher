@@ -51,7 +51,8 @@ describe("ColliderWireframes", () => {
   it(`caps the dynamic coin pool at ${MAX_COIN_WIREFRAMES} (perf guard)`, () => {
     const scene = createMockScene();
     const wf = new ColliderWireframes(scene);
-    wf.setPoseProvider(() => ({ pusherZ: -0.5, coins: makeCoins(50) }));
+    let serverTime = 0;
+    wf.setPoseProvider(() => ({ serverTime: ++serverTime, pusherZ: -0.5, coins: makeCoins(50) }));
     wf.setVisible(true);
 
     for (let i = 0; i < 10; i++) tick(scene);
@@ -63,8 +64,9 @@ describe("ColliderWireframes", () => {
   it("disables surplus pool coins when the network count drops", () => {
     const scene = createMockScene();
     const wf = new ColliderWireframes(scene);
+    let serverTime = 0;
     let coins = makeCoins(10);
-    wf.setPoseProvider(() => ({ pusherZ: -0.5, coins }));
+    wf.setPoseProvider(() => ({ serverTime: ++serverTime, pusherZ: -0.5, coins }));
     wf.setVisible(true);
 
     tick(scene);
@@ -80,10 +82,29 @@ describe("ColliderWireframes", () => {
     wf.dispose();
   });
 
+  it("skips dynamic rewrites while the server tick hasn't advanced (no-op guard)", () => {
+    const scene = createMockScene();
+    const wf = new ColliderWireframes(scene);
+    let coins = makeCoins(1);
+    wf.setPoseProvider(() => ({ serverTime: 1000, pusherZ: -0.5, coins }));
+    wf.setVisible(true);
+
+    tick(scene);
+    coins = makeCoins(5); // same serverTime → stale state must be ignored
+    tick(scene);
+    expect(wf.getCoinPoolSize()).toBe(1);
+
+    wf.setVisible(true); // toggling visibility re-syncs even without a new tick
+    tick(scene);
+    expect(wf.getCoinPoolSize()).toBe(5);
+
+    wf.dispose();
+  });
+
   it("does not update dynamic bodies while hidden", () => {
     const scene = createMockScene();
     const wf = new ColliderWireframes(scene);
-    wf.setPoseProvider(() => ({ pusherZ: -0.5, coins: makeCoins(5) }));
+    wf.setPoseProvider(() => ({ serverTime: 1, pusherZ: -0.5, coins: makeCoins(5) }));
 
     tick(scene); // visible=false → no pool growth
     expect(wf.getCoinPoolSize()).toBe(0);
@@ -94,7 +115,7 @@ describe("ColliderWireframes", () => {
   it("dispose leaves no residue: counters at zero, observer removed, double-dispose safe (leak test)", () => {
     const scene = createMockScene();
     const wf = new ColliderWireframes(scene);
-    wf.setPoseProvider(() => ({ pusherZ: -0.5, coins: makeCoins(30) }));
+    wf.setPoseProvider(() => ({ serverTime: 1, pusherZ: -0.5, coins: makeCoins(30) }));
     wf.setVisible(true);
     tick(scene);
 

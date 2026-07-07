@@ -6,6 +6,7 @@ import {
   buildTuningExport,
   diffTuningParams,
 } from "./tuningExport";
+import { debugSetParam } from "./debugParamSet";
 
 /**
  * Tuning HUD (R4, agent-perception plan): lil-gui sliders over the numeric
@@ -23,38 +24,36 @@ const SECTIONS = ["PLATFORM", "BACK_WALL", "SIDE_WALLS", "PINS", "PUSHER"] as co
 /** Config paths that can be previewed live on client meshes. */
 type LiveApplyFn = (scene: Scene, value: number) => void;
 
-function moveNode(scene: Scene, name: string, axis: "x" | "y" | "z", value: number): void {
-  const node =
-    (scene.getTransformNodeByName?.(name) as { position?: Record<string, number> } | null) ??
-    (scene.getMeshByName?.(name) as { position?: Record<string, number> } | null);
-  if (node?.position) node.position[axis] = value;
+/** debugSetParam, but tolerant: absent nodes just skip the live preview. */
+function applyParam(scene: Scene, path: string, value: number): void {
+  try {
+    debugSetParam(scene, path, value);
+  } catch {
+    // Node not present in this scene variant — slider still records the value.
+  }
 }
 
 const LIVE_APPLY: Record<string, LiveApplyFn> = {
-  "PLATFORM.POSITION.x": (s, v) => moveNode(s, "platformGroup", "x", v),
-  "PLATFORM.POSITION.y": (s, v) => moveNode(s, "platformGroup", "y", v),
-  "PLATFORM.POSITION.z": (s, v) => moveNode(s, "platformGroup", "z", v),
-  "BACK_WALL.POSITION.x": (s, v) => moveNode(s, "backWallGroup", "x", v),
-  "BACK_WALL.POSITION.y": (s, v) => moveNode(s, "backWallGroup", "y", v),
-  "BACK_WALL.POSITION.z": (s, v) => moveNode(s, "backWallGroup", "z", v),
-  "BACK_WALL.TILT_ANGLE": (s, v) => {
-    const node = s.getTransformNodeByName?.("backWallGroup") as
-      | { rotation?: { x: number } }
-      | null;
-    if (node?.rotation) node.rotation.x = (v * Math.PI) / 180;
-  },
-  "SIDE_WALLS.LEFT_POSITION.x": (s, v) => moveNode(s, "leftWallBack", "x", v),
+  "PLATFORM.POSITION.x": (s, v) => applyParam(s, "platformGroup.position.x", v),
+  "PLATFORM.POSITION.y": (s, v) => applyParam(s, "platformGroup.position.y", v),
+  "PLATFORM.POSITION.z": (s, v) => applyParam(s, "platformGroup.position.z", v),
+  "BACK_WALL.POSITION.x": (s, v) => applyParam(s, "backWallGroup.position.x", v),
+  "BACK_WALL.POSITION.y": (s, v) => applyParam(s, "backWallGroup.position.y", v),
+  "BACK_WALL.POSITION.z": (s, v) => applyParam(s, "backWallGroup.position.z", v),
+  "BACK_WALL.TILT_ANGLE": (s, v) =>
+    applyParam(s, "backWallGroup.rotation.x", (v * Math.PI) / 180),
+  "SIDE_WALLS.LEFT_POSITION.x": (s, v) => applyParam(s, "leftWallBack.position.x", v),
   "SIDE_WALLS.LEFT_POSITION.y": (s, v) => {
-    moveNode(s, "leftWallBack", "y", v);
-    moveNode(s, "leftWallFront", "y", v);
+    applyParam(s, "leftWallBack.position.y", v);
+    applyParam(s, "leftWallFront.position.y", v);
   },
-  "SIDE_WALLS.RIGHT_POSITION.x": (s, v) => moveNode(s, "rightWallBack", "x", v),
+  "SIDE_WALLS.RIGHT_POSITION.x": (s, v) => applyParam(s, "rightWallBack.position.x", v),
   "SIDE_WALLS.RIGHT_POSITION.y": (s, v) => {
-    moveNode(s, "rightWallBack", "y", v);
-    moveNode(s, "rightWallFront", "y", v);
+    applyParam(s, "rightWallBack.position.y", v);
+    applyParam(s, "rightWallFront.position.y", v);
   },
-  "PUSHER.POSITION.x": (s, v) => moveNode(s, "pusher", "x", v),
-  "PUSHER.POSITION.y": (s, v) => moveNode(s, "pusher", "y", v),
+  "PUSHER.POSITION.x": (s, v) => applyParam(s, "pusher.position.x", v),
+  "PUSHER.POSITION.y": (s, v) => applyParam(s, "pusher.position.y", v),
 };
 
 export class SceneDebugGUI {
@@ -62,7 +61,10 @@ export class SceneDebugGUI {
   private readonly original = new Map<string, number>();
   private readonly current = new Map<string, number>();
 
-  constructor(private readonly scene: Scene) {
+  constructor(
+    private readonly scene: Scene,
+    private readonly setWireframe: (on: boolean) => void = () => {},
+  ) {
     this.gui = new GUI({ title: "Scene Tuning" });
 
     for (const section of SECTIONS) {
@@ -88,13 +90,21 @@ export class SceneDebugGUI {
       folder.close();
     }
 
+    // LIVE_APPLY keys are free-form strings; catch drift against SCENE_CONFIG
+    // renames at construction (debug-only, so a warn is enough).
+    for (const key of Object.keys(LIVE_APPLY)) {
+      if (!this.original.has(key)) {
+        console.warn(`SceneDebugGUI: LIVE_APPLY key "${key}" is not a SCENE_CONFIG leaf`);
+      }
+    }
+
     const controls = {
       "collider wireframes": false,
       "export changes": () => this.exportChanges(),
     };
     this.gui
       .add(controls, "collider wireframes")
-      .onChange((v: boolean) => window.__coinpusher_debug?.wireframe?.(v));
+      .onChange((v: boolean) => this.setWireframe(v));
     this.gui.add(controls, "export changes");
   }
 

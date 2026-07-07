@@ -8,12 +8,23 @@ import type {
   SponsorConfigMessage,
   BonusDropMessage,
   SponsorRewardMessage,
+  StateUpdate,
 } from "@coin-pusher/shared";
 import { WebSocketClient } from "./WebSocketClient";
 import { ClockSync } from "./ClockSync";
 import { StateBuffer } from "./StateBuffer";
 import { Interpolator, type InterpolatedState } from "./Interpolator";
 import { maybeCreateDebugPanel, type DebugPanel } from "./DebugPanel";
+
+/**
+ * Latest raw server state (newest buffered state_delta, pre-interpolation) —
+ * the shared shape for debug consumers (dump(), collider wireframes).
+ */
+export interface AuthoritativeState {
+  serverTime: number;
+  pusherZ: number;
+  coins: StateUpdate[];
+}
 
 export type ConnectionStatusCallback = (
   status: "connecting" | "connected" | "disconnected",
@@ -564,11 +575,7 @@ export class GameClient {
    * This is the physics ground truth the debug dump (R1) reports as
    * `authoritative` poses. Null before the first state arrives.
    */
-  getLatestAuthoritativeState(): {
-    serverTime: number;
-    pusherZ: number;
-    coins: { id: number; pos: [number, number, number]; rot: [number, number, number, number] }[];
-  } | null {
+  getLatestAuthoritativeState(): AuthoritativeState | null {
     const newest = this.stateBuffer.getNewestState();
     if (!newest) return null;
     return {
