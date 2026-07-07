@@ -14,6 +14,7 @@ import { DebugCameraController } from "./DebugCamera";
 import { DebugSceneAids } from "./DebugSceneAids";
 import { ColliderWireframes, type WireframePoseProvider } from "./ColliderWireframes";
 import { debugSetParam } from "./debugParamSet";
+import { IsolateMode } from "./IsolateMode";
 import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 import { SponsorAdPlacements } from "./SponsorAdPlacements";
@@ -48,6 +49,7 @@ export class SceneManager {
   private debugCamera: DebugCameraController | null = null;
   private debugAids: DebugSceneAids | null = null;
   private colliderWireframes: ColliderWireframes | null = null;
+  private isolateMode: IsolateMode | null = null;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -163,10 +165,12 @@ export class SceneManager {
       this.debugAids = new DebugSceneAids(this.scene);
       this.debugCamera = new DebugCameraController(this.engine, cameraSetup.getCamera());
       this.colliderWireframes = new ColliderWireframes(this.scene);
+      this.isolateMode = new IsolateMode(this.scene);
       extendDebugApi({
         camera: (preset) => this.debugCamera?.applyPreset(preset),
         wireframe: (on) => this.colliderWireframes?.setVisible(on),
         set: (path, value) => debugSetParam(this.scene, path, value),
+        isolate: (name) => this.isolateMode?.isolate(name),
       });
     }
 
@@ -378,6 +382,8 @@ export class SceneManager {
 
     window.removeEventListener("resize", this.resizeHandler);
 
+    this.isolateMode?.dispose();
+    this.isolateMode = null;
     this.colliderWireframes?.dispose();
     this.colliderWireframes = null;
     this.debugAids?.dispose();
