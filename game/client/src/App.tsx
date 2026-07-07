@@ -33,6 +33,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { SceneManager } from "./scene/SceneManager";
 import { BonusDropVFX } from "./scene/BonusDropVFX";
 import { ToonDebugGUI } from "./scene/ToonDebugGUI";
+import { SceneDebugGUI } from "./scene/SceneDebugGUI";
 import { extendDebugApi, type DebugAbilityName } from "./scene/DebugReadout";
 import { buildSceneDump } from "./scene/DebugDump";
 import { GameClient } from "./net/GameClient";
@@ -231,6 +232,12 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     sceneManager.setDebugPoseProvider(
       () => gameClientRef.current?.getLatestAuthoritativeState() ?? null,
     );
+
+    // Tuning HUD (R4): only when the ?debug=1 surface was installed.
+    let sceneDebugGui: SceneDebugGUI | null = null;
+    if (window.__coinpusher_debug) {
+      sceneDebugGui = new SceneDebugGUI(sceneManager.getScene());
+    }
 
     // Handle auth failure (WS closed with 4401/4403)
     gameClient.onAuthFailure(onAuthFailure);
@@ -616,6 +623,8 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
       }
       toonGuiRef.current?.dispose();
       toonGuiRef.current = null;
+      sceneDebugGui?.dispose();
+      sceneDebugGui = null;
       editorManager.dispose();
       gameClient.dispose();
       sceneManager.dispose();

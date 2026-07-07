@@ -13,6 +13,7 @@ import { maybeInstallDebugReadout, extendDebugApi, type DebugReadout } from "./D
 import { DebugCameraController } from "./DebugCamera";
 import { DebugSceneAids } from "./DebugSceneAids";
 import { ColliderWireframes, type WireframePoseProvider } from "./ColliderWireframes";
+import { debugSetParam } from "./debugParamSet";
 import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 import { SponsorAdPlacements } from "./SponsorAdPlacements";
@@ -165,6 +166,7 @@ export class SceneManager {
       extendDebugApi({
         camera: (preset) => this.debugCamera?.applyPreset(preset),
         wireframe: (on) => this.colliderWireframes?.setVisible(on),
+        set: (path, value) => debugSetParam(this.scene, path, value),
       });
     }
 
