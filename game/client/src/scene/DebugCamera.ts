@@ -66,28 +66,30 @@ export class DebugCameraController {
     this.camera.upperBetaLimit = null;
     this.camera.lowerRadiusLimit = null;
     this.camera.upperRadiusLimit = null;
-    this.camera.radius = this.saved.radius;
 
+    // setTarget FIRST: ArcRotateCamera.setTarget rebuilds alpha/beta/radius
+    // from the current position, so angles assigned before it are lost.
     switch (preset) {
       case "top":
         // Straight down; -Z (back wall) at the top of the screen.
+        this.camera.setTarget(new Vector3(0, platformTopY, platformZ));
         this.camera.alpha = Math.PI / 2;
         this.camera.beta = 0.01; // avoid the beta=0 singularity
-        this.camera.setTarget(new Vector3(0, platformTopY, platformZ));
         break;
       case "front":
         // From +Z (player side) looking toward the back wall.
+        this.camera.setTarget(new Vector3(0, 0.6, platformZ));
         this.camera.alpha = Math.PI / 2;
         this.camera.beta = Math.PI / 2;
-        this.camera.setTarget(new Vector3(0, 0.6, platformZ));
         break;
       case "side":
         // From +X (player's right) looking across the table.
+        this.camera.setTarget(new Vector3(0, 0.6, platformZ));
         this.camera.alpha = 0;
         this.camera.beta = Math.PI / 2;
-        this.camera.setTarget(new Vector3(0, 0.6, platformZ));
         break;
     }
+    this.camera.radius = this.saved.radius;
 
     this.applyOrtho();
   }
@@ -110,10 +112,11 @@ export class DebugCameraController {
     this.camera.orthoRight = null;
     this.camera.orthoTop = null;
     this.camera.orthoBottom = null;
+    // setTarget first — it rebuilds alpha/beta/radius (see applyPreset).
+    this.camera.setTarget(s.target.clone());
     this.camera.alpha = s.alpha;
     this.camera.beta = s.beta;
     this.camera.radius = s.radius;
-    this.camera.setTarget(s.target.clone());
     this.camera.lowerAlphaLimit = s.lowerAlphaLimit;
     this.camera.upperAlphaLimit = s.upperAlphaLimit;
     this.camera.lowerBetaLimit = s.lowerBetaLimit;
