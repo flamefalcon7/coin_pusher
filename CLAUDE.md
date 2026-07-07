@@ -24,6 +24,12 @@
   - `zarf/` - Config & deploy (Docker, K8s)
 - `docker-compose*.yml` - Deployment configs
 
+## Definition of Done (verification gate)
+
+- **Restate before executing**: before any multi-step or planned work (ce-plan / ce-work / any feature task), restate the original goal + success criteria in 1–2 lines and get confirmation. Guards against intent drift.
+- **Evidence before "done"**: any change with a visible or behavioural effect MUST ship with evidence — green headless test (leak/SimLoop harness) and, for anything rendered, a screenshot via Chrome DevTools MCP. Follow `.agents/skills/self-verification`; "please check if it looks right" is a failure mode. A feature nobody has seen render is not done. (Retro: `docs/solutions/workflow/claude-code-session-retro-2026-07.md`.)
+- **Never commit on red**: run the affected package's test suite before commit. CI (`.github/workflows/ci.yml`) runs `pnpm -r test` + `go test ./backend/...` on every push/PR to main.
+
 ## Product Spec
 
 Read `docs/spec.md` for product design intent: game loop, abilities, economy, multiplayer, and planned features. This captures the "why" behind design decisions that code alone doesn't convey.

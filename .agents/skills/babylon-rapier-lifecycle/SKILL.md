@@ -5,7 +5,7 @@ license: MIT
 metadata:
   version: "1.0.0"
   domain: game-client-server
-  triggers: dispose, memory leak, 記憶體洩漏, 物件回收, leak, GC, particle, ParticleSystem, VFX cleanup, observer leak, onBeforeRenderObservable, removeRigidBody, collider, thin instance, texture dispose, material dispose, count-baseline leak test
+  triggers: dispose, memory leak, 記憶體洩漏, 物件回收, leak, GC, particle, ParticleSystem, VFX cleanup, observer leak, onBeforeRenderObservable, removeRigidBody, collider, thin instance, texture dispose, material dispose, count-baseline leak test, coordinate, 座標, spatial contract, collider mapping, new mesh, 新增物件, position, axis
   role: implementer
   scope: implementation
   output-format: code-then-test
@@ -42,6 +42,29 @@ patterns.
 5. **Rapier: pair every `createRigidBody` with `removeRigidBody` on despawn.** Removing a body auto-removes its attached colliders — do **not** also try to free those colliders separately. Never drop a body reference without removing it from the world.
 6. **Null out references after disposal** so the object can be GC'd and double-dispose is safe.
 7. **Add/extend a leak test** (see template) for any new pooled or spawnable resource.
+8. **Declare the Rapier collider mapping BEFORE creating any new visual mesh with physics** (see whitelist below). If no mapping exists, redesign the shape or decompose it — do not mesh first and hope.
+9. **Look up coordinates in `references/spatial-contract.md` / `SCENE_CONFIG`; never guess or hardcode world positions.** Both engines are right-handed, units are meters, +Y up, +Z toward the player.
+
+## Collider mapping whitelist (renderable ≠ physical)
+
+BabylonJS can render shapes Rapier can't simulate. Every physical object MUST
+map to one of:
+
+| Rapier collider | Use for | Constraints |
+|---|---|---|
+| `cuboid` | walls, platform, pusher | house default — prefer this |
+| `cylinder` | coins, pins | coins are cylinders, not balls |
+| `ball` / `capsule` | round dynamics | — |
+| **compound of cuboids** | walls with openings, arcs | house pattern: `SceneBuilder.createWallWithOpening` (4 cuboids), pusher-notch plan (6–8 cuboids along arc) |
+| `convexHull` | irregular **convex** dynamic bodies | last resort; more expensive |
+| `trimesh` | concave shapes, **static only** | never dynamic; no CCD guarantees |
+
+- Concave dynamic body → decompose into convex parts or redesign. There is no
+  concave dynamic collider.
+- Purely visual elements (no collider) are allowed but MUST be explicitly
+  marked client-only in config, like `SCENE_CONFIG.DROP_ZONE`.
+- The client mesh and server collider MUST be built from the **same
+  `SCENE_CONFIG` constants** so they can't drift apart.
 
 ## MUST NOT DO
 
