@@ -43,7 +43,12 @@ export class IsolateMode {
 
     for (const mesh of this.scene.meshes ?? []) {
       if (keep.has(mesh)) continue;
-      this.savedMeshes.push({ mesh, enabled: mesh.isEnabled?.() ?? true });
+      // Save the mesh's OWN enabled flag (checkAncestors=false). isEnabled()
+      // defaults to walking ancestors, so a mesh under an already-disabled
+      // parent (e.g. the hidden collider-wireframe root) would report false and
+      // restore() would then clobber its own flag to false — permanently
+      // breaking the parent's later re-enable. See ColliderWireframes overlay.
+      this.savedMeshes.push({ mesh, enabled: mesh.isEnabled?.(false) ?? true });
       mesh.setEnabled(false);
     }
 

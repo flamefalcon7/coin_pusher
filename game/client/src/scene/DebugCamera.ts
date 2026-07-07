@@ -53,6 +53,10 @@ export class DebugCameraController {
     const platformTopY =
       SCENE_CONFIG.PLATFORM.POSITION.y + SCENE_CONFIG.PLATFORM.THICKNESS / 2;
     const platformZ = SCENE_CONFIG.PLATFORM.POSITION.z;
+    // Elevation for the horizontal (front/side) presets: the back-wall center,
+    // a documented landmark that sits mid-play-volume so the table stays framed.
+    // Config-derived (spatial-contract: never hardcode world coordinates).
+    const midY = SCENE_CONFIG.BACK_WALL.POSITION.y;
 
     if (preset === "default") {
       this.restoreDefault();
@@ -78,13 +82,13 @@ export class DebugCameraController {
         break;
       case "front":
         // From +Z (player side) looking toward the back wall.
-        this.camera.setTarget(new Vector3(0, 0.6, platformZ));
+        this.camera.setTarget(new Vector3(0, midY, platformZ));
         this.camera.alpha = Math.PI / 2;
         this.camera.beta = Math.PI / 2;
         break;
       case "side":
         // From +X (player's right) looking across the table.
-        this.camera.setTarget(new Vector3(0, 0.6, platformZ));
+        this.camera.setTarget(new Vector3(0, midY, platformZ));
         this.camera.alpha = 0;
         this.camera.beta = Math.PI / 2;
         break;

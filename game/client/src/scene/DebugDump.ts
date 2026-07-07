@@ -52,6 +52,30 @@ export interface SceneDump {
   sceneConfig: typeof SCENE_CONFIG;
 }
 
+/**
+ * Structural subset of AbstractMesh that buildSceneDump reads. Narrow interface
+ * (every member optional) so real Babylon meshes satisfy it, partial test mocks
+ * satisfy it, and a rename on the members we depend on fails typecheck instead
+ * of silently producing an empty dump.
+ */
+export interface MeshLike {
+  name?: string;
+  position?: { x?: number; y?: number; z?: number };
+  rotationQuaternion?: { x: number; y: number; z: number; w: number } | null;
+  scaling?: { x?: number; y?: number; z?: number };
+  thinInstanceCount?: number;
+  computeWorldMatrix?(force?: boolean): unknown;
+  getAbsolutePosition?(): { x?: number; y?: number; z?: number };
+  getBoundingInfo?(): {
+    boundingBox?: {
+      minimumWorld?: { x?: number; y?: number; z?: number };
+      maximumWorld?: { x?: number; y?: number; z?: number };
+      minimum?: { x?: number; y?: number; z?: number };
+      maximum?: { x?: number; y?: number; z?: number };
+    };
+  } | null | undefined;
+}
+
 export interface SceneDumpSources {
   scene: Pick<Scene, "meshes">;
   getCoinCount: () => number;
@@ -63,7 +87,7 @@ function toVec3(v: { x?: number; y?: number; z?: number } | null | undefined): D
   return { x: v?.x ?? 0, y: v?.y ?? 0, z: v?.z ?? 0 };
 }
 
-function dumpMesh(mesh: any): MeshDump {
+function dumpMesh(mesh: MeshLike): MeshDump {
   // World-space position; fall back to local position for partial mocks.
   let position = mesh.position;
   if (typeof mesh.computeWorldMatrix === "function" && typeof mesh.getAbsolutePosition === "function") {
@@ -104,7 +128,7 @@ export function buildSceneDump(sources: SceneDumpSources): SceneDump {
   const meshes: MeshDump[] = [];
   const thinInstanceHosts: { name: string; count: number }[] = [];
 
-  for (const mesh of (sources.scene.meshes ?? []) as any[]) {
+  for (const mesh of (sources.scene.meshes ?? []) as readonly MeshLike[]) {
     const thinCount = mesh?.thinInstanceCount ?? 0;
     if (thinCount > 0) {
       thinInstanceHosts.push({ name: mesh.name ?? "", count: thinCount });

@@ -162,7 +162,14 @@ export class MockMesh {
   constructor(name: string) { this.name = name; }
   thinInstanceSetBuffer() {}
   setEnabled(v: boolean) { this._enabled = v; }
-  isEnabled() { return this._enabled; }
+  // Mirror Babylon: isEnabled(checkAncestors=true) walks parents; a mesh under a
+  // disabled ancestor reports false even when its own flag is true.
+  isEnabled(checkAncestors = true): boolean {
+    if (checkAncestors && this.parent && typeof (this.parent as any).isEnabled === "function") {
+      if (!(this.parent as any).isEnabled(true)) return false;
+    }
+    return this._enabled;
+  }
   dispose() {}
 
   static BILLBOARDMODE_NONE = 0;
@@ -266,7 +273,12 @@ export function createBabylonCoreMock() {
       private _enabled = true;
       constructor(public name?: string) {}
       setEnabled(v: boolean) { this._enabled = v; }
-      isEnabled() { return this._enabled; }
+      isEnabled(checkAncestors = true): boolean {
+        if (checkAncestors && this.parent && typeof (this.parent as any).isEnabled === "function") {
+          if (!(this.parent as any).isEnabled(true)) return false;
+        }
+        return this._enabled;
+      }
       dispose() {}
     },
     NoiseProceduralTexture: class {

@@ -37,7 +37,7 @@ import { SceneDebugGUI } from "./scene/SceneDebugGUI";
 import { extendDebugApi, type DebugAbilityName } from "./scene/DebugReadout";
 import { buildSceneDump } from "./scene/DebugDump";
 import { GameClient } from "./net/GameClient";
-import { SLOT_CONFIG, RATE_LIMIT_CONFIG, RANK_NONE, type EditorObjectNet } from "@coin-pusher/shared";
+import { SLOT_CONFIG, RATE_LIMIT_CONFIG, RANK_NONE, SCENE_CONFIG, type EditorObjectNet } from "@coin-pusher/shared";
 import { Vector3 } from "@babylonjs/core";
 import { EditorManager, GizmoMode } from "./editor/EditorManager";
 import { EditorPanel } from "./editor/EditorPanel";
@@ -224,7 +224,9 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
         }),
       actions: {
         insertCoin: (slot = 2, count = 1) => debugActionsRef.current.insertCoin(slot, count),
-        triggerAbility: (name, x = 0, z = 0.05) =>
+        // Default placement targets the platform center (config-derived so it
+        // tracks the same value the tuning HUD exposes, not a copied literal).
+        triggerAbility: (name, x = 0, z = SCENE_CONFIG.PLATFORM.POSITION.z) =>
           debugActionsRef.current.triggerAbility(name, x, z),
       },
     });
@@ -894,6 +896,10 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
         case "super_push":
           handleSuperPush();
           break;
+        default:
+          // Surface a mistyped ability name instead of silently no-op'ing —
+          // an agent driving this via evaluate_script gets no other signal.
+          console.warn(`[debug] triggerAbility: unknown ability "${name}"`);
       }
     },
   };

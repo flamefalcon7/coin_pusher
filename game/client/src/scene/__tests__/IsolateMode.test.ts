@@ -85,6 +85,58 @@ describe("IsolateMode (R6)", () => {
     expect(iso.getSavedStateCount()).toBe(0);
   });
 
+  it("preserves a hidden-parent child's own enabled flag across an isolate cycle (wireframe cascade regression)", () => {
+    // Reproduces the ColliderWireframes overlay: a disabled root TransformNode
+    // with an enabled child. isEnabled() walks ancestors and reports false for
+    // the child, but its OWN flag is still true — isolate must save/restore the
+    // own flag so re-enabling the root later still shows the child.
+    const root = new MockMesh("wfRoot");
+    root.setEnabled(false);
+    const wfChild = new MockMesh("wfChild");
+    wfChild.parent = root;
+    const target = new MockMesh("pusher");
+    const meshes = [root, wfChild, target];
+    const scene = {
+      meshes,
+      clearColor: { r: 0.02, g: 0.02, b: 0.06, a: 1 },
+      getMeshByName: (n: string) => meshes.find((m) => m.name === n) ?? null,
+      getTransformNodeByName: () => null,
+    } as any;
+    const iso = new IsolateMode(scene);
+
+    expect(wfChild.isEnabled()).toBe(false); // ancestor-aware: parent disabled
+    expect(wfChild.isEnabled(false)).toBe(true); // own flag still on
+
+    iso.isolate("pusher");
+    iso.isolate(null);
+
+    // Own flag restored to true → re-enabling the root shows the overlay again.
+    expect(wfChild.isEnabled(false)).toBe(true);
+    root.setEnabled(true);
+    expect(wfChild.isEnabled()).toBe(true);
+  });
+
+  it("resolves the target via the transform-node fallback (VFX/wireframe groups are TransformNodes)", () => {
+    const groupChild = new MockMesh("vfxGroup_child");
+    const group = { name: "vfxGroup", getDescendants: () => [groupChild] };
+    const other = new MockMesh("platform");
+    const meshes = [groupChild, other];
+    const scene = {
+      meshes,
+      clearColor: { r: 0.02, g: 0.02, b: 0.06, a: 1 },
+      getMeshByName: (n: string) => (n === "vfxGroup_child" ? groupChild : n === "platform" ? other : null),
+      getTransformNodeByName: (n: string) => (n === "vfxGroup" ? group : null),
+    } as any;
+    const iso = new IsolateMode(scene);
+
+    iso.isolate("vfxGroup"); // miss on mesh lookup → transform-node fallback
+
+    expect(iso.isActive()).toBe(true);
+    expect(groupChild.isEnabled()).toBe(true); // kept (descendant of target)
+    expect(other.isEnabled()).toBe(false); // hidden
+    iso.isolate(null);
+  });
+
   it("dispose restores state (safe on inactive too)", () => {
     const { scene, platform } = makeScene();
     const iso = new IsolateMode(scene);
