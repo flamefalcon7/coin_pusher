@@ -259,7 +259,10 @@ vi.mock("../SponsorAdPlacements", () => ({
     createBackWallAd() {} createSideWallAds() {} updateSponsorCreatives() {} dispose() {}
   },
 }));
-vi.mock("../DebugReadout", () => ({ maybeInstallDebugReadout: () => null }));
+vi.mock("../DebugReadout", () => ({
+  maybeInstallDebugReadout: () => null,
+  extendDebugApi: () => {},
+}));
 vi.mock("../ToonTheme", () => ({
   THEMES: [{
     label: "Test",

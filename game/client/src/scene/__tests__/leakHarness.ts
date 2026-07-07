@@ -222,6 +222,9 @@ const mockMeshBuilder = {
     return m;
   },
   CreateCylinder: (name: string) => new MockMesh(name),
+  CreateLines: (name: string) => new MockMesh(name),
+  CreateLineSystem: (name: string) => new MockMesh(name),
+  CreateBox: (name: string) => new MockMesh(name),
 };
 
 /**
