@@ -7,6 +7,24 @@ vi.mock("@babylonjs/core", async () => {
 
 import { ColliderWireframes, MAX_COIN_WIREFRAMES } from "../ColliderWireframes";
 import { createMockScene } from "./leakHarness";
+import { SCENE_CONFIG, PUSHER_CONFIG } from "@coin-pusher/shared";
+
+/** Sum local positions up the parent chain (rotation-agnostic → OK for centers). */
+function worldPos(mesh: any): { x: number; y: number; z: number } {
+  let x = 0, y = 0, z = 0;
+  for (let node: any = mesh; node; node = node.parent) {
+    if (node.position) {
+      x += node.position.x ?? 0;
+      y += node.position.y ?? 0;
+      z += node.position.z ?? 0;
+    }
+  }
+  return { x, y, z };
+}
+
+function findStatic(wf: ColliderWireframes, name: string): any {
+  return (wf as any).staticMeshes.find((m: any) => m.name === name);
+}
 
 function makeCoins(n: number) {
   return Array.from({ length: n }, (_, i) => ({
@@ -31,6 +49,39 @@ describe("ColliderWireframes", () => {
     // + 2 side-wall back segments + 2×4 opening-frame strips + pusher envelope
     expect(wf.getStaticMeshCount()).toBe(47);
     expect(wf.getCoinPoolSize()).toBe(0);
+
+    wf.dispose();
+  });
+
+  it("places key collider landmarks at their SCENE_CONFIG positions (drift guard)", () => {
+    // Count-only assertions can't catch a sign flip or offset in the
+    // SceneBuilder-mirroring math — which would defeat the overlay's whole
+    // purpose (showing rendered-vs-physical drift). Pin the landmarks.
+    const scene = createMockScene();
+    const wf = new ColliderWireframes(scene);
+
+    const platform = worldPos(findStatic(wf, "wf_platform_center"));
+    expect(platform.x).toBeCloseTo(SCENE_CONFIG.PLATFORM.POSITION.x);
+    expect(platform.y).toBeCloseTo(SCENE_CONFIG.PLATFORM.POSITION.y);
+    expect(platform.z).toBeCloseTo(SCENE_CONFIG.PLATFORM.POSITION.z);
+
+    const backWall = worldPos(findStatic(wf, "wf_backWall_slab"));
+    expect(backWall.x).toBeCloseTo(SCENE_CONFIG.BACK_WALL.POSITION.x);
+    expect(backWall.y).toBeCloseTo(SCENE_CONFIG.BACK_WALL.POSITION.y);
+    expect(backWall.z).toBeCloseTo(SCENE_CONFIG.BACK_WALL.POSITION.z);
+
+    // Side-wall back segments sit at x = ±0.6 (catches an x-sign flip).
+    expect(worldPos(findStatic(wf, "wf_sideWall_L_back")).x).toBeCloseTo(
+      SCENE_CONFIG.SIDE_WALLS.LEFT_POSITION.x,
+    );
+    expect(worldPos(findStatic(wf, "wf_sideWall_R_back")).x).toBeCloseTo(
+      SCENE_CONFIG.SIDE_WALLS.RIGHT_POSITION.x,
+    );
+
+    // Pusher envelope is centered on the config pos shifted by Z_OFFSET.
+    const envelope = worldPos(findStatic(wf, "wf_pusherEnvelope"));
+    expect(envelope.x).toBeCloseTo(SCENE_CONFIG.PUSHER.POSITION.x);
+    expect(envelope.z).toBeCloseTo(SCENE_CONFIG.PUSHER.POSITION.z + PUSHER_CONFIG.Z_OFFSET);
 
     wf.dispose();
   });
