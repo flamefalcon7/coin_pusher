@@ -227,6 +227,10 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
           debugActionsRef.current.triggerAbility(name, x, z),
       },
     });
+    // Collider wireframes (R3) track the same authoritative poses as dump().
+    sceneManager.setDebugPoseProvider(
+      () => gameClientRef.current?.getLatestAuthoritativeState() ?? null,
+    );
 
     // Handle auth failure (WS closed with 4401/4403)
     gameClient.onAuthFailure(onAuthFailure);

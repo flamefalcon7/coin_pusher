@@ -12,6 +12,7 @@ import { VFXManager } from "./VFXManager";
 import { maybeInstallDebugReadout, extendDebugApi, type DebugReadout } from "./DebugReadout";
 import { DebugCameraController } from "./DebugCamera";
 import { DebugSceneAids } from "./DebugSceneAids";
+import { ColliderWireframes, type WireframePoseProvider } from "./ColliderWireframes";
 import { TargetingReticle, type TargetingType } from "./TargetingReticle";
 import { THEMES, ToonTheme, deriveShadow, deriveHighlight } from "./ToonTheme";
 import { SponsorAdPlacements } from "./SponsorAdPlacements";
@@ -45,6 +46,7 @@ export class SceneManager {
   private debugReadout: DebugReadout | null = null;
   private debugCamera: DebugCameraController | null = null;
   private debugAids: DebugSceneAids | null = null;
+  private colliderWireframes: ColliderWireframes | null = null;
   private running: boolean = false;
   private fpsCallback?: (fps: number) => void;
   private currentThemeIndex: number = 0;
@@ -159,8 +161,10 @@ export class SceneManager {
     if (this.debugReadout) {
       this.debugAids = new DebugSceneAids(this.scene);
       this.debugCamera = new DebugCameraController(this.engine, cameraSetup.getCamera());
+      this.colliderWireframes = new ColliderWireframes(this.scene);
       extendDebugApi({
         camera: (preset) => this.debugCamera?.applyPreset(preset),
+        wireframe: (on) => this.colliderWireframes?.setVisible(on),
       });
     }
 
@@ -349,6 +353,14 @@ export class SceneManager {
     return this.vfxManager;
   }
 
+  /**
+   * Inject the authoritative network-pose source for debug overlays (R3).
+   * No-op outside ?debug=1 (the overlay only exists in debug mode).
+   */
+  setDebugPoseProvider(provider: WireframePoseProvider | null): void {
+    this.colliderWireframes?.setPoseProvider(provider);
+  }
+
   dispose(): void {
     this.stopRenderLoop();
 
@@ -364,6 +376,8 @@ export class SceneManager {
 
     window.removeEventListener("resize", this.resizeHandler);
 
+    this.colliderWireframes?.dispose();
+    this.colliderWireframes = null;
     this.debugAids?.dispose();
     this.debugAids = null;
     this.debugCamera = null;
