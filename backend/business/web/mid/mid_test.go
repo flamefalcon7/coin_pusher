@@ -6,9 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/web/auth"
@@ -457,6 +461,142 @@ func TestLogger(t *testing.T) {
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+}
+
+// TestMetricPath guards Prometheus label cardinality. Unmatched routes (404s from
+// internet vulnerability scanners) must collapse to a single label value instead of
+// leaking the raw URL, which would create one time series per scanned URL.
+// See docs/solutions/infrastructure/prometheus-cardinality-oom-2026-07-09.md.
+func TestMetricPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		patterns []string
+		url      string
+		want     string
+	}{
+		{
+			name:     "matched route uses chi pattern, not the concrete URL",
+			patterns: []string{"/v1/users/{id}"},
+			url:      "/v1/users/8f0c1a2b",
+			want:     "/v1/users/{id}",
+		},
+		{
+			name:     "unmatched route collapses to a constant",
+			patterns: nil,
+			url:      "/owa/auth/errorFE.aspx",
+			want:     unmatchedPath,
+		},
+		{
+			name:     "distinct unmatched routes share one label value",
+			patterns: nil,
+			url:      "/_layouts/15/error.aspx",
+			want:     unmatchedPath,
+		},
+		{
+			name:     "no chi route context at all collapses to a constant",
+			patterns: nil,
+			url:      "/anything",
+			want:     unmatchedPath,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := httptest.NewRequest(http.MethodGet, tt.url, nil)
+
+			// The last case deliberately carries no chi RouteContext.
+			if tt.name != "no chi route context at all collapses to a constant" {
+				rctx := chi.NewRouteContext()
+				rctx.RoutePatterns = tt.patterns
+				r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+			}
+
+			if got := metricPath(r); got != tt.want {
+				t.Errorf("metricPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMetricPath_ScannerTrafficDoesNotGrowCardinality proves the property that
+// actually caused the OOM: N distinct unmatched URLs must yield exactly 1 label value.
+func TestMetricPath_ScannerTrafficDoesNotGrowCardinality(t *testing.T) {
+	t.Parallel()
+
+	scannerURLs := []string{
+		"/owa/auth/errorFE.aspx",
+		"/_layouts/15/error.aspx",
+		"/wp-admin/setup-config.php",
+		"/.env",
+		"/actuator/health",
+	}
+
+	seen := make(map[string]struct{})
+	for _, u := range scannerURLs {
+		r := httptest.NewRequest(http.MethodGet, u, nil)
+		rctx := chi.NewRouteContext() // no RoutePatterns => unmatched
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		seen[metricPath(r)] = struct{}{}
+	}
+
+	if len(seen) != 1 {
+		t.Errorf("%d distinct scanner URLs produced %d label values, want 1: %v",
+			len(scannerURLs), len(seen), seen)
+	}
+}
+
+// TestLogger_ScrapeOutputHasBoundedPathLabels drives the real Logger middleware through a
+// real chi router, then reads the actual Prometheus scrape body. The unit tests above pin
+// metricPath's contract; this pins chi's real 404 behaviour AND proves the scraped series
+// — the thing that actually exhausted Prometheus's memory — stay bounded.
+func TestLogger_ScrapeOutputHasBoundedPathLabels(t *testing.T) {
+	// Not parallel: reads the process-global Prometheus registry.
+
+	router := chi.NewRouter()
+	router.Use(Logger(zap.NewNop().Sugar()))
+	router.Get("/v1/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Two concrete URLs on one route pattern, plus scanner URLs matching no route.
+	matched := []string{"/v1/users/aaa", "/v1/users/bbb"}
+	scanners := []string{"/owa/auth/errorFE.aspx", "/_layouts/15/error.aspx", "/.env"}
+	for _, u := range append(append([]string{}, matched...), scanners...) {
+		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, u, nil))
+	}
+
+	// Scrape exactly what Prometheus would scrape.
+	scrapeRec := httptest.NewRecorder()
+	promhttp.Handler().ServeHTTP(scrapeRec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := scrapeRec.Body.String()
+
+	if !strings.Contains(body, `path="/v1/users/{id}"`) {
+		t.Error("scrape is missing the matched route pattern label")
+	}
+	if !strings.Contains(body, `path="`+unmatchedPath+`"`) {
+		t.Error("scrape is missing the collapsed <unmatched> label")
+	}
+
+	// No concrete URL may ever appear as a label value.
+	for _, u := range append(append([]string{}, matched...), scanners...) {
+		if strings.Contains(body, `path="`+u+`"`) {
+			t.Errorf("raw URL %q leaked into the scrape as a path label — unbounded cardinality", u)
+		}
+	}
+
+	// Count distinct path label values on the counter. Bounded regardless of scanner volume.
+	paths := make(map[string]struct{})
+	re := regexp.MustCompile(`coinpusher_http_requests_total\{[^}]*path="([^"]*)"`)
+	for _, m := range re.FindAllStringSubmatch(body, -1) {
+		paths[m[1]] = struct{}{}
+	}
+	if len(paths) > 2 {
+		t.Errorf("counter exposed %d distinct path labels, want <=2 (pattern + unmatched): %v", len(paths), paths)
 	}
 }
 
