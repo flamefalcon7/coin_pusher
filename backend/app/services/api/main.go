@@ -283,6 +283,10 @@ func run() error {
 	// this, a SIGTERM mid-pass leaves successfully-published rows un-DELETEd,
 	// forcing a duplicate delivery on next boot.
 	outboxCtx, outboxCancel := context.WithCancel(context.Background())
+	// Defer matches the bot-scheduler pattern below: idempotent cancel guards
+	// against early-return paths (e.g., relay.Start error) bypassing the
+	// SIGTERM shutdown sequence that calls outboxCancel explicitly.
+	defer outboxCancel()
 	var outboxWg sync.WaitGroup
 	outboxWg.Add(1)
 	go func() {
