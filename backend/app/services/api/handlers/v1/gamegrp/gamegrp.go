@@ -3,13 +3,11 @@ package gamegrp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nats-io/nats.go"
 	"github.com/shopspring/decimal"
 
 	"github.com/flamefalcon/coin-pusher/backend/business/core/accounting"
@@ -26,11 +24,17 @@ import (
 // the refund, but still bounded so a stuck DB can't leak goroutines).
 const refundTxTimeout = 10 * time.Second
 
+// natsPublisher is the minimal NATS surface the Group needs. *nats.Conn
+// satisfies it; tests inject a recorder to assert on published payloads.
+type natsPublisher interface {
+	Publish(subj string, data []byte) error
+}
+
 // Group holds the handler dependencies.
 type Group struct {
 	game *game.Core
 	heat *heat.HeatEngine
-	nc   *nats.Conn
+	nc   natsPublisher
 	room string
 	// outboxEnabled routes batch_insert through nats_outbox (flag on) or
 	// keeps the legacy inline-publish-with-refund path (flag off). See
@@ -40,7 +44,7 @@ type Group struct {
 }
 
 // New constructs a handler Group.
-func New(game *game.Core, heat *heat.HeatEngine, nc *nats.Conn, outboxEnabled bool) *Group {
+func New(game *game.Core, heat *heat.HeatEngine, nc natsPublisher, outboxEnabled bool) *Group {
 	return &Group{
 		game:          game,
 		heat:          heat,
@@ -143,14 +147,13 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 		// Legacy path: inline publish + refund on publish failure. Unit 8 of
 		// the outbox plan deletes this block after production bakes confirm
 		// zero BatchInsertRefundFailures.
-		cmd := ws.NATSBatchInsertCmd{
-			UserID: accountID.String(),
-			SlotID: slotID,
-			Count:  req.Count,
-		}
-		data, err := json.Marshal(cmd)
+		// reference_id ships on this path too (not only outbox): the game
+		// server dedupes commands on it — the only defense when NATS-level
+		// duplication redelivers one publish N times. See docs/solutions/
+		// infrastructure/nats-zombie-subscription-triple-command-2026-07-23.md.
+		data, err := ws.EncodeBatchInsertPayload(accountID.String(), slotID, req.Count, refKey)
 		if err != nil {
-			return fmt.Errorf("marshaling batch insert cmd: %w", err)
+			return fmt.Errorf("encoding batch insert cmd: %w", err)
 		}
 		// P1-14: Check publish error; refund balance if NATS is unreachable.
 		if err := g.nc.Publish(ws.TopicBatchInsert(g.room), data); err != nil {
