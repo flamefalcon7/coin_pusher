@@ -20,7 +20,7 @@ related_components:
 tags: [nats, zombie-connection, reconnect, ping-timeout, duplicate-delivery, idempotency, reference_id, dedup, at-least-once, economy, rtp, fanout, misdiagnosis]
 related_commits:
   - "(pending) fix(backend): legacy batch_insert publishes carry reference_id so game-server dedup can suppress duplicate deliveries"
-status: code_fix_local_green_prod_mitigation_pending
+status: fix_deployed_verified_prod
 ---
 
 # One press drops 3 coins: NATS zombie subscriptions triple every game command (2026-07-23)
@@ -119,15 +119,23 @@ Note: dedup only covers `batch_insert`. Ability commands (shock/tornado/…)
 are still fire-and-forget without refs — they were also tripled during the
 incident (cosmetic/physics impact only, no ledger effect).
 
-### Ops (pending)
+### Ops (done 2026-07-23 ~15:05 UTC)
 
-1. Restart `coin_pusher-nats-1` then `coin_pusher-game-1` (order matters:
-   server first, then the client reconnects fresh). Then watch
-   `docker logs -f coin_pusher-game-1 | grep reconnect` — if flapping
-   resumes, the trigger is still live and needs the deeper hunt.
-2. Deploy latest game server (gets `RefIDDedup`) + backend (gets ref on all
-   paths). ⚠️ backend droplet `/opt/coin_pusher` git is drifted — reconcile
-   before pulling (see reference_deploy memory / 2026-06-07 notes).
+1. Both droplets' drifted git reconciled to origin/main — old state preserved
+   in branch `server-drift-2026-07-23` + stash on each box. The diverged
+   commits were rebase-duplicates of content already in main (verified by
+   subject before reset); only live secret `.htpasswd` was restored by hand.
+   **Git is now the source of truth on both droplets** (containers built from
+   `f5cd0ce`; main moved one vet-only commit ahead to `3ffd072` post-deploy).
+2. NATS restarted, then backend + game rebuilt/redeployed from main.
+3. Verified: 12 min with **0 reconnects** (old pattern: flap within ~3.5 min
+   → trigger cleared by the NATS server restart), `/subsz` shows exactly 1
+   `cmd.batch_insert` subscription, live bot inserts log exactly once each,
+   coinpush.fun 200, backend logs error-free, CI green.
+4. GitHub `Deploy Services` / `Deploy Game Server` workflows are zombies —
+   every run ever has failed with `missing server host` (SSH secrets never
+   configured). Deploys are manual SSH. Fix the secrets or delete the
+   workflows.
 
 ## Watch-items / follow-ups
 
