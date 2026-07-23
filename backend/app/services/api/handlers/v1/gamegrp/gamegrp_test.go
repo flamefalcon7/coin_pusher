@@ -520,3 +520,115 @@ func TestBatchInsert_OutboxPathWritesRowAndSkipsInlinePublish(t *testing.T) {
 		t.Errorf("payload reference_id = %q, outbox row reference_id = %q — must be non-empty and equal", cmd.ReferenceID, captured.referenceID)
 	}
 }
+
+// recordingPublisher captures inline NATS publishes for legacy-path tests.
+type recordingPublisher struct {
+	calls   int
+	subject string
+	data    []byte
+}
+
+func (p *recordingPublisher) Publish(subj string, data []byte) error {
+	p.calls++
+	p.subject = subj
+	p.data = data
+	return nil
+}
+
+// TestBatchInsert_LegacyPathPublishesReferenceID pins the fix for the
+// 2026-07-22 triple-command incident: the legacy (outbox-off) inline publish
+// MUST carry a reference_id equal to the ledger debit's reference, so the
+// game server's RefIDDedup can suppress NATS-level duplicate deliveries
+// (zombie subscriptions delivered each publish 3x — players received 3
+// coins per 1-coin debit). Before the fix this payload had no reference_id
+// at all, making dedup structurally blind on this path.
+// See docs/solutions/infrastructure/
+// nats-zombie-subscription-triple-command-2026-07-23.md.
+func TestBatchInsert_LegacyPathPublishesReferenceID(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+
+	// Capture every GAME_INSERT ledger row so we can assert the published
+	// reference_id matches the debit's idempotency key exactly.
+	var debitRefs []string
+	curPlay := decimal.NewFromInt(100)
+	userStr := &mockUserStorer{
+		queryByIDFn: func(_ context.Context, _ uuid.UUID) (user.Account, error) {
+			return user.Account{ID: accountID, BalancePlay: curPlay, BalanceCash: decimal.Zero}, nil
+		},
+		updateBalanceFn: func(_ context.Context, _ uuid.UUID, currency string, delta decimal.Decimal) (decimal.Decimal, error) {
+			if currency == user.CurrencyPlay {
+				curPlay = curPlay.Add(delta)
+				return curPlay, nil
+			}
+			return decimal.Zero, nil
+		},
+	}
+	acctStr := &mockAcctStorer{
+		createFn: func(_ context.Context, l accounting.AccountingLog) error {
+			if l.ActionType == accounting.ActionGameInsert {
+				debitRefs = append(debitRefs, l.ReferenceID)
+			}
+			return nil
+		},
+	}
+	userCore := user.NewCore(userStr)
+	acctCore := accounting.NewCore(nil, acctStr, userCore, nil, nil)
+	gameCore := game.NewCore(userCore, acctCore)
+
+	pub := &recordingPublisher{}
+	// flag = false → legacy inline-publish path.
+	grp := New(gameCore, heat.New(), pub, false)
+
+	body := `{"slot_id":2,"count":5}`
+	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	ctx := mid.SetClaims(r.Context(), mid.Claims{AccountID: accountID.String()})
+	r = r.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler := errHandler(log, grp.BatchInsert)
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	if pub.calls != 1 {
+		t.Fatalf("publish calls = %d, want exactly 1", pub.calls)
+	}
+	if want := "game.main.cmd.batch_insert"; pub.subject != want {
+		t.Errorf("subject = %q, want %q", pub.subject, want)
+	}
+
+	var cmd ws.NATSBatchInsertCmd
+	if err := json.Unmarshal(pub.data, &cmd); err != nil {
+		t.Fatalf("decode published payload: %v", err)
+	}
+	if cmd.UserID != accountID.String() {
+		t.Errorf("payload user_id = %q, want %q", cmd.UserID, accountID.String())
+	}
+	// The HTTP handler always publishes slot 0 regardless of request slot_id
+	// (see `slotID := 0` in BatchInsert) — pin that so a silent behavior
+	// change here fails a test instead of shipping unnoticed.
+	if cmd.SlotID != 0 {
+		t.Errorf("payload slot_id = %d, want 0 (HTTP path pins default slot)", cmd.SlotID)
+	}
+	if cmd.Count != 5 {
+		t.Errorf("payload count = %d, want 5", cmd.Count)
+	}
+	// The incident regression: reference_id must be present and must be the
+	// same key the ledger debit was written under.
+	if cmd.ReferenceID == "" {
+		t.Fatal("payload reference_id is empty — game-server dedup is blind on the legacy path (2026-07-22 incident regression)")
+	}
+	if len(debitRefs) == 0 {
+		t.Fatal("no GAME_INSERT ledger rows captured — debit never ran")
+	}
+	for _, ref := range debitRefs {
+		if ref != cmd.ReferenceID {
+			t.Errorf("ledger debit reference %q != published reference_id %q", ref, cmd.ReferenceID)
+		}
+	}
+}

@@ -729,14 +729,16 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		// Legacy path: inline publish, refund on publish failure. Unit 8 of
 		// the outbox plan deletes this block once production bakes confirm
 		// zero BatchInsertRefundFailures increments.
-		cmd := NATSBatchInsertCmd{
-			UserID: userID.String(),
-			SlotID: slotID,
-			Count:  int(accepted),
-		}
-		data, err := json.Marshal(cmd)
+		//
+		// reference_id ships on this path too (not only outbox): the game
+		// server dedupes commands on it, which is the only defense when
+		// NATS-level duplication redelivers one publish N times — zombie
+		// subscriptions amplified every command 3x in prod on 2026-07-22.
+		// See docs/solutions/infrastructure/
+		// nats-zombie-subscription-triple-command-2026-07-23.md.
+		data, err := EncodeBatchInsertPayload(userID.String(), slotID, int(accepted), refKey)
 		if err != nil {
-			h.log.Errorw("json marshal batch_insert", "error", err)
+			h.log.Errorw("encode batch_insert payload", "error", err, "user_id", c.userID)
 			return
 		}
 		// P1-14: Check publish error; refund balance if NATS is unreachable.
