@@ -34,6 +34,28 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return hijacker.Hijack()
 }
 
+// unmatchedPath is the Prometheus `path` label used for requests that matched no
+// route. Using the raw URL here would let anyone on the internet mint an unbounded
+// number of time series by spraying 404s — which is exactly what OOM-killed
+// Prometheus on 2026-07-09. The raw path is still logged, just not made a label.
+const unmatchedPath = "<unmatched>"
+
+// metricPath returns the bounded `path` label for a request: the chi route pattern
+// when one matched, otherwise a single constant shared by all unmatched requests.
+func metricPath(r *http.Request) string {
+	rctx := chi.RouteContext(r.Context())
+	if rctx == nil {
+		return unmatchedPath
+	}
+
+	pattern := rctx.RoutePattern()
+	if pattern == "" {
+		return unmatchedPath
+	}
+
+	return pattern
+}
+
 // Logger returns middleware that logs every request with method, path,
 // status code, duration, and correlation ID.
 func Logger(log *zap.SugaredLogger) func(http.Handler) http.Handler {
@@ -52,12 +74,7 @@ func Logger(log *zap.SugaredLogger) func(http.Handler) http.Handler {
 				"correlation_id", GetCorrelationID(r.Context()),
 			)
 
-			path := r.URL.Path
-			if rctx := chi.RouteContext(r.Context()); rctx != nil {
-				if pattern := rctx.RoutePattern(); pattern != "" {
-					path = pattern
-				}
-			}
+			path := metricPath(r)
 			status := strconv.Itoa(rw.statusCode)
 			metrics.HTTPRequestsTotal.WithLabelValues(r.Method, path, status).Inc()
 			metrics.HTTPRequestDuration.WithLabelValues(r.Method, path).Observe(time.Since(start).Seconds())
