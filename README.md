@@ -34,14 +34,18 @@ Browser --HTTPS--> Cloudflare --->  |   WebSocket /ws  |
 - **Fixed timestep, drift corrected** — 30Hz with 2 solver substeps. The scheduler measures real
   elapsed time and spends it in whole dt steps, capping catch-up at 5 steps so a stall cannot
   spiral. State is broadcast at 15Hz, once per firing.
-- **One clock** — the pusher's position is a function of the tick index, not the wall clock, so it
-  cannot drift out of phase with the coins.
+- **Pusher on simulated time** — the pusher's position is a function of the tick index, not the wall
+  clock, so it cannot drift out of phase with the coins. Ability durations (tornado, lightning) are
+  still measured against `performance.now()`, so the server does not yet run on a single clock.
 - **Broadcast equals physics** — the pusher is a position-based kinematic body advanced per
   substep; the Z sent to clients is the same value handed to the solver (residual ~3e-8 m).
-- **Seeded, replayable physics randomness** — coin scatter and ability jitter come from a
-  per-session seed, logged and carried in `world_snapshot.rng_seed`. Slot reel and wheel outcomes
-  deliberately stay on `node:crypto` — see ADR D-005 for that trade-off and for the limits of
-  replay.
+- **Seeded physics randomness** — coin scatter and ability jitter come from a per-session seed,
+  logged and carried in `world_snapshot.rng_seed`. Slot reel and wheel outcomes deliberately stay on
+  `node:crypto` — see ADR D-005 for that trade-off and for the limits of replay.
+
+  Replay is **not** yet end-to-end: ability durations run on the wall clock (above), so a session
+  containing a tornado or lightning does not reproduce. The seed also does not currently reach any
+  client — nothing decodes the field.
 - **Bounded body count** — a hard cap (`MAX_ACTIVE_COINS`) applies to every spawn path. Queued
   coins are held rather than dropped when the table is full.
 

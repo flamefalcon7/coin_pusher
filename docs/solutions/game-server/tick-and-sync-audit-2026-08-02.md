@@ -177,7 +177,15 @@ used as a rotation and the only place that can promise unit length.
 | Coins lost at the cap (40 queued, 400 ticks) | **4 destroyed** | **0** | `gameLoop.coinCap.test.ts`, mutation-tested |
 | Live-loop replay from a seed | impossible | bit-identical | `gameLoop.determinism.test.ts` |
 | Interpolated quaternion norm error | 7.9e-5 | < 1e-6 | `Interpolator.quaternion.test.ts` |
-| Aggregate RTP (seed 7) | — | 7.33 % (band 0–50 %) | `economy.test.ts` |
+| Aggregate RTP (seed 7) | — | **2.67 %** (band 0–50 %) | `economy.test.ts` |
+
+**The RTP row was wrong when first written.** It read 7.33%, measured against a SimLoop that had
+not been migrated to the per-substep pusher contract and was therefore simulating a pusher the live
+server does not have (double-speed for half the tick, frozen for the rest). With the harness fixed,
+the same seed and config give 2.67%. The corrected number is the one that describes production —
+and the drop is the honest consequence of the pusher fix, which replaced a lurching overshoot with
+correct constant-velocity contact. Whether 2.67% is the right target is a tuning decision, not a
+code one. The 0–50% band is far too wide to have caught either the error or the shift.
 
 ## Corrected misdiagnosis: CCD was not the CPU problem
 
@@ -201,6 +209,39 @@ the flag being set costs little for exactly the coins that were keeping it set.
 The fix is still right — it removed a shadow state that could not agree with
 Rapier and a branch that could never execute — but it should be justified as
 correctness, not throughput.
+
+## What a code review of this work then found
+
+The eight fixes above were reviewed by nine independent reviewers. It found five further defects —
+three of them introduced or left incomplete by these very commits — and four tests that passed
+against the code they were written to protect. Fixed in `1f8fd26` and `628a80e`:
+
+- **Sponsor quota charged for coins that never spawned.** Adding the cap guard to the sponsor spawn
+  path turned a never-fires return into a routinely-fires one, and the caller still decremented the
+  quota — over-reporting delivered impressions to a paying advertiser.
+- **SimLoop never adopted the per-substep pusher contract** (the RTP correction above).
+- **`evictUnusableCoins()` released neither the Rapier body nor a despawn message.**
+- **xoshiro128\*\* applied its scrambler to `s[0]`**, not `s[1]` as the reference does — verified
+  against `prng.di.unimi.it`. Period held; the output was not the tested function.
+- **Client quaternion normalisation covered 1 of 5 paths**, missing extrapolation — the path that
+  runs exactly when updates are starved.
+
+Two claims made in this document's first version were overstated and are corrected above and in the
+README: the server does **not** run on a single clock (tornado and lightning still measure duration
+against `performance.now()`), and replay is therefore not end-to-end for any session containing an
+ability. The determinism test only enqueues coin drops, so it went green while the claim was false.
+
+Still open, both needing a product decision rather than a patch:
+
+1. **The tick-error breaker leaves a zombie.** After 30 consecutive failures the loop stops but does
+   not exit or unsubscribe, so `batch_insert` keeps enqueuing coins the backend has already debited
+   into a simulation that no longer runs. Options: exit non-zero and let the supervisor restart, or
+   unsubscribe and serve degraded with a readiness signal.
+2. **The seeded/crypto boundary is drawn one call site too wide.** Lightning strike coordinates come
+   from the published seed while the player chooses when to spend the scroll — a predictable,
+   payout-affecting outcome under player control, which is the exact class D-005 argues belongs on
+   `node:crypto`. Note that a 32-bit seed is brute-forceable from broadcast data, so simply removing
+   `rng_seed` from the snapshot is not sufficient on its own.
 
 ## Watch items
 
