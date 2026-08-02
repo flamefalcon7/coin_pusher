@@ -332,6 +332,7 @@ export class Interpolator {
       out[1] = q1[1] + (q2y - q1[1]) * t;
       out[2] = q1[2] + (q2z - q1[2]) * t;
       out[3] = q1[3] + (q2w - q1[3]) * t;
+      this.normalizeInPlace(out);
       return;
     }
 
@@ -344,5 +345,43 @@ export class Interpolator {
     out[1] = w1 * q1[1] + w2 * q2y;
     out[2] = w1 * q1[2] + w2 * q2z;
     out[3] = w1 * q1[3] + w2 * q2w;
+    this.normalizeInPlace(out);
+  }
+
+  /**
+   * Force a quaternion back onto the unit sphere, in place.
+   *
+   * Needed because the incoming rotations are not unit quaternions: the server
+   * normalizes and then quantizes to 3 decimals, and quantization is the last
+   * step, so what arrives is off the sphere by up to ~8e-5. SLERP does not
+   * repair that — with non-unit inputs the dot product is not cos(theta), so
+   * the weights are slightly wrong and the blend inherits the error. The lerp
+   * shortcut above shortens it further by cutting a chord across the sphere
+   * instead of following the arc.
+   *
+   * A non-unit quaternion handed to the renderer is not a pure rotation; it
+   * scales the mesh. The error is small enough not to be obvious, but this is
+   * a few flops per coin per frame and it makes the value well-formed rather
+   * than nearly well-formed.
+   *
+   * This is fixed here rather than server-side on purpose: the server cannot
+   * both quantize for bandwidth and promise unit length, and the client is
+   * where the value is finally used as a rotation.
+   */
+  private normalizeInPlace(q: [number, number, number, number]): void {
+    const lenSq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+    if (lenSq === 0) {
+      // Degenerate input — fall back to identity rather than emitting NaN.
+      q[0] = 0;
+      q[1] = 0;
+      q[2] = 0;
+      q[3] = 1;
+      return;
+    }
+    const inv = 1 / Math.sqrt(lenSq);
+    q[0] *= inv;
+    q[1] *= inv;
+    q[2] *= inv;
+    q[3] *= inv;
   }
 }
