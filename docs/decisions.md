@@ -225,6 +225,81 @@ never as a replacement.
 
 ---
 
+## D-005: Seed the physics RNG for replay; keep slot/wheel outcomes on crypto
+
+**Status**: Accepted
+**Date**: 2026-08-02 · **Component**: game-server (RNG, economy)
+
+### Context — where does randomness decide money?
+
+The game server draws randomness in two very different places:
+
+1. **Physics perturbation** — drop-slot X jitter, tornado/lightning/explosion force jitter,
+   bonus-rain placement, sponsor slot choice, `fillPlatform` scatter. These decide where coins
+   land, and where coins land decides RTP.
+2. **Discrete payout outcomes** — slot machine reel symbols, jackpot wheel segment.
+
+Until now (1) was `Math.random()` throughout the live loop, while (2) already used
+`node:crypto.randomInt`. The offline `SimLoop` harness had a seeded path, but the loop that
+actually takes players' money did not. Consequences: a disputed round could not be replayed and
+arbitrated, and a physics parameter change could not be regression-tested — you could only observe
+that RTP moved and guess why.
+
+The obvious reflex is "seed everything so the whole session replays". That is wrong for (2).
+
+### Decision
+
+Seed category (1) from a per-session RNG (`xoshiro128**`, seeded at process start, recorded in
+logs and in every `world_snapshot` as `rng_seed`). Leave category (2) on `node:crypto.randomInt`.
+
+`SESSION_RNG_SEED` (hex) overrides the minted seed, which is how a recorded session is re-run
+against a changed build.
+
+### Rationale
+
+- For physics randomness, reproducibility is the valuable property and predictability costs
+  nothing: knowing the coin-scatter stream does not let a player choose a better moment to
+  insert — the pusher phase and pile state dominate, and they are not secret anyway.
+- For reel and wheel outcomes, unpredictability **is** the security property. A seeded stream that
+  a player can observe (they see every spin result) or that leaks (it is in the snapshot) turns
+  into a jackpot-prediction exploit. Auditability there is better served by recording the drawn
+  outcomes than by making them derivable.
+- `xoshiro128**` over `mulberry32` (which `simulation/Rng.ts` uses for tests): 128-bit state and
+  a 2^128-1 period suit a process that draws continuously for weeks, where a 32-bit state does
+  not. Over BigInt-based `xorshift128+`: pure 32-bit ops, so no allocation in a function called
+  several times per tick inside the frame budget.
+
+### Alternatives Considered
+
+- **Seed everything, including reels** — rejected: makes jackpots predictable from a value we
+  publish in the world snapshot. Replayability is not worth an exploit on the payout path.
+- **Keep `Math.random()` and record outcomes instead** — rejected: recording every physics
+  perturbation is far more data than one seed, and still does not let you re-run the session
+  against a modified build.
+- **Reuse `mulberry32` from the sim harness** — rejected on state size (see above), though it
+  stays in place for the existing offline tests rather than churning them.
+
+### Consequences
+
+- ✅ A session's coin scatter replays bit-for-bit from `rng_seed` on the same build; asserted by
+  `game/server/src/game/__tests__/gameLoop.determinism.test.ts`.
+- ✅ Physics parameter changes are now regression-testable against a fixed input.
+- ⚠️ **Replay is partial.** Reel and wheel draws are not derivable from the seed, so a full
+  session replay also needs those outcomes recorded. Anyone building an arbitration tool must
+  capture them separately.
+- ⚠️ Determinism holds for the same Rapier WASM build on the same platform. Rapier does not
+  guarantee cross-platform bit-identical results; do not claim replay across architectures.
+- 🔮 If reel/wheel arbitration becomes a requirement, the answer is a commit-reveal scheme
+  (publish a hash of the outcome before the spin, reveal after), not seeding.
+
+### Related
+
+- `game/server/src/rng.ts` · `game/server/src/game/{GameLoop,DropScheduler,SponsorManager,GameState}.ts`
+- `game/shared/proto/game.proto` (`WorldSnapshot.rng_seed`)
+- Tests: `src/__tests__/rng.test.ts` · `src/game/__tests__/gameLoop.determinism.test.ts`
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown

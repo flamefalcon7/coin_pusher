@@ -302,6 +302,7 @@ export class NATSClient {
               protocolVersion: snapshot.protocolVersion,
               serverTime: snapshot.serverTime,
               tick: snapshot.tick,
+              rngSeed: snapshot.rngSeed ?? "",
               bodies: snapshot.bodies.map((b) => ({
                 id: b.id,
                 type: b.type,
@@ -419,6 +420,7 @@ export class NATSClient {
           protocolVersion: snapshot.protocolVersion,
           serverTime: snapshot.serverTime,
           tick: snapshot.tick,
+          rngSeed: snapshot.rngSeed ?? "",
           bodies: snapshot.bodies.map((b) => ({
             id: b.id,
             type: b.type,

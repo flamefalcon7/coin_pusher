@@ -45,6 +45,8 @@ export type WorldState = {
   tick: number;
   serverTime: number; // milliseconds since epoch
   bodies: BodyState[];
+  /** Session RNG seed as fixed-width hex — see WorldSnapshotMessage.rngSeed. */
+  rngSeed?: string;
 };
 
 // Delta update for active bodies
@@ -163,6 +165,16 @@ export type WorldSnapshotMessage = {
   serverTime: number;
   tick: number;
   bodies: BodyState[];
+  /**
+   * Seed of the session's simulation RNG, as fixed-width hex. Recorded so coin
+   * scatter can be replayed and a disputed round arbitrated. Optional so older
+   * clients and fixtures that predate it still typecheck; the server always
+   * sets it.
+   *
+   * Covers physics randomness only — slot reels and wheel segments stay on
+   * node:crypto so they cannot be predicted from a leaked seed.
+   */
+  rngSeed?: string;
 };
 
 // Server → Client: State delta (incremental update)

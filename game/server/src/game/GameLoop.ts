@@ -81,6 +81,18 @@ export class GameLoop {
   private consecutiveTickErrors: number = 0;
   private static readonly MAX_CONSECUTIVE_TICK_ERRORS = 30; // ~1s at 30Hz
 
+  /**
+   * Session RNG for everything that perturbs physics: coin scatter, ability
+   * force jitter, bonus-rain placement. All of it feeds back into where coins
+   * end up and therefore into RTP, so it is drawn from the recorded seed.
+   *
+   * Deliberately NOT used for slot reels or the jackpot wheel segment — those
+   * keep node:crypto.randomInt, because for those outcomes unpredictability is
+   * a security property and a seeded stream is a prediction exploit.
+   * See docs/decisions.md D-005.
+   */
+  private readonly rng: () => number;
+
   // Per-phase profiling accumulators (reset every TIMING_WINDOW)
   private profilePusher: number[] = [];
   private profileCoinUpdate: number[] = [];
@@ -98,8 +110,10 @@ export class GameLoop {
     coinManager: CoinManager,
     natsClient: NATSClient,
     dropScheduler: DropScheduler,
-    sponsorManager: SponsorManager
+    sponsorManager: SponsorManager,
+    rng: () => number = Math.random
   ) {
+    this.rng = rng;
     this.physicsWorld = physicsWorld;
     this.pusher = pusher;
     this.gameState = gameState;
@@ -798,17 +812,17 @@ export class GameLoop {
         // it can single-handedly push the tick past budget.
         if (this.atCoinCap()) break;
         // ~10% chance to skip this grid point for a messier look
-        if (Math.random() < 0.1) continue;
-        const layers = 1 + Math.floor(Math.random() * 2); // 1-2
+        if (this.rng() < 0.1) continue;
+        const layers = 1 + Math.floor(this.rng() * 2); // 1-2
         for (let layer = 0; layer < layers; layer++) {
           // Drop from above — stagger height by layer + random offset to avoid all spawning at once
-          const dropHeight = 0.3 + layer * coinT * 3 + Math.random() * 0.1;
+          const dropHeight = 0.3 + layer * coinT * 3 + this.rng() * 0.1;
           const cy = surfaceY + dropHeight;
-          const rx = x + (Math.random() - 0.5) * 0.06;
-          const rz = z + (Math.random() - 0.5) * 0.06;
+          const rx = x + (this.rng() - 0.5) * 0.06;
+          const rz = z + (this.rng() - 0.5) * 0.06;
 
           // Small random Y-axis rotation for variety
-          const angle = (Math.random() - 0.5) * Math.PI * 0.3;
+          const angle = (this.rng() - 0.5) * Math.PI * 0.3;
           const rot: [number, number, number, number] = [0, Math.sin(angle / 2), 0, Math.cos(angle / 2)];
 
           const coinId = this.coinManager.spawnCoinUnchecked(rx, cy, rz, rot);
@@ -930,9 +944,9 @@ export class GameLoop {
       // Strong outward blast + upward launch + random scatter
       body.applyImpulse(
         {
-          x: nx * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+          x: nx * 0.08 * strength + (this.rng() - 0.5) * 0.01,
           y: 0.06 * strength,
-          z: nz * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+          z: nz * 0.08 * strength + (this.rng() - 0.5) * 0.01,
         },
         true,
       );
@@ -940,9 +954,9 @@ export class GameLoop {
       // Random torque for tumbling
       body.applyTorqueImpulse(
         {
-          x: (Math.random() - 0.5) * 0.002 * strength,
-          y: (Math.random() - 0.5) * 0.002 * strength,
-          z: (Math.random() - 0.5) * 0.002 * strength,
+          x: (this.rng() - 0.5) * 0.002 * strength,
+          y: (this.rng() - 0.5) * 0.002 * strength,
+          z: (this.rng() - 0.5) * 0.002 * strength,
         },
         true,
       );
@@ -988,7 +1002,7 @@ export class GameLoop {
     const frontZ = PLAT_POS.z + PLAT_DEPTH / 2;
 
     // Pick random strike position
-    const sz = backZ + Math.random() * (frontZ - backZ);
+    const sz = backZ + this.rng() * (frontZ - backZ);
     let halfW: number;
     if (sz < FLARE_Z) {
       halfW = hw;
@@ -996,7 +1010,7 @@ export class GameLoop {
       halfW = hw + Math.tan(flareRad) * (sz - FLARE_Z);
     }
     halfW -= 0.05; // inset from walls
-    const sx = (Math.random() * 2 - 1) * halfW;
+    const sx = (this.rng() * 2 - 1) * halfW;
 
     // Mini explosion at strike point — bigger radius & stronger impulse
     const radius = 0.35;
@@ -1024,9 +1038,9 @@ export class GameLoop {
 
       body.applyImpulse(
         {
-          x: nx * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+          x: nx * 0.06 * strength + (this.rng() - 0.5) * 0.008,
           y: 0.055 * strength,
-          z: nz * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+          z: nz * 0.06 * strength + (this.rng() - 0.5) * 0.008,
         },
         true,
       );
@@ -1034,9 +1048,9 @@ export class GameLoop {
       // Torque for tumbling
       body.applyTorqueImpulse(
         {
-          x: (Math.random() - 0.5) * 0.002 * strength,
-          y: (Math.random() - 0.5) * 0.002 * strength,
-          z: (Math.random() - 0.5) * 0.002 * strength,
+          x: (this.rng() - 0.5) * 0.002 * strength,
+          y: (this.rng() - 0.5) * 0.002 * strength,
+          z: (this.rng() - 0.5) * 0.002 * strength,
         },
         true,
       );
@@ -1121,11 +1135,11 @@ export class GameLoop {
         if (this.atCoinCap()) return;
 
         // Random X across platform width, high Y for rain effect
-        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
-        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
-        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
+        const x = (this.rng() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
+        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + this.rng() * 0.5;
+        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (this.rng() - 0.5) * 0.4;
 
-        const angle = (Math.random() - 0.5) * Math.PI;
+        const angle = (this.rng() - 0.5) * Math.PI;
         const rot: { x: number; y: number; z: number; w: number } = {
           x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
         };
@@ -1194,11 +1208,11 @@ export class GameLoop {
         if (this.atCoinCap()) return;
 
         // Random X across platform width, high Y for rain effect
-        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH * 0.4;
-        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
-        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
+        const x = (this.rng() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH * 0.4;
+        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + this.rng() * 0.5;
+        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (this.rng() - 0.5) * 0.4;
 
-        const angle = (Math.random() - 0.5) * Math.PI;
+        const angle = (this.rng() - 0.5) * Math.PI;
         const rot: { x: number; y: number; z: number; w: number } = {
           x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
         };
@@ -1234,9 +1248,9 @@ export class GameLoop {
         body.wakeUp();
         // Apply random impulse: forward (positive Z), slight downward, random lateral
         const impulse = {
-          x: (Math.random() - 0.5) * 0.005,
+          x: (this.rng() - 0.5) * 0.005,
           y: -0.002,
-          z: 0.005 + Math.random() * 0.005,
+          z: 0.005 + this.rng() * 0.005,
         };
         body.applyImpulse(impulse, true);
         shocked++;

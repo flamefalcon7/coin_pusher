@@ -58,10 +58,15 @@ export class SponsorManager {
   /** Timers for bonus drop staggered spawns. */
   private bonusDropTimers: ReturnType<typeof setTimeout>[] = [];
 
+  private readonly rng: () => number;
+
+  /** @param rng session RNG — see DropScheduler for why this is not Math.random. */
   constructor(
     natsClient: NATSClient,
+    rng: () => number = Math.random,
   ) {
     this.natsClient = natsClient;
+    this.rng = rng;
   }
 
   /** Set the spawn callback (called by GameLoop after construction). */
@@ -149,7 +154,7 @@ export class SponsorManager {
     if (!this.spawnFn) return;
 
     // Pick random slot X from the predefined positions
-    const slotX = SPONSOR_SLOT_POSITIONS[Math.floor(Math.random() * SPONSOR_SLOT_POSITIONS.length)];
+    const slotX = SPONSOR_SLOT_POSITIONS[Math.floor(this.rng() * SPONSOR_SLOT_POSITIONS.length)];
 
     const coinId = this.spawnFn(slotX, COIN_CONFIG.SPAWN_HEIGHT, sponsorId);
 

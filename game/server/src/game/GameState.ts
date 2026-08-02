@@ -10,7 +10,16 @@ export class GameState {
   private tick: number = 0;
   private pusherZ: number = 0;
 
-  constructor() {
+  /**
+   * Seed of this session's simulation RNG. Held here because it belongs to the
+   * world, and because the world snapshot is what carries it to clients and
+   * into any recording of the session — a seed nobody wrote down cannot be
+   * replayed, which defeats the point of seeding at all.
+   */
+  private readonly rngSeed: string;
+
+  constructor(rngSeed: string = "") {
+    this.rngSeed = rngSeed;
     // Initialize pusher at ID 0
     this.bodies.set(0, {
       id: 0,
@@ -87,12 +96,17 @@ export class GameState {
     this.tick++;
   }
 
+  getRngSeed(): string {
+    return this.rngSeed;
+  }
+
   getWorldSnapshot(): WorldState {
     return {
       protocolVersion: PROTOCOL_VERSION,
       tick: this.tick,
       serverTime: Date.now(),
       bodies: Array.from(this.bodies.values()),
+      rngSeed: this.rngSeed,
     };
   }
 

@@ -59,6 +59,11 @@ message WorldSnapshot {
   double server_time = 2;
   uint32 tick = 3;
   repeated BodyState bodies = 4;
+  // Seed of the session's simulation RNG, as fixed-width hex. Recorded so a
+  // session's coin scatter can be replayed and audited. Does NOT cover slot
+  // reel or wheel segment outcomes — those stay on node:crypto so they cannot
+  // be predicted from a leaked seed. See docs/decisions.md D-005.
+  string rng_seed = 5;
 }
 
 message SlotSpin {

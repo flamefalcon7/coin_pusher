@@ -1,6 +1,7 @@
 import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type SuperPushCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
 import { RefIDDedup } from "./nats/dedup.js";
 import { startMetricsServer } from "./metrics.js";
+import { xoshiro128ss, generateSeed, formatSeed } from "./rng.js";
 import * as metrics from "./metrics.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
@@ -19,9 +20,22 @@ const NATS_URL = process.env.NATS_URL || "nats://localhost:4222";
 console.log("Starting Coin Pusher Game Server (NATS worker)...");
 console.log(`NATS URL: ${NATS_URL}`);
 
+// Session RNG. Minted per process, logged immediately, and carried in every
+// world snapshot — a seed that is not written down somewhere durable cannot be
+// used to replay the session, which is the only reason to seed at all.
+// SESSION_RNG_SEED (hex) overrides it, which is how a recorded session is
+// re-run against a changed build.
+const seedOverride = process.env.SESSION_RNG_SEED;
+const rngSeed = seedOverride ? parseInt(seedOverride, 16) >>> 0 : generateSeed();
+const rngSeedHex = formatSeed(rngSeed);
+const rng = xoshiro128ss(rngSeed);
+console.log(
+  `🎲 Session RNG seed: ${rngSeedHex}${seedOverride ? " (from SESSION_RNG_SEED)" : ""}`
+);
+
 // Initialize game components
 const physicsWorld = new PhysicsWorld();
-const gameState = new GameState();
+const gameState = new GameState(rngSeedHex);
 const coinManager = new CoinManager(gameState);
 const natsClient = new NATSClient("main");
 
@@ -47,8 +61,8 @@ async function initialize() {
   await natsClient.connect(NATS_URL);
 
   // Create drop scheduler, sponsor manager, and game loop
-  const dropScheduler = new DropScheduler();
-  sponsorManager = new SponsorManager(natsClient);
+  const dropScheduler = new DropScheduler(rng);
+  sponsorManager = new SponsorManager(natsClient, rng);
 
   gameLoop = new GameLoop(
     physicsWorld,
@@ -57,7 +71,8 @@ async function initialize() {
     coinManager,
     natsClient,
     dropScheduler,
-    sponsorManager
+    sponsorManager,
+    rng
   );
 
   // Subscribe to coin_insert commands from Go backend
