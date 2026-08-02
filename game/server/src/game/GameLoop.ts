@@ -326,11 +326,12 @@ export class GameLoop {
   private runTick(emitState: boolean = true): void {
     const tickStart = performance.now();
 
-    // 1. Update pusher position (dynamic amplitude based on coin count).
-    //    Driven by simulated time (tick index x dt), not the wall clock, so the
-    //    pusher shares one clock with the coins and stays reproducible.
+    // 1. Set the pusher's amplitude for this tick (grows with coin count).
+    //    The pusher itself is advanced inside the physics step, once per
+    //    substep — see step 3.
     this.pusher.updateAmplitude(this.coins.size);
-    this.pusher.update(this.gameState.getTick() * PHYSICS_CONFIG.TICK_INTERVAL);
+    const tickStartSimMs = this.gameState.getTick() * PHYSICS_CONFIG.TICK_INTERVAL;
+    const substepMs = PHYSICS_CONFIG.TICK_INTERVAL / this.physicsWorld.getSubsteps();
     const tAfterPusher = performance.now();
 
     // 1b. Check drop scheduler for coins to drop (one per slot per tick).
@@ -380,8 +381,19 @@ export class GameLoop {
     this.coins.forEach((coin) => coin.update());
     const tAfterCoinUpdate = performance.now();
 
-    // 3. Step physics simulation
-    this.physicsWorld.step();
+    // 3. Step physics simulation.
+    //    The pusher is advanced before each substep, to the position it should
+    //    occupy when that substep ends. Advancing it once per tick would make
+    //    it jump a whole tick of travel on the first substep and sit still for
+    //    the rest, which both looks wrong and hands the solver the wrong
+    //    contact velocity for coins riding on the face.
+    //
+    //    After the final substep the body sits exactly on the analytic value
+    //    that getCurrentZ() reports, so what clients receive is the physics
+    //    truth rather than an estimate of it.
+    this.physicsWorld.step((substep) => {
+      this.pusher.update(tickStartSimMs + (substep + 1) * substepMs);
+    });
     const tAfterPhysics = performance.now();
 
     // 4. Despawn check + optional state collection

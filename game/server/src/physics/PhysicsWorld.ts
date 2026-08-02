@@ -37,15 +37,30 @@ export class PhysicsWorld {
     this.initialized = true;
   }
 
-  step(): void {
+  /**
+   * Advance the simulation by one tick, as SUBSTEPS solver steps of dt/SUBSTEPS.
+   *
+   * @param beforeSubstep called before each substep with its index. Kinematic
+   *   bodies whose position is defined by a formula must be advanced here, not
+   *   once per tick: Rapier integrates every substep, so setting a whole tick's
+   *   worth of motion once would apply it on the first substep and leave the
+   *   body frozen for the rest — a lurch instead of smooth travel, and wrong
+   *   contact velocities for anything resting on it.
+   */
+  step(beforeSubstep?: (substepIndex: number) => void): void {
     if (!this.initialized) {
       throw new Error("PhysicsWorld not initialized");
     }
 
-    // Step the physics simulation
     for (let i = 0; i < this.substeps; i++) {
+      beforeSubstep?.(i);
       this.world.step();
     }
+  }
+
+  /** Number of solver substeps per tick. */
+  getSubsteps(): number {
+    return this.substeps;
   }
 
   getWorld(): RAPIER.World {
