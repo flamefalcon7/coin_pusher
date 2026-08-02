@@ -110,6 +110,7 @@ export class GameLoop {
     // Wire up sponsor coin spawn callback so SponsorManager can create
     // both game state entries and physics bodies
     this.sponsorManager.setSpawnFn((x, y, sponsorId) => {
+      if (this.atCoinCap()) return null;
       const coinId = this.coinManager.spawnCoin(x, y, undefined, undefined, "sponsor_coin", sponsorId);
       if (coinId !== null) {
         const coin = new SponsorCoin(this.physicsWorld, coinId, x, y, 0);
@@ -117,6 +118,43 @@ export class GameLoop {
       }
       return coinId;
     });
+  }
+
+  /**
+   * Hard cap on live physics bodies. Physics cost grows with body count, so
+   * this is what keeps a busy room from pushing the tick past its 33.3ms
+   * budget. Every spawn path must consult it — there is no rate limit anywhere
+   * else that bounds the total.
+   */
+  private atCoinCap(): boolean {
+    return this.coins.size >= RATE_LIMIT_CONFIG.MAX_ACTIVE_COINS;
+  }
+
+  /**
+   * Spawn a single coin body, respecting the cap. Returns the new coin id, or
+   * null if the position was rejected or the table is full.
+   *
+   * This is the shared entry point for externally-triggered spawns (NATS
+   * coin_insert, spawn_stack) so those paths cannot bypass the cap the way
+   * they did when they called CoinManager directly.
+   */
+  trySpawnCoin(
+    x: number,
+    y: number,
+    z: number,
+    rotation?: { x: number; y: number; z: number; w: number },
+  ): number | null {
+    if (this.atCoinCap()) return null;
+
+    const rot: [number, number, number, number] | undefined = rotation
+      ? [rotation.x, rotation.y, rotation.z, rotation.w]
+      : undefined;
+
+    const coinId = this.coinManager.spawnCoin(x, y, z, rot);
+    if (coinId === null) return null;
+
+    this.addCoin(new Coin(this.physicsWorld, coinId, x, y, z, rotation));
+    return coinId;
   }
 
   start(): void {
@@ -286,24 +324,29 @@ export class GameLoop {
     this.pusher.update();
     const tAfterPusher = performance.now();
 
-    // 1b. Check drop scheduler for coins to drop (one per slot per tick)
-    const drops = this.dropScheduler.tick();
-    for (const drop of drops) {
-      // Skip user coin spawns if at hard cap
-      if (this.coins.size >= RATE_LIMIT_CONFIG.MAX_ACTIVE_COINS) {
-        break;
-      }
-      const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
-      const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
-      if (coinId !== null) {
-        const coin = new Coin(this.physicsWorld, coinId, drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
-        this.addCoin(coin);
-        this.coinOwners.set(coinId, drop.userId);
-        // Publish coin_spawn event
-        this.natsClient.publishCoinSpawn({
-          op: "coin_spawn",
-          coins: [{ id: coinId, owner_id: drop.userId }],
-        });
+    // 1b. Check drop scheduler for coins to drop (one per slot per tick).
+    //
+    // The cap is checked BEFORE dequeuing, not after. DropScheduler.tick()
+    // decrements the queue, so testing the cap inside the loop and breaking
+    // would throw away a coin the player has already been debited for. Holding
+    // the queue instead means those coins simply drop later, once the table
+    // drains. The cost is a bounded overshoot: one tick can return at most one
+    // drop per slot, so the live count can exceed the cap by (slots - 1).
+    if (!this.atCoinCap()) {
+      const drops = this.dropScheduler.tick();
+      for (const drop of drops) {
+        const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
+        const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
+        if (coinId !== null) {
+          const coin = new Coin(this.physicsWorld, coinId, drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
+          this.addCoin(coin);
+          this.coinOwners.set(coinId, drop.userId);
+          // Publish coin_spawn event
+          this.natsClient.publishCoinSpawn({
+            op: "coin_spawn",
+            coins: [{ id: coinId, owner_id: drop.userId }],
+          });
+        }
       }
     }
 
@@ -728,6 +771,9 @@ export class GameLoop {
 
       for (let x = -halfW + xOffset; x <= halfW; x += colSpacing) {
         if (x < -halfW || x > halfW) continue;
+        // fillPlatform is an operator command; it must still respect the cap or
+        // it can single-handedly push the tick past budget.
+        if (this.atCoinCap()) break;
         // ~10% chance to skip this grid point for a messier look
         if (Math.random() < 0.1) continue;
         const layers = 1 + Math.floor(Math.random() * 2); // 1-2
@@ -1047,6 +1093,10 @@ export class GameLoop {
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
+        // Checked at fire time, not schedule time — the table fills up while
+        // this rain is still in flight.
+        if (this.atCoinCap()) return;
+
         // Random X across platform width, high Y for rain effect
         const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
         const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
@@ -1117,6 +1167,9 @@ export class GameLoop {
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
+        // Checked at fire time — see spawnBonusCoins.
+        if (this.atCoinCap()) return;
+
         // Random X across platform width, high Y for rain effect
         const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH * 0.4;
         const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;

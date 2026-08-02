@@ -34,6 +34,15 @@ export const coinsEvictedOnError = new client.Counter({
   help: "Total coins removed by the tick-error recovery sweep.",
 });
 
+// Spawn requests refused because the table is at MAX_ACTIVE_COINS (or the
+// position was out of range). Rising values mean the room is saturated and
+// players are being told "no" — a capacity signal, not an error.
+export const coinSpawnsRejected = new client.Counter({
+  name: "coinpusher_coin_spawns_rejected_total",
+  help: "Total coin spawn requests rejected, by source.",
+  labelNames: ["source"] as const,
+});
+
 // ── Coin gauges ──────────────────────────────────────────────────────
 
 export const coinsActive = new client.Gauge({

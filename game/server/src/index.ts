@@ -5,7 +5,6 @@ import * as metrics from "./metrics.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
-import { Coin } from "./physics/Coin.js";
 import { StackSpawner } from "./game/StackSpawner.js";
 import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
@@ -63,44 +62,36 @@ async function initialize() {
 
   // Subscribe to coin_insert commands from Go backend
   natsClient.subscribeCoinInsert((cmd: CoinInsertCommand) => {
-    const coinId = coinManager.spawnCoin(cmd.x, cmd.y, cmd.z);
-    if (coinId !== null) {
-      const coin = new Coin(physicsWorld, coinId, cmd.x, cmd.y, cmd.z);
-      gameLoop.addCoin(coin);
+    // Routed through the game loop so the hard body cap applies here too —
+    // spawning via CoinManager directly bypassed it.
+    if (gameLoop.trySpawnCoin(cmd.x, cmd.y, cmd.z) === null) {
+      metrics.coinSpawnsRejected.labels("coin_insert").inc();
     }
   });
 
   // Subscribe to spawn_stack commands from Go backend
   natsClient.subscribeSpawnStack((cmd: SpawnStackCommand) => {
     const coins = StackSpawner.getStackCoins(cmd.type as StackType, cmd.x, cmd.y, cmd.z);
+    let spawned = 0;
     coins.forEach((coinData) => {
-      const rot: [number, number, number, number] = [
-        coinData.rotation.x,
-        coinData.rotation.y,
-        coinData.rotation.z,
-        coinData.rotation.w,
-      ];
-
-      const coinId = coinManager.spawnCoin(
+      // A stack is the largest single-command spawn in the game; it must go
+      // through the capped path or one command can blow past the body budget.
+      const coinId = gameLoop.trySpawnCoin(
         coinData.x,
         coinData.y,
         coinData.z,
-        rot
+        coinData.rotation
       );
-
-      if (coinId !== null) {
-        const coin = new Coin(
-          physicsWorld,
-          coinId,
-          coinData.x,
-          coinData.y,
-          coinData.z,
-          coinData.rotation
-        );
-        gameLoop.addCoin(coin);
+      if (coinId === null) {
+        metrics.coinSpawnsRejected.labels("spawn_stack").inc();
+      } else {
+        spawned++;
       }
     });
-    console.log(`Spawned ${cmd.type} stack with ${coins.length} coins`);
+    console.log(
+      `Spawned ${cmd.type} stack: ${spawned}/${coins.length} coins` +
+        (spawned < coins.length ? " (rest rejected — at coin cap)" : "")
+    );
   });
 
   // Subscribe to shock commands from Go backend
