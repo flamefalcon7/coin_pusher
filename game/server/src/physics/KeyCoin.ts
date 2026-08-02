@@ -6,7 +6,6 @@ import { PHYSICS_PARAMS } from "./config.js";
 export class KeyCoin {
   private rigidBody: RAPIER.RigidBody;
   private id: number;
-  private ccdEnabled: boolean = false;
   private sleepTimer: number = 0;
 
   // Pre-computed constants (avoid recomputing every update())
@@ -89,14 +88,18 @@ export class KeyCoin {
       this.sleepTimer = 0;
     }
 
-    // Only fetch position when CCD is still enabled and we need to check height
-    if (this.ccdEnabled && vSq < KeyCoin.CCD_DISABLE_VEL_SQ) {
+    // Retire CCD once slow and low — Rapier owns the flag (no shadow copy to
+    // drift out of sync); the cheap velocity check gates the WASM read.
+    if (vSq < KeyCoin.CCD_DISABLE_VEL_SQ && this.rigidBody.isCcdEnabled()) {
       const position = this.rigidBody.translation();
       if (position.y < KEY_COIN_CONFIG.CCD_DISABLE_HEIGHT) {
         this.rigidBody.enableCcd(false);
-        this.ccdEnabled = false;
       }
     }
+  }
+
+  isCcdEnabled(): boolean {
+    return this.rigidBody.isCcdEnabled();
   }
 
   getId(): number {

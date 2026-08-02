@@ -6,7 +6,6 @@ import { PHYSICS_PARAMS } from "./config.js";
 export class SponsorCoin {
   private rigidBody: RAPIER.RigidBody;
   private id: number;
-  private ccdEnabled: boolean = false;
   private sleepTimer: number = 0;
 
   // Pre-computed constants (avoid recomputing every update())
@@ -84,14 +83,18 @@ export class SponsorCoin {
       this.sleepTimer = 0;
     }
 
-    // CCD disable when settled
-    if (this.ccdEnabled && vSq < SponsorCoin.CCD_DISABLE_VEL_SQ) {
+    // Retire CCD once slow and low — Rapier owns the flag (no shadow copy to
+    // drift out of sync); the cheap velocity check gates the WASM read.
+    if (vSq < SponsorCoin.CCD_DISABLE_VEL_SQ && this.rigidBody.isCcdEnabled()) {
       const position = this.rigidBody.translation();
       if (position.y < SPONSOR_COIN_CONFIG.CCD_DISABLE_HEIGHT) {
         this.rigidBody.enableCcd(false);
-        this.ccdEnabled = false;
       }
     }
+  }
+
+  isCcdEnabled(): boolean {
+    return this.rigidBody.isCcdEnabled();
   }
 
   getId(): number {
