@@ -342,10 +342,14 @@ func run() error {
 
 	wsHandler := ws.NewHandler(log, hub, nc, a, gameCore, heatEngine, inventoryCore, userCore, sponsorCore, wsOrigins, cfg.Outbox.Enabled)
 
-	// Subscribe to slot_status from game server for cap enforcement.
+	// Subscribe to slot_status from game server for cap enforcement. The same
+	// subscription feeds the liveness gate below: no slot_status for
+	// ws.GameLivenessTTL means the game server is gone and every path that
+	// debits balance or consumes inventory must refuse. See D-006.
 	if err := wsHandler.SubscribeSlotStatus(); err != nil {
 		return fmt.Errorf("subscribing to slot_status: %w", err)
 	}
+	gameLiveness := wsHandler.Liveness()
 
 	// -------------------------------------------------------------------------
 	// Bot scheduler — server-controlled NPC accounts that insert coins so
@@ -366,9 +370,10 @@ func run() error {
 		Clock:         bot.NewRealClock(),
 		// Seeded math/rand for deterministic-by-test, jitter-by-prod. Crypto
 		// strength not required for slot/amount/jitter selection.
-		RNG: mrand.New(mrand.NewSource(time.Now().UnixNano())),
-		Log: log,
-		DB:  db,
+		RNG:      mrand.New(mrand.NewSource(time.Now().UnixNano())),
+		Log:      log,
+		DB:       db,
+		Liveness: gameLiveness,
 	})
 	botCtx, botCancel := context.WithCancel(context.Background())
 	// Defer matches the outbox drainer pattern above: idempotent cancel
@@ -1242,7 +1247,9 @@ func buildAPIMux(
 
 	// V1 routes.
 	userGrp := usergrp.New(userCore, a)
-	gameGrp := gamegrp.New(gameCore, heatEngine, nc, outboxEnabled)
+	// Same gate the WS handler enforces — both transports must refuse inserts
+	// together when the game server's heartbeat goes stale (D-006).
+	gameGrp := gamegrp.New(gameCore, heatEngine, nc, outboxEnabled, wsHandler.Liveness())
 	invGrp := inventorygrp.New(inventoryCore)
 
 	// Public

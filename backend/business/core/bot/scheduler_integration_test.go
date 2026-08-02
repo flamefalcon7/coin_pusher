@@ -51,8 +51,18 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user/stores/userdb"
+	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
 	"github.com/flamefalcon/coin-pusher/backend/foundation/database"
 )
+
+// liveGate returns a game-server liveness gate that reads as alive. The
+// scheduler refuses to insert while the gate is stale (D-006), so tests whose
+// subject is the insert itself must supply one.
+func liveGate() *ws.GameLiveness {
+	l := ws.NewGameLiveness(ws.GameLivenessTTL)
+	l.Touch()
+	return l
+}
 
 // fixedPlayerCounter satisfies bot.PlayerCounter with a constant value;
 // used to drive the scheduler's crowd-scale lookup deterministically.
@@ -153,6 +163,10 @@ func setupSchedulerIntegration(t *testing.T) (
 		RNG:           rand.New(rand.NewSource(42)),
 		Log:           zap.NewNop().Sugar(),
 		DB:            db,
+		// These tests assert that inserts commit; without a live gate the
+		// scheduler correctly refuses to insert at all and every atomicity
+		// assertion below would pass vacuously on zero rows.
+		Liveness: liveGate(),
 	})
 
 	cleanup = func() {

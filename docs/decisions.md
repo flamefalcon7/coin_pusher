@@ -225,6 +225,91 @@ never as a replacement.
 
 ---
 
+## D-006: Gate all fund/item-consuming paths on a game-server liveness heartbeat
+**Status**: Accepted
+**Date**: 2026-08-02 · **Component**: backend (Go) / game server sync
+
+> D-005 is reserved by the PRNG-boundary decision on `fix/server-tick-and-sync`, which is not
+> merged yet. Numbering skips ahead rather than risking a reused number.
+
+### Context
+
+`slot_status` (game server → NATS, every ~30 ticks ≈ 1s) is the only signal the backend has that
+the game server is running. `SubscribeSlotStatus` overwrites `h.coinCount` / `h.slotCounts` but
+has no timeliness check: when the game server stops publishing, those values freeze at their last
+reading. The cap checks keep passing, the debit commits, and the NATS command publishes to a
+subject with no subscriber — NATS core has no JetStream persistence here, so the message is
+dropped on the floor. The client still receives `batch_insert_ack` reporting success.
+
+This is not hypothetical: every deploy, restart, and crash of the game server opens this window
+today. It predates and is independent of the tick circuit breaker work on
+`fix/server-tick-and-sync`.
+
+Four paths were exposed, not one: WS `batch_insert`, HTTP `POST /v1/game/batch-insert`, the bot
+scheduler's insert, and the five scroll abilities (which destroy an inventory item instead of a
+balance, but fail identically).
+
+### Decision
+
+Introduce `ws.GameLiveness` — an atomic last-heartbeat timestamp touched by the `slot_status`
+subscriber — and require `Live()` before *any* operation that debits balance or consumes
+inventory. The gate is **fail-closed**: the zero value and a nil pointer both read as dead, so a
+backend that has never received a `slot_status`, or one wired up incorrectly, refuses these
+operations rather than accepting them optimistically. TTL is 5s (five consecutive missed
+heartbeats).
+
+For abilities the gate lives inside `consumeScroll`, the single function all five handlers funnel
+through, so a sixth ability cannot be added without inheriting it.
+
+### Rationale
+
+- The failure mode is silent fund loss with a success ack. Fail-closed costs a rejected insert;
+  fail-open costs the player's money with no way to detect it after the fact.
+- 5s over 1–2s: absorbs a GC pause or NATS reconnect blip without gating live play. 5s over 10s+:
+  bounds the loss window to a handful of inserts.
+- Liveness lives in `business/web/ws` because all three callers already import that package; no
+  new import edge, and no `business/core` → `business/web` inversion beyond what exists.
+- Deliberately not solved by adding JetStream: durability would let commands survive the outage,
+  but replaying a backlog of inserts into a freshly restarted, empty table is a worse outcome than
+  refusing them. Revisit only if table state gains persistence.
+
+### Alternatives Considered
+
+- **NATS request/reply health probe before each insert** — rejected: adds a round-trip to the hot
+  path and a second failure mode (probe timeout) for a signal already being broadcast.
+- **Gate on NATS connection state (`nc.IsConnected()`)** — rejected: proves the broker is up, not
+  the game server. The exact incident being fixed has a healthy broker.
+- **Fail-open with a warning log** — rejected: it is the current behaviour, and the loss is
+  invisible to both player and operator.
+- **A `GAME_LIVENESS_ENABLED` escape hatch for local dev** — rejected: a kill switch for a
+  fail-closed money guard is the first thing to get left on in production.
+
+### Consequences
+
+- ✅ A dead game server stops costing players money within 5s, on every insert path.
+- ✅ Ops signal: `coinpusher_game_unavailable_rejects_total{path}` going nonzero means the game
+  server is gone — a directly alertable metric that did not exist before.
+- ⚠️ Backend startup and NATS reconnects now have a ≤5s window where inserts are refused. Any
+  environment without a running game server cannot insert coins at all — intended, but it will
+  surprise anyone running the API standalone.
+- ⚠️ Ability handlers stamp their cooldown before reaching the gate, so a refused ability still
+  burns it (≤10s for tornado). Accepted to keep one choke point.
+- ⚠️ The gate does not cover HTTP `batch-insert`'s pre-existing gap: that path never enforced
+  `maxActiveCoins` or the per-slot cap, so it can still overfill the table while the game server
+  is healthy. Tracked separately; not fixed here.
+- 🔮 If table state ever gains persistence across restarts, revisit the JetStream rejection —
+  durable commands become safe once the table they target survives.
+
+### Related
+
+- `backend/business/web/ws/{liveness,handler}.go` · `backend/app/services/api/handlers/v1/gamegrp/gamegrp.go`
+- `backend/business/core/bot/scheduler.go` · `game/server/src/game/GameLoop.ts:412` (heartbeat source)
+- `game/client/src/App.tsx` (renders the `game_unavailable` ack)
+- The tick circuit breaker planned on `fix/server-tick-and-sync` depends on this gate: it stops
+  the game loop to shed load, which stops `slot_status`, which is what makes that safe.
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown

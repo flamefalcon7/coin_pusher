@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"strings"
@@ -41,18 +42,23 @@ const (
 
 // Handler upgrades HTTP connections to WebSocket and manages the read loop.
 type Handler struct {
-	log            *zap.SugaredLogger
-	hub            *Hub
-	nc             *nats.Conn
-	auth           *auth.Auth
-	room           string
-	gameCore       *game.Core
-	heat           *heat.HeatEngine
-	inventoryCore  *inventory.Core
-	userCore       *user.Core
-	sponsorCore    *sponsor.Core
-	slotCounts     [numSlots]int64 // atomic — optimistic per-slot pending count
-	coinCount      int64          // atomic — authoritative active coin count from game server
+	log           *zap.SugaredLogger
+	hub           *Hub
+	nc            *nats.Conn
+	auth          *auth.Auth
+	room          string
+	gameCore      *game.Core
+	heat          *heat.HeatEngine
+	inventoryCore *inventory.Core
+	userCore      *user.Core
+	sponsorCore   *sponsor.Core
+	slotCounts    [numSlots]int64 // atomic — optimistic per-slot pending count
+	coinCount     int64           // atomic — authoritative active coin count from game server
+	// liveness gates every operation that debits balance or consumes
+	// inventory. slotCounts and coinCount above are only meaningful while it
+	// reports Live — once the game server goes silent they freeze at their
+	// last reading and every cap check trivially passes. See D-006.
+	liveness       *GameLiveness
 	allowedOrigins []string
 	upgrader       websocket.Upgrader
 	// outboxEnabled switches handleBatchInsert between the legacy
@@ -78,6 +84,7 @@ func NewHandler(log *zap.SugaredLogger, hub *Hub, nc *nats.Conn, a *auth.Auth, g
 		sponsorCore:    sponsorCore,
 		allowedOrigins: allowedOrigins,
 		outboxEnabled:  outboxEnabled,
+		liveness:       NewGameLiveness(GameLivenessTTL),
 	}
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -333,7 +340,6 @@ func (h *Handler) readPump(c *Connection) {
 		}
 	}
 }
-
 
 func (h *Handler) handleSpawnStack(c *Connection, msg ClientMessage) {
 	if !c.IsAdmin() {
@@ -652,6 +658,19 @@ func (h *Handler) handleBatchInsert(c *Connection, msg ClientMessage) {
 		slotID = 0
 	}
 
+	// Refuse before the debit if the game server went silent. The cap checks
+	// below read slotCounts/coinCount, which freeze at their last value when
+	// slot_status stops arriving — they would happily pass and the debit would
+	// commit for a command nobody receives. See D-006.
+	if !h.requireGameServer("ws_batch_insert") {
+		c.SendMessage(map[string]interface{}{
+			"op":     "batch_insert_ack",
+			"queued": 0,
+			"error":  "game_unavailable",
+		})
+		return
+	}
+
 	// Check global coin cap.
 	if atomic.LoadInt64(&h.coinCount) >= maxActiveCoins {
 		c.SendMessage(map[string]interface{}{
@@ -861,10 +880,35 @@ func (h *Handler) handleMegaspeaker(c *Connection, msg ClientMessage) {
 	h.sendInventoryUpdate(c, userID)
 }
 
+// errGameUnavailable is returned by consumeScroll when the game server's
+// heartbeat has gone stale. Every ability handler already bails on a non-nil
+// return, so no handler needs to distinguish it from "no scroll" — both mean
+// "do not publish".
+var errGameUnavailable = errors.New("game server unavailable")
+
 // consumeScroll attempts to consume a scroll of the given type for the user.
 // On success it sends an inventory_update to the client and returns nil.
 // On failure it sends an error message and returns the error.
+//
+// Every ability handler funnels through here, which makes it the one place the
+// game-server liveness gate has to live for abilities: a scroll consumed while
+// the game server is down is an item destroyed for a command that gets
+// published into a subject with no subscriber. See D-006.
+//
+// The handlers stamp their cooldown (CanShock etc.) before calling this, so a
+// gated ability still burns its cooldown. Left as-is: the ability is unusable
+// during an outage anyway, and one choke point is worth more than saving a
+// player ≤10s on the first use after recovery.
 func (h *Handler) consumeScroll(c *Connection, scrollType string) error {
+	if !h.requireGameServer("ws_ability") {
+		c.SendMessage(map[string]interface{}{
+			"op":    "ability_error",
+			"type":  scrollType,
+			"error": "game_unavailable",
+		})
+		return errGameUnavailable
+	}
+
 	userID, err := uuid.Parse(c.userID)
 	if err != nil {
 		h.log.Errorw("consumeScroll invalid user_id", "user_id", c.userID, "error", err)
@@ -906,6 +950,10 @@ func (h *Handler) sendInventoryUpdate(c *Connection, userID uuid.UUID) {
 
 // SubscribeSlotStatus subscribes to slot_status messages from the game server
 // and overwrites the local slotCounts with authoritative values.
+//
+// This subscription doubles as the game server's heartbeat: every accepted
+// message touches h.liveness, and the absence of messages is what closes the
+// insert gate. See D-006.
 func (h *Handler) SubscribeSlotStatus() error {
 	_, err := h.nc.Subscribe(TopicSlotStatus(h.room), func(msg *nats.Msg) {
 		var status struct {
@@ -920,6 +968,29 @@ func (h *Handler) SubscribeSlotStatus() error {
 			atomic.StoreInt64(&h.slotCounts[i], int64(status.Counts[i]))
 		}
 		atomic.StoreInt64(&h.coinCount, int64(status.CoinCount))
+		// Touch only after a successful decode: a publisher emitting garbage
+		// is not a game server we can route commands to.
+		h.liveness.Touch()
 	})
 	return err
+}
+
+// Liveness exposes the game-server heartbeat gate fed by SubscribeSlotStatus,
+// so the HTTP handlers and the bot scheduler gate on the same signal rather
+// than each maintaining a subscription of their own.
+func (h *Handler) Liveness() *GameLiveness {
+	return h.liveness
+}
+
+// requireGameServer reports whether the game server is alive, and if it is
+// not, records the rejection under the given path label. Every call site that
+// debits balance or consumes inventory must pass through here BEFORE the
+// debit, not after — the whole failure mode is a committed debit whose
+// command evaporates into a subject with no subscriber.
+func (h *Handler) requireGameServer(path string) bool {
+	if h.liveness.Live() {
+		return true
+	}
+	metrics.GameUnavailableRejects.WithLabelValues(path).Inc()
+	return false
 }
