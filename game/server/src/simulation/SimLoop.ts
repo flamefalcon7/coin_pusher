@@ -89,6 +89,21 @@ export class SimLoop {
     let coinIdCounter = 0;
     const dt = 1 / PHYSICS_CONFIG.TICK_RATE;
     const dtMs = dt * 1000;
+    // The pusher is a position-based kinematic body and must be advanced once
+    // per solver substep, exactly as GameLoop.runTick() does. Advancing it once
+    // per tick would move it a whole tick's travel during the first substep and
+    // leave it frozen for the rest — a different contact velocity against the
+    // coins, which would make this harness's RTP numbers describe a pusher the
+    // live server does not have.
+    const substepMs = dtMs / physicsWorld.getSubsteps();
+    /** Advance one tick of physics with production's pusher cadence. */
+    const stepWithPusher = () => {
+      // clock.advance(dtMs) has already run, so clock.now() is the tick's END.
+      const tickStartMs = clock.now() - dtMs;
+      physicsWorld.step((substep) => {
+        pusher.update(tickStartMs + (substep + 1) * substepMs);
+      });
+    };
 
     // Track which coin IDs are bonus coins
     const bonusCoinIds = new Set<number>();
@@ -221,9 +236,8 @@ export class SimLoop {
     // Settle warmup coins
     for (let t = 0; t < this.config.warmupSettleTicks; t++) {
       clock.advance(dtMs);
-      pusher.update(clock.now());
       coins.forEach((coin) => coin.update());
-      physicsWorld.step();
+      stepWithPusher();
       processDespawns(t);
     }
 
@@ -278,14 +292,11 @@ export class SimLoop {
       // Update ability effects (tornado/lightning)
       abilitySimulator.update(coins);
 
-      // Update pusher
-      pusher.update(clock.now());
-
       // Update coins (sleep/CCD)
       coins.forEach((coin) => coin.update());
 
-      // Physics step
-      physicsWorld.step();
+      // Physics step — advances the pusher once per substep, as production does
+      stepWithPusher();
 
       // Slot machine tick — spawn bonus coins
       const bonusSpawns = slotMachine.tick(currentTick);

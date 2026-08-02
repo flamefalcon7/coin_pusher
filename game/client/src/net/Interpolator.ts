@@ -80,11 +80,13 @@ export class Interpolator {
     if (pusherZ !== undefined) this.gracePusherZ = pusherZ;
     for (let i = 0, len = coins.length; i < len; i++) {
       const c = coins[i];
-      this.knownCoins.set(c.id, {
+      const seeded: InterpolatedCoin = {
         id: c.id,
         pos: [c.pos[0], c.pos[1], c.pos[2]],
         rot: [c.rot[0], c.rot[1], c.rot[2], c.rot[3]],
-      });
+      };
+      this.normalizeInPlace(seeded.rot);
+      this.knownCoins.set(c.id, seeded);
     }
   }
 
@@ -157,12 +159,14 @@ export class Interpolator {
           coin.rot[1] = afterUpdate.rot[1];
           coin.rot[2] = afterUpdate.rot[2];
           coin.rot[3] = afterUpdate.rot[3];
+          this.normalizeInPlace(coin.rot);
         } else {
           coin = {
             id: afterUpdate.id,
             pos: [afterUpdate.pos[0], afterUpdate.pos[1], afterUpdate.pos[2]],
             rot: [afterUpdate.rot[0], afterUpdate.rot[1], afterUpdate.rot[2], afterUpdate.rot[3]],
           };
+          this.normalizeInPlace(coin.rot);
           this.knownCoins.set(afterUpdate.id, coin);
         }
         continue;
@@ -255,6 +259,7 @@ export class Interpolator {
         coin.rot[1] = latestUpdate.rot[1];
         coin.rot[2] = latestUpdate.rot[2];
         coin.rot[3] = latestUpdate.rot[3];
+        this.normalizeInPlace(coin.rot);
         continue;
       }
 
@@ -270,6 +275,7 @@ export class Interpolator {
       coin.rot[1] = latestUpdate.rot[1];
       coin.rot[2] = latestUpdate.rot[2];
       coin.rot[3] = latestUpdate.rot[3];
+      this.normalizeInPlace(coin.rot);
     }
 
     const pusherVel =
@@ -367,6 +373,11 @@ export class Interpolator {
    * This is fixed here rather than server-side on purpose: the server cannot
    * both quantize for bandwidth and promise unit length, and the client is
    * where the value is finally used as a rotation.
+   *
+   * Applied on EVERY path that writes coin.rot, not just the slerp: the raw
+   * copies (snapshot seeding, a coin's first frame, the no-previous-update
+   * case, and extrapolation) pass the wire value straight through, and
+   * extrapolation in particular runs exactly when updates are starved.
    */
   private normalizeInPlace(q: [number, number, number, number]): void {
     const lenSq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];

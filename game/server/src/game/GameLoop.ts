@@ -316,6 +316,25 @@ export class GameLoop {
     });
 
     for (const id of dead) {
+      const coin = this.coins.get(id);
+
+      // Release the Rapier body. In the expected case (a coin whose destroy()
+      // already ran and nulled the body) this throws and there is nothing to
+      // release — but if the coin failed for any other reason the body is still
+      // in the world, and dropping only the map entry would leak it: invisible
+      // to atCoinCap(), still costing solver time every step.
+      try {
+        coin?.destroy(this.physicsWorld);
+      } catch {
+        // Body already gone — nothing to release.
+      }
+
+      try {
+        this.sponsorManager.onCoinDespawn(id);
+      } catch {
+        // Sponsor bookkeeping is best-effort during recovery.
+      }
+
       this.coins.delete(id);
       this.coinOwners.delete(id);
       this.keyCoinIds.delete(id);
@@ -326,6 +345,21 @@ export class GameLoop {
         // is what matters for keeping the loop alive.
       }
       metrics.coinsEvictedOnError.inc();
+    }
+
+    // Tell clients the coins are gone. This is the only removal path in the
+    // class that used to skip it, which left the meshes on screen forever —
+    // clients only drop a coin when they are told to.
+    if (dead.length > 0) {
+      try {
+        this.natsClient.publishDespawn({
+          op: "despawn",
+          tick: this.gameState.getTick(),
+          ids: dead,
+        });
+      } catch (err) {
+        console.error("   Failed to publish despawn for evicted coins:", err);
+      }
     }
 
     return dead.length;

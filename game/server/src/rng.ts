@@ -49,19 +49,33 @@ function splitmix32(seed: number): () => number {
  * Same seed always yields the same sequence, which is the whole point: a
  * recorded seed plus the same build reproduces the run.
  */
-export function xoshiro128ss(seed: number): Rng {
+/**
+ * Expand a seed word into the four xoshiro state words. Exported so a test can
+ * run a reference implementation from the same starting state as production.
+ */
+export function splitmix32State(seed: number): [number, number, number, number] {
   const mix = splitmix32(seed);
-  let a = mix();
-  let b = mix();
-  let c = mix();
-  let d = mix();
+  const s: [number, number, number, number] = [mix(), mix(), mix(), mix()];
+  // An all-zero state is a fixed point that only ever produces zero. splitmix32
+  // never actually yields one for a 32-bit seed (verified across the whole
+  // range), so this is belt-and-braces against a future change to the seeding.
+  if ((s[0] | s[1] | s[2] | s[3]) === 0) s[0] = 1;
+  return s;
+}
 
-  // An all-zero state is a fixed point that only ever produces zero.
-  if ((a | b | c | d) === 0) a = 1;
+export function xoshiro128ss(seed: number): Rng {
+  let [a, b, c, d] = splitmix32State(seed);
 
   return function (): number {
+    // Reference (Blackman & Vigna, prng.di.unimi.it/xoshiro128starstar.c):
+    //   const uint32_t result = rotl(s[1] * 5, 7) * 9;
+    //   const uint32_t t = s[1] << 9;
+    // Both the scrambler and t read s[1]. A widely-copied JavaScript
+    // transcription applies the scrambler to s[0] instead; that variant has a
+    // correct state transition (so the period still holds) but its output is
+    // not the function the published test batteries were run against.
     const t = (b << 9) >>> 0;
-    let r = Math.imul(a, 5);
+    let r = Math.imul(b, 5);
     r = (Math.imul((r << 7) | (r >>> 25), 9)) >>> 0;
 
     c ^= a;
