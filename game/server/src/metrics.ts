@@ -18,6 +18,22 @@ export const tickPhaseDuration = new client.Histogram({
   buckets: [0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.033],
 });
 
+// Ticks that threw and were contained by the game loop's guard. Any non-zero
+// value means the simulation lost a frame of work; a sustained rate means the
+// loop is limping and the cause needs finding, not just absorbing.
+export const tickErrorsTotal = new client.Counter({
+  name: "coinpusher_game_tick_errors_total",
+  help: "Total game ticks that threw and were contained by the tick guard.",
+});
+
+// Coins evicted by the post-error sweep because their rigid body no longer
+// answers. These are the stale references that would otherwise re-throw on
+// every subsequent tick.
+export const coinsEvictedOnError = new client.Counter({
+  name: "coinpusher_coins_evicted_on_error_total",
+  help: "Total coins removed by the tick-error recovery sweep.",
+});
+
 // ── Coin gauges ──────────────────────────────────────────────────────
 
 export const coinsActive = new client.Gauge({

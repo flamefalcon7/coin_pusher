@@ -211,7 +211,7 @@ async function initialize() {
 
 // Graceful shutdown with drain
 let shuttingDown = false;
-const shutdown = async () => {
+const shutdown = async (exitCode: number = 0) => {
   if (shuttingDown) return;
   shuttingDown = true;
 
@@ -241,11 +241,28 @@ const shutdown = async () => {
   await natsClient.close();
 
   console.log("✅ Shutdown complete");
-  process.exit(0);
+  process.exit(exitCode);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
+
+// Last-resort guards. The game loop contains its own tick failures, so anything
+// reaching here came from a NATS callback, a timer, or an await we do not own.
+// Log it loudly with the full stack — an unattributed silent exit is the worst
+// possible outcome for a server that holds player balances — then drain and
+// leave with a non-zero code so the supervisor restarts us.
+const fatal = (kind: string) => (error: unknown) => {
+  console.error(`💀 ${kind}:`, error);
+  if (shuttingDown) return;
+  shutdown(1).catch((err) => {
+    console.error("Shutdown after fatal error failed:", err);
+    process.exit(1);
+  });
+};
+
+process.on("uncaughtException", fatal("Uncaught exception"));
+process.on("unhandledRejection", fatal("Unhandled promise rejection"));
 
 // Start initialization
 initialize().catch((error) => {

@@ -73,6 +73,13 @@ export class GameLoop {
   private tickTimings: number[] = [];
   private static readonly TIMING_WINDOW = 300; // samples (~10s at 30Hz)
 
+  // Tick error containment. A throw inside a setInterval callback becomes an
+  // uncaughtException, which kills the process — one bad coin would drop every
+  // player in the room. Errors are contained per-tick; if they never stop we
+  // give up deliberately rather than spin at 30Hz writing stack traces.
+  private consecutiveTickErrors: number = 0;
+  private static readonly MAX_CONSECUTIVE_TICK_ERRORS = 30; // ~1s at 30Hz
+
   // Per-phase profiling accumulators (reset every TIMING_WINDOW)
   private profilePusher: number[] = [];
   private profileCoinUpdate: number[] = [];
@@ -201,7 +208,77 @@ export class GameLoop {
     }
   }
 
+  /**
+   * Guarded tick entry point. `runTick()` holds the real work; this wrapper
+   * exists so that a throw anywhere inside it cannot escape into the
+   * setInterval callback and terminate the process.
+   *
+   * Recovery strategy: log, count, then sweep out coins whose rigid body no
+   * longer answers — a destroyed-but-still-mapped coin is the failure that
+   * would otherwise re-throw on every subsequent tick and never clear.
+   */
   private tick(): void {
+    try {
+      this.runTick();
+      this.consecutiveTickErrors = 0;
+    } catch (error) {
+      this.consecutiveTickErrors++;
+      metrics.tickErrorsTotal.inc();
+
+      console.error(
+        `❌ Tick ${this.tickCount} threw (${this.consecutiveTickErrors} in a row, ` +
+          `${this.coins.size} coins):`,
+        error,
+      );
+
+      const evicted = this.evictUnusableCoins();
+      if (evicted > 0) {
+        console.error(`   Evicted ${evicted} unusable coin(s) during recovery`);
+      }
+
+      if (this.consecutiveTickErrors >= GameLoop.MAX_CONSECUTIVE_TICK_ERRORS) {
+        console.error(
+          `❌ ${this.consecutiveTickErrors} consecutive tick failures — stopping the ` +
+            `game loop. The simulation is not recoverable in place.`,
+        );
+        this.stop();
+      }
+    }
+  }
+
+  /**
+   * Drop coins whose rigid body can no longer be read. `destroy()` nulls the
+   * body, so a coin left in the map after a failed despawn throws on every
+   * access; evicting it is what turns a permanent crash loop into one lost tick.
+   * Returns the number evicted.
+   */
+  private evictUnusableCoins(): number {
+    const dead: number[] = [];
+    this.coins.forEach((coin, id) => {
+      try {
+        coin.getPosition();
+      } catch {
+        dead.push(id);
+      }
+    });
+
+    for (const id of dead) {
+      this.coins.delete(id);
+      this.coinOwners.delete(id);
+      this.keyCoinIds.delete(id);
+      try {
+        this.coinManager.removeCoin(id);
+      } catch {
+        // Game state is already inconsistent for this id; the map delete above
+        // is what matters for keeping the loop alive.
+      }
+      metrics.coinsEvictedOnError.inc();
+    }
+
+    return dead.length;
+  }
+
+  private runTick(): void {
     const tickStart = performance.now();
 
     // 1. Update pusher position (dynamic amplitude based on coin count)
