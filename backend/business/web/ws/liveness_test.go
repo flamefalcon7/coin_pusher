@@ -107,6 +107,25 @@ func TestGameLiveness_TTLBoundary(t *testing.T) {
 	}
 }
 
+func TestGameLivenessTTL_StaysWithinTheBoundD006Argued(t *testing.T) {
+	t.Parallel()
+
+	// The TTL is the size of the window in which players can still be charged
+	// for coins that go nowhere. D-006 argues 5s from the ~1s slot_status
+	// cadence: long enough to ride out a GC pause, short enough to bound the
+	// loss. Widening it to quiet a noisy local environment would silently
+	// reopen most of the window, so the bound is pinned here rather than left
+	// to a code review catching a one-character edit.
+	if GameLivenessTTL < 2*time.Second {
+		t.Errorf("GameLivenessTTL = %v: below 2s a GC pause or NATS reconnect gates live play",
+			GameLivenessTTL)
+	}
+	if GameLivenessTTL > 15*time.Second {
+		t.Errorf("GameLivenessTTL = %v: above 15s the gate stops bounding the loss window; "+
+			"if this is deliberate, update D-006 first", GameLivenessTTL)
+	}
+}
+
 func TestGameLiveness_TouchRevivesAStaleGate(t *testing.T) {
 	t.Parallel()
 
