@@ -81,7 +81,7 @@ export class SimLoop {
     const sceneBuilder = new SceneBuilder(physicsWorld);
     sceneBuilder.buildStaticScene();
 
-    const pusher = new Pusher(physicsWorld, () => clock.now());
+    const pusher = new Pusher(physicsWorld);
     const slotMachine = new SlotMachine(PHYSICS_CONFIG.TICK_RATE, this.rng);
     const abilitySimulator = new AbilitySimulator(PHYSICS_CONFIG.TICK_RATE, this.rng);
 
@@ -221,7 +221,7 @@ export class SimLoop {
     // Settle warmup coins
     for (let t = 0; t < this.config.warmupSettleTicks; t++) {
       clock.advance(dtMs);
-      pusher.update();
+      pusher.update(clock.now());
       coins.forEach((coin) => coin.update());
       physicsWorld.step();
       processDespawns(t);
@@ -279,7 +279,7 @@ export class SimLoop {
       abilitySimulator.update(coins);
 
       // Update pusher
-      pusher.update();
+      pusher.update(clock.now());
 
       // Update coins (sleep/CCD)
       coins.forEach((coin) => coin.update());

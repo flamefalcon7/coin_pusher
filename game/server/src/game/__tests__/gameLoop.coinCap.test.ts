@@ -6,7 +6,6 @@ import { DropScheduler } from "../DropScheduler.js";
 import { PhysicsWorld } from "../../physics/PhysicsWorld.js";
 import { SceneBuilder } from "../../physics/SceneBuilder.js";
 import { Pusher } from "../../physics/Pusher.js";
-import { SimClock } from "../../simulation/SimClock.js";
 import { COIN_CONFIG, RATE_LIMIT_CONFIG } from "@coin-pusher/shared";
 
 /**
@@ -60,8 +59,7 @@ async function buildLoop() {
   await physicsWorld.init();
   new SceneBuilder(physicsWorld).buildStaticScene();
 
-  const clock = new SimClock();
-  const pusher = new Pusher(physicsWorld, () => clock.now());
+  const pusher = new Pusher(physicsWorld);
   const gameState = new GameState();
   const coinManager = new CoinManager(gameState);
   const dropScheduler = new DropScheduler();

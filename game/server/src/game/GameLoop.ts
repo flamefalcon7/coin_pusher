@@ -8,6 +8,7 @@ import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
 import type { DropScheduler } from "./DropScheduler.js";
+import { TickScheduler } from "./TickScheduler.js";
 import * as metrics from "../metrics.js";
 import type {
   StateDeltaMessage,
@@ -33,7 +34,7 @@ export class GameLoop {
   private running: boolean = false;
   private draining: boolean = false;
   private drainResolve?: () => void;
-  private intervalId?: NodeJS.Timeout;
+  private readonly scheduler: TickScheduler;
   private statsIntervalId?: NodeJS.Timeout;
   private tickCount: number = 0;
 
@@ -106,6 +107,7 @@ export class GameLoop {
     this.natsClient = natsClient;
     this.dropScheduler = dropScheduler;
     this.sponsorManager = sponsorManager;
+    this.scheduler = new TickScheduler((opts) => this.tick(opts));
 
     // Wire up sponsor coin spawn callback so SponsorManager can create
     // both game state entries and physics bodies
@@ -163,10 +165,11 @@ export class GameLoop {
     this.running = true;
     console.log(`🎮 Game loop started at ${PHYSICS_CONFIG.TICK_RATE}Hz`);
 
-    // Use setInterval for fixed tick rate
-    this.intervalId = setInterval(() => {
-      this.tick();
-    }, PHYSICS_CONFIG.TICK_INTERVAL);
+    // Fixed timestep with drift correction. A bare setInterval loses time on
+    // every late firing and never gets it back; TickScheduler measures real
+    // elapsed time and spends it in whole dt steps. See TickScheduler for why
+    // catch-up is capped and why only the last step of a burst emits state.
+    this.scheduler.start();
 
     // Start periodic stats logging (every 10 seconds)
     this.statsIntervalId = setInterval(() => {
@@ -178,9 +181,7 @@ export class GameLoop {
     if (!this.running) return;
 
     this.running = false;
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-    }
+    this.scheduler.stop();
     if (this.statsIntervalId) {
       clearInterval(this.statsIntervalId);
     }
@@ -255,9 +256,9 @@ export class GameLoop {
    * longer answers — a destroyed-but-still-mapped coin is the failure that
    * would otherwise re-throw on every subsequent tick and never clear.
    */
-  private tick(): void {
+  private tick(opts: { emitState: boolean } = { emitState: true }): void {
     try {
-      this.runTick();
+      this.runTick(opts.emitState);
       this.consecutiveTickErrors = 0;
     } catch (error) {
       this.consecutiveTickErrors++;
@@ -316,12 +317,20 @@ export class GameLoop {
     return dead.length;
   }
 
-  private runTick(): void {
+  /**
+   * @param emitState false on catch-up steps — advance physics but skip state
+   *   collection and the state_delta publish, so a burst of catch-up ticks does
+   *   not fire several snapshots into the same millisecond and make clients
+   *   jump. Discrete events (spawns, despawns, abilities) still publish.
+   */
+  private runTick(emitState: boolean = true): void {
     const tickStart = performance.now();
 
-    // 1. Update pusher position (dynamic amplitude based on coin count)
+    // 1. Update pusher position (dynamic amplitude based on coin count).
+    //    Driven by simulated time (tick index x dt), not the wall clock, so the
+    //    pusher shares one clock with the coins and stays reproducible.
     this.pusher.updateAmplitude(this.coins.size);
-    this.pusher.update();
+    this.pusher.update(this.gameState.getTick() * PHYSICS_CONFIG.TICK_INTERVAL);
     const tAfterPusher = performance.now();
 
     // 1b. Check drop scheduler for coins to drop (one per slot per tick).
@@ -384,7 +393,8 @@ export class GameLoop {
     const f = GameLoop.Q_FACTOR;
     let sleepingCount = 0;
     const classifiedDespawns: { id: number; zone: string; owner_id: string; sponsor_id?: string }[] = [];
-    const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
+    const isNetworkTick =
+      emitState && (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
     // Despawn + state collection only on network ticks (15Hz, every 2nd physics tick)
     if (isNetworkTick) {
@@ -528,8 +538,9 @@ export class GameLoop {
 
     this.tickCount++;
 
-    // 7. Broadcast state delta at 15Hz (every 2nd physics tick)
-    if (this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
+    // 7. Broadcast state delta at 15Hz (every 2nd physics tick). Suppressed on
+    //    catch-up steps — `updates` was not collected for those anyway.
+    if (emitState && this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
       const stateDelta: StateDeltaMessage = {
         op: "state_delta",
         serverTime: Date.now(),

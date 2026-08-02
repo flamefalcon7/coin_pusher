@@ -19,8 +19,19 @@ function easeInOutQuad(t: number): number {
 
 export class Pusher {
   private rigidBody: RAPIER.RigidBody;
-  private startTime: number;
   private currentZ: number = 0;
+
+  /**
+   * Simulated time in milliseconds, supplied by the caller every update().
+   *
+   * The pusher used to read Date.now() directly, which put a second clock in
+   * the system: coins advance by a fixed dt per tick (simulated time) while the
+   * pusher advanced by wall time. Any drift between the two — and a setInterval
+   * loop always drifts — silently changed the phase relationship between the
+   * pusher and the coins it is pushing, and made the run unreproducible. Time
+   * now comes from the tick index, so there is exactly one clock.
+   */
+  private simTimeMs: number = 0;
 
   // Pre-computed constants to avoid recalculating every tick
   private readonly omega: number;
@@ -41,13 +52,8 @@ export class Pusher {
   private spStartZ: number = 0;
   private recoveryTargetZ: number = 0;
 
-  // Injectable clock (defaults to Date.now for production)
-  private getTime: () => number;
-
-  constructor(physicsWorld: PhysicsWorld, getTime?: () => number) {
+  constructor(physicsWorld: PhysicsWorld) {
     const world = physicsWorld.getWorld();
-    this.getTime = getTime ?? (() => Date.now());
-    this.startTime = this.getTime();
 
     const { WIDTH, HEIGHT, DEPTH, POSITION, FRICTION, RESTITUTION } =
       SCENE_CONFIG.PUSHER;
@@ -104,13 +110,16 @@ export class Pusher {
     }
   }
 
-  update(): void {
+  /** @param simTimeMs simulated time since start, in milliseconds. */
+  update(simTimeMs: number): void {
+    this.simTimeMs = simTimeMs;
+
     if (this.spState !== 'idle') {
       this.updateSuperPush();
       return;
     }
 
-    const elapsedTime = (this.getTime() - this.startTime) / 1000;
+    const elapsedTime = simTimeMs / 1000;
 
     const phase = this.omega * elapsedTime + this.initialPhase;
 
@@ -138,14 +147,17 @@ export class Pusher {
     if (this.spState !== 'idle') return;
 
     this.spStartZ = this.currentZ;
-    this.spStartTime = this.getTime();
+    // Anchored to the last simulated time seen, not the wall clock — this is
+    // called from a NATS callback between ticks, and the state machine below
+    // measures elapsed time in the same units.
+    this.spStartTime = this.simTimeMs;
     this.spState = 'pullback';
 
     console.log("💥 Super push activated!");
   }
 
   private updateSuperPush(): void {
-    const now = this.getTime();
+    const now = this.simTimeMs;
     const elapsed = now - this.spStartTime;
     const { PULLBACK_Z, THRUST_Z, PULLBACK_DURATION, THRUST_DURATION, HOLD_DURATION, RECOVERY_DURATION } = SUPER_PUSH_CONFIG;
 
@@ -192,8 +204,9 @@ export class Pusher {
         if (elapsed >= HOLD_DURATION) {
           this.spStartTime = now;
           this.spState = 'recovery';
-          // Pre-compute where the sin wave will be when recovery ends
-          const recoveryEndTime = (now + RECOVERY_DURATION - this.startTime) / 1000;
+          // Pre-compute where the sin wave will be when recovery ends.
+          // Simulated time starts at 0, so it is already "elapsed".
+          const recoveryEndTime = (now + RECOVERY_DURATION) / 1000;
           const recoveryEndPhase = this.omega * recoveryEndTime + this.initialPhase;
           this.recoveryTargetZ = this.amplitude * Math.sin(recoveryEndPhase) + this.zOffset;
           targetZ = THRUST_Z;
@@ -208,8 +221,9 @@ export class Pusher {
       case 'recovery': {
         if (elapsed >= RECOVERY_DURATION) {
           this.spState = 'idle';
-          // Resume normal oscillation — the sin wave's startTime was never modified
-          this.update();
+          // Resume normal oscillation — the sin wave is a pure function of
+          // simulated time, so it was never interrupted.
+          this.update(now);
           return;
         }
         const t = elapsed / RECOVERY_DURATION;
