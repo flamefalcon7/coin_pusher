@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -151,6 +152,50 @@ func TestGameLiveness_ConcurrentTouchAndRead(t *testing.T) {
 
 	if !l.Live() {
 		t.Error("gate should be live after concurrent touches")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// slot_status is the heartbeat
+// ---------------------------------------------------------------------------
+
+func TestApplySlotStatus_RevivesTheGate(t *testing.T) {
+	t.Parallel()
+
+	// The link everything else depends on: if the subscriber stops feeding the
+	// gate, it never opens and the backend refuses every insert forever.
+	h, _ := newTestHandler(t, testHandlerOpts{gameServerDown: true})
+
+	if h.liveness.Live() {
+		t.Fatal("precondition: gate should start stale")
+	}
+
+	h.applySlotStatus([]byte(`{"counts":[1,2,3,4,5],"coin_count":42,"tick":900}`))
+
+	if !h.liveness.Live() {
+		t.Error("a decoded slot_status must count as a heartbeat")
+	}
+	if got := atomic.LoadInt64(&h.coinCount); got != 42 {
+		t.Errorf("coinCount = %d, want 42", got)
+	}
+	for i, want := range []int64{1, 2, 3, 4, 5} {
+		if got := atomic.LoadInt64(&h.slotCounts[i]); got != want {
+			t.Errorf("slotCounts[%d] = %d, want %d", i, got, want)
+		}
+	}
+}
+
+func TestApplySlotStatus_MalformedPayloadIsNotAHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	// A publisher emitting garbage is not a game server we can route commands
+	// to, so it must not hold the gate open.
+	h, _ := newTestHandler(t, testHandlerOpts{gameServerDown: true})
+
+	h.applySlotStatus([]byte(`{"counts":`))
+
+	if h.liveness.Live() {
+		t.Error("undecodable slot_status must not count as a heartbeat")
 	}
 }
 

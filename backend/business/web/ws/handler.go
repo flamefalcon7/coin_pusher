@@ -956,23 +956,30 @@ func (h *Handler) sendInventoryUpdate(c *Connection, userID uuid.UUID) {
 // insert gate. See D-006.
 func (h *Handler) SubscribeSlotStatus() error {
 	_, err := h.nc.Subscribe(TopicSlotStatus(h.room), func(msg *nats.Msg) {
-		var status struct {
-			Counts    []int `json:"counts"`
-			CoinCount int   `json:"coin_count"`
-		}
-		if err := json.Unmarshal(msg.Data, &status); err != nil {
-			h.log.Errorw("slot_status unmarshal error", "error", err)
-			return
-		}
-		for i := 0; i < numSlots && i < len(status.Counts); i++ {
-			atomic.StoreInt64(&h.slotCounts[i], int64(status.Counts[i]))
-		}
-		atomic.StoreInt64(&h.coinCount, int64(status.CoinCount))
-		// Touch only after a successful decode: a publisher emitting garbage
-		// is not a game server we can route commands to.
-		h.liveness.Touch()
+		h.applySlotStatus(msg.Data)
 	})
 	return err
+}
+
+// applySlotStatus decodes one slot_status payload and applies it. Split out of
+// the subscription callback so the cap update and — more importantly — the
+// heartbeat touch can be tested without standing up a NATS server.
+func (h *Handler) applySlotStatus(data []byte) {
+	var status struct {
+		Counts    []int `json:"counts"`
+		CoinCount int   `json:"coin_count"`
+	}
+	if err := json.Unmarshal(data, &status); err != nil {
+		h.log.Errorw("slot_status unmarshal error", "error", err)
+		return
+	}
+	for i := 0; i < numSlots && i < len(status.Counts); i++ {
+		atomic.StoreInt64(&h.slotCounts[i], int64(status.Counts[i]))
+	}
+	atomic.StoreInt64(&h.coinCount, int64(status.CoinCount))
+	// Touch only after a successful decode: a publisher emitting garbage is
+	// not a game server we can route commands to.
+	h.liveness.Touch()
 }
 
 // Liveness exposes the game-server heartbeat gate fed by SubscribeSlotStatus,
