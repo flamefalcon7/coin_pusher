@@ -59,6 +59,68 @@ async function maxBroadcastVsPhysicsGap(
   return maxGap;
 }
 
+describe("PhysicsWorld substep contract", () => {
+  it("invokes beforeSubstep once per substep with indices 0..n-1", async () => {
+    const physicsWorld = new PhysicsWorld();
+    await physicsWorld.init();
+
+    const seen: number[] = [];
+    physicsWorld.step((i) => seen.push(i));
+
+    expect(seen).toEqual(
+      Array.from({ length: physicsWorld.getSubsteps() }, (_, i) => i),
+    );
+  });
+
+  /**
+   * The regression guard the end-of-tick gap assertion cannot provide.
+   *
+   * Advancing the pusher once per tick and advancing it once per substep both
+   * leave the body at the same place when the tick ends — Rapier reaches the
+   * target on the first substep and then sits still. So the sync test above
+   * passes either way (measured: 2.7e-8 both ways).
+   *
+   * What differs is the trajectory *within* the tick, and therefore the contact
+   * velocity handed to every coin resting on the face: once-per-tick moves at
+   * double speed for half the tick and then stops dead. Sampling between
+   * substeps is the only way to see it.
+   */
+  it("moves the pusher a fraction of the tick per substep, not all at once", async () => {
+    const physicsWorld = new PhysicsWorld();
+    await physicsWorld.init();
+
+    const pusher = new Pusher(physicsWorld);
+    const body = pusher.getRigidBody();
+    const substeps = physicsWorld.getSubsteps();
+    const substepMs = DT_MS / substeps;
+
+    // Start at phase 0 where the pusher is at maximum speed, so the per-substep
+    // travel is large enough to measure unambiguously.
+    pusher.update(0);
+    physicsWorld.step((s) => pusher.update((s + 1) * substepMs));
+
+    // Now sample the body position at the start of each substep of the NEXT tick.
+    const samples: number[] = [];
+    physicsWorld.step((s) => {
+      samples.push(body.translation().z);
+      pusher.update(DT_MS + (s + 1) * substepMs);
+    });
+
+    expect(samples).toHaveLength(substeps);
+
+    // Between the first and second substep the body must have advanced by
+    // roughly one substep of travel. Under once-per-tick advancement it would
+    // already be at the tick's end position by the second sample, so the
+    // remaining travel would be ~0.
+    const travelBetweenSubsteps = Math.abs(samples[1] - samples[0]);
+    const perSubstepTravel =
+      (PUSHER_CONFIG.AMPLITUDE * 2 * Math.PI * PUSHER_CONFIG.FREQUENCY * substepMs) / 1000;
+
+    expect(travelBetweenSubsteps).toBeGreaterThan(perSubstepTravel * 0.5);
+    expect(travelBetweenSubsteps).toBeLessThan(perSubstepTravel * 1.5);
+  });
+});
+
 describe("Pusher broadcast/physics sync", () => {
   it("the Z sent to clients matches the rigid body's real Z within 2mm (steady oscillation)", async () => {
     // 30 simulated seconds at 30Hz — covers ~18 full cycles at 0.6Hz.

@@ -22,14 +22,19 @@ import { COIN_CONFIG } from "@coin-pusher/shared";
 /** Minimal NATS stub — records publishes, never touches the network. */
 function makeNatsStub() {
   const calls: string[] = [];
+  const despawnedIds: number[] = [];
   const rec = (name: string) => (..._args: unknown[]) => {
     calls.push(name);
   };
   return {
     calls,
+    despawnedIds,
     publishCoinSpawn: rec("publishCoinSpawn"),
     publishCoinDespawn: rec("publishCoinDespawn"),
-    publishDespawn: rec("publishDespawn"),
+    publishDespawn: (msg: { ids: number[] }) => {
+      calls.push("publishDespawn");
+      despawnedIds.push(...msg.ids);
+    },
     publishKeyCoinFrontDespawn: rec("publishKeyCoinFrontDespawn"),
     publishSlotCounter: rec("publishSlotCounter"),
     publishSlotSpin: rec("publishSlotSpin"),
@@ -95,6 +100,40 @@ describe("GameLoop tick error containment", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("tells clients about evicted coins, and releases their Rapier bodies", async () => {
+    const { loop, physicsWorld, coinManager, nats } = await buildLoop();
+    const world = physicsWorld.getWorld();
+
+    const goodId = coinManager.spawnCoin(0, COIN_CONFIG.SPAWN_HEIGHT, 0)!;
+    loop.addCoin(new Coin(physicsWorld, goodId, 0, COIN_CONFIG.SPAWN_HEIGHT, 0));
+
+    // A coin that fails for a reason OTHER than an already-destroyed body: its
+    // rigid body is still live in the world, so eviction must release it or the
+    // body leaks — invisible to the coin cap, still costing solver time.
+    const badId = coinManager.spawnCoin(0.1, COIN_CONFIG.SPAWN_HEIGHT, 0)!;
+    const bad = new Coin(physicsWorld, badId, 0.1, COIN_CONFIG.SPAWN_HEIGHT, 0);
+    loop.addCoin(bad);
+    vi.spyOn(bad, "getPosition").mockImplementation(() => {
+      throw new Error("synthetic coin failure with a live body");
+    });
+
+    const bodiesBefore = world.bodies.len();
+
+    // getPosition() is only reached on a network tick (every 2nd), so drive a
+    // couple of ticks to guarantee the failure surfaces.
+    expect(() => {
+      runTick(loop);
+      runTick(loop);
+    }).not.toThrow();
+
+    // The body is gone from the world, not just from the map.
+    expect(world.bodies.len()).toBe(bodiesBefore - 1);
+
+    // And clients were told, or the mesh stays on screen forever.
+    expect(nats.despawnedIds).toContain(badId);
+    expect(nats.despawnedIds).not.toContain(goodId);
   });
 
   it("survives a coin whose rigid body has been destroyed, and evicts it", async () => {

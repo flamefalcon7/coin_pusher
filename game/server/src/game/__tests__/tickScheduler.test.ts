@@ -124,15 +124,69 @@ describe("TickScheduler fixed timestep", () => {
     expect(ticks).toBe(1);
   });
 
-  it("stops firing after stop()", () => {
-    let ticks = 0;
-    const sched = makeScheduler(() => ticks++);
-    sched.stop();
+  /**
+   * The rest of this file drives pump() by hand, which proves the accumulator
+   * maths but never touches start()'s own wiring. Measured: reverting start()
+   * to the old `setInterval(this.callback, ...)` — no accumulator, no
+   * catch-up — left every other test in this file green. These two use fake
+   * timers so the production path is actually exercised.
+   */
+  it("drives the callback from its own timer, and catches up within one firing", () => {
+    vi.useFakeTimers();
+    try {
+      let ticks = 0;
+      let nowNs = 0n;
+      vi.spyOn(process.hrtime, "bigint").mockImplementation(() => nowNs);
 
-    expect(sched.isRunning()).toBe(false);
-    // The interval is cleared; a manual pump is the only way in, and the
-    // scheduler is no longer wired to a timer.
-    expect(ticks).toBe(0);
+      const sched = new TickScheduler(() => ticks++);
+      sched.start();
+
+      // One timer firing, but three ticks' worth of real time has passed — the
+      // shape of a stall. Only an accumulator repays that debt; a scheduler
+      // wired straight to setInterval runs the callback once per firing no
+      // matter how much time went by, which is the regression this pins.
+      //
+      // (Asserting drift over many firings cannot distinguish the two here:
+      // vitest's fake setInterval replays its own missed firings, masking it.)
+      nowNs += ns(DT * 3);
+      vi.advanceTimersByTime(DT);
+
+      expect(ticks).toBe(3);
+
+      sched.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops firing after stop()", () => {
+    vi.useFakeTimers();
+    try {
+      let ticks = 0;
+      let nowNs = 0n;
+      vi.spyOn(process.hrtime, "bigint").mockImplementation(() => nowNs);
+
+      const sched = new TickScheduler(() => ticks++);
+      sched.start();
+
+      for (let i = 0; i < 10; i++) {
+        nowNs += ns(DT);
+        vi.advanceTimersByTime(DT);
+      }
+      const before = ticks;
+      expect(before).toBeGreaterThan(0); // the timer really was firing
+
+      sched.stop();
+      expect(sched.isRunning()).toBe(false);
+
+      for (let i = 0; i < 10; i++) {
+        nowNs += ns(DT);
+        vi.advanceTimersByTime(DT);
+      }
+      expect(ticks).toBe(before); // and really stopped
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("counts catch-up steps separately from normal ones", () => {

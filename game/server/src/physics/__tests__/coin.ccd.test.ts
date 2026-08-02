@@ -90,17 +90,57 @@ describe("Coin CCD lifecycle", () => {
   // Left as-is deliberately: raising the gate, or retiring CCD when a body
   // sleeps, changes tunneling behaviour and should be its own decision.
 
-  it("keeps the TS-visible flag in step with Rapier through the transition", async () => {
+  /**
+   * The previous version of this test asserted
+   * `coin.isCcdEnabled() === coin.getRigidBody().isCcdEnabled()`, which is a
+   * tautology: the accessor IS that expression, so both sides evaluate the same
+   * call on the same body. It could never fail. What is worth pinning is that
+   * the flag flips for the documented reason — slow AND low — rather than at
+   * some arbitrary moment.
+   */
+  it("retires CCD only once the coin is both slow and low", async () => {
     const physicsWorld = await buildWorld();
     const coin = new Coin(physicsWorld, 1, 0, COIN_CONFIG.SPAWN_HEIGHT, SCENE_CONFIG.PLATFORM.POSITION.z);
+    const body = coin.getRigidBody();
+
+    let flipTick = -1;
+    let speedAtFlip = Infinity;
+    let heightAtFlip = Infinity;
 
     for (let t = 0; t < SETTLE_TICKS; t++) {
+      const wasEnabled = body.isCcdEnabled();
       coin.update();
+
+      if (wasEnabled && !body.isCcdEnabled()) {
+        flipTick = t;
+        const v = body.linvel();
+        speedAtFlip = Math.hypot(v.x, v.y, v.z);
+        heightAtFlip = coin.getPosition().y;
+      }
+
       physicsWorld.step();
-      // Invariant at every tick: the accessor never disagrees with Rapier.
-      expect(coin.isCcdEnabled()).toBe(coin.getRigidBody().isCcdEnabled());
     }
 
+    expect(flipTick).toBeGreaterThanOrEqual(0); // it really did retire
+    expect(speedAtFlip).toBeLessThan(COIN_CONFIG.CCD_DISABLE_VELOCITY);
+    expect(heightAtFlip).toBeLessThan(COIN_CONFIG.CCD_DISABLE_HEIGHT);
     expect(coin.isCcdEnabled()).toBe(false);
+  });
+
+  it("does not retire CCD while the coin is still falling fast", async () => {
+    const physicsWorld = await buildWorld();
+    // Spawn high so the first ticks are genuine free-fall.
+    const coin = new Coin(physicsWorld, 1, 0, COIN_CONFIG.SPAWN_HEIGHT + 2, SCENE_CONFIG.PLATFORM.POSITION.z);
+    const body = coin.getRigidBody();
+
+    for (let t = 0; t < 10; t++) {
+      coin.update();
+      physicsWorld.step();
+      const v = body.linvel();
+      if (Math.hypot(v.x, v.y, v.z) >= COIN_CONFIG.CCD_DISABLE_VELOCITY) {
+        // Still fast — CCD must still be on, or a fast coin could tunnel.
+        expect(coin.isCcdEnabled()).toBe(true);
+      }
+    }
   });
 });

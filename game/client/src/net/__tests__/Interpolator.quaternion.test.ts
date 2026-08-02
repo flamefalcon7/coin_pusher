@@ -45,6 +45,82 @@ function slerp(a: Quat, b: Quat, t: number): Quat {
   return out;
 }
 
+/**
+ * Public-surface coverage. The slerp assertions below reach a private method;
+ * these drive getInterpolatedState() the way GameClient does, so the raw-copy
+ * paths (snapshot seeding, first frame, no-previous-update, extrapolation) are
+ * covered too. Those four paths originally passed the wire value straight
+ * through — the private-method tests could not see it.
+ */
+describe("Interpolator quaternion handling (public surface)", () => {
+  const QUANTIZED: Quat = normalizeAndQuantize([0.3117, 0.5231, 0.1873, 0.7742]);
+
+  function buildInterpolator() {
+    const buffer = new StateBuffer();
+    const clock = new ClockSync();
+    return { interp: new Interpolator(buffer, clock), buffer };
+  }
+
+  /** Fill the buffer densely around now so any interpolation delay lands inside. */
+  function fillBuffer(buffer: StateBuffer, coinId: number) {
+    const now = Date.now();
+    for (let i = 0; i < 60; i++) {
+      buffer.addState({
+        serverTime: now - 3000 + i * 50,
+        tick: i,
+        updates: [{ id: coinId, pos: [i * 0.01, 0.3, 0], rot: QUANTIZED }],
+        pusherZ: 0,
+      });
+    }
+  }
+
+  const assertAllUnit = (state: { coins: { rot: Quat }[] } | null) => {
+    expect(state).not.toBeNull();
+    expect(state!.coins.length).toBeGreaterThan(0);
+    for (const c of state!.coins) {
+      expect(Math.abs(norm(c.rot) - 1)).toBeLessThan(1e-6);
+    }
+  };
+
+  it("returns unit rotations from seeded snapshot coins", () => {
+    const { interp } = buildInterpolator();
+    interp.seedCoins([{ id: 1, pos: [0, 0.3, 0], rot: QUANTIZED }], 0);
+
+    const coins = (
+      interp as unknown as { knownCoins: Map<number, { rot: Quat }> }
+    ).knownCoins;
+    expect(Math.abs(norm(coins.get(1)!.rot) - 1)).toBeLessThan(1e-6);
+  });
+
+  it("returns unit rotations while interpolating", () => {
+    const { interp, buffer } = buildInterpolator();
+    fillBuffer(buffer, 1);
+    assertAllUnit(interp.getInterpolatedState() as never);
+  });
+
+  it("returns unit rotations while extrapolating past the newest state", () => {
+    const { interp, buffer } = buildInterpolator();
+    const now = Date.now();
+    // Two states well in the past: the target time is beyond both, so the
+    // extrapolation path runs — the path that is active precisely when the
+    // client is starved of updates.
+    buffer.addState({
+      serverTime: now - 6000,
+      tick: 1,
+      updates: [{ id: 1, pos: [0, 0.3, 0], rot: QUANTIZED }],
+      pusherZ: 0,
+    });
+    buffer.addState({
+      serverTime: now - 5900,
+      tick: 2,
+      updates: [{ id: 1, pos: [0.01, 0.3, 0], rot: QUANTIZED }],
+      pusherZ: 0,
+    });
+
+    assertAllUnit(interp.getInterpolatedState() as never);
+  });
+});
+
 describe("Interpolator quaternion handling", () => {
   it("the premise holds: quantized input really is off the unit sphere", () => {
     // A rotation whose components do not land on 3-decimal boundaries.
