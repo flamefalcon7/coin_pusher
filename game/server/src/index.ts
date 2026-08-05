@@ -75,6 +75,18 @@ async function initialize() {
     rng
   );
 
+  // The breaker stops the loop on repeated tick failures and retries once. If
+  // that retry also trips, the simulation is structurally broken and the
+  // process should leave so the supervisor can start a clean one. Route that
+  // through the same graceful shutdown as SIGTERM rather than a bare exit, so
+  // commands are unsubscribed and NATS is flushed on the way out.
+  gameLoop.setUnrecoverableHandler(() => {
+    shutdown(1).catch((err) => {
+      console.error("Shutdown after breaker exhaustion failed:", err);
+      process.exit(1);
+    });
+  });
+
   // Subscribe to coin_insert commands from Go backend
   natsClient.subscribeCoinInsert((cmd: CoinInsertCommand) => {
     // Routed through the game loop so the hard body cap applies here too —

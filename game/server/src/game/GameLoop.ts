@@ -82,6 +82,29 @@ export class GameLoop {
   private static readonly MAX_CONSECUTIVE_TICK_ERRORS = 30; // ~1s at 30Hz
 
   /**
+   * How long the room stays dark between a breaker trip and the single restart
+   * attempt. Long enough that the backend's slot_status liveness TTL (5s, see
+   * docs/decisions.md D-006) has certainly lapsed, so no coins are being sold
+   * for a simulation that is not running; short enough that a transient cause
+   * does not cost players a visibly long outage.
+   */
+  private static readonly BREAKER_RESTART_DELAY_MS = 10_000;
+
+  /** Pending restart attempt. Cleared by stop() so shutdown cannot be undone. */
+  private breakerRestartTimer?: NodeJS.Timeout;
+
+  /** Each process gets exactly one restart. The second trip is terminal. */
+  private breakerRestartUsed: boolean = false;
+
+  /**
+   * Called when the loop has tripped the breaker twice and cannot be recovered
+   * in place. Defaults to a hard exit so a loop nobody wired still leaves
+   * rather than sitting dark forever; index.ts replaces it with the graceful
+   * shutdown, which unsubscribes commands and flushes NATS on the way out.
+   */
+  private unrecoverableHandler: () => void = () => process.exit(1);
+
+  /**
    * Session RNG for everything that perturbs physics: coin scatter, ability
    * force jitter, bonus-rain placement. All of it feeds back into where coins
    * end up and therefore into RTP, so it is drawn from the recorded seed.
@@ -192,6 +215,16 @@ export class GameLoop {
   }
 
   stop(): void {
+    // Before the early return, not after. A breaker trip leaves the loop
+    // stopped with a restart pending; a shutdown arriving in that window would
+    // hit `!this.running` and return, and the timer would fire afterwards and
+    // restart the loop on a process that is trying to leave.
+    if (this.breakerRestartTimer) {
+      clearTimeout(this.breakerRestartTimer);
+      this.breakerRestartTimer = undefined;
+      console.log("🛑 Pending breaker restart cancelled");
+    }
+
     if (!this.running) return;
 
     this.running = false;
@@ -221,6 +254,16 @@ export class GameLoop {
    */
   drain(timeoutMs: number = 60_000): Promise<void> {
     if (this.draining) return Promise.resolve();
+
+    // Draining is driven by drainCheck() at the end of each tick, so a stopped
+    // loop can never complete one — waiting would just burn the full timeout
+    // before shutdown continues. This is the state a breaker trip leaves
+    // behind, so it is reachable in production, not just in theory.
+    if (!this.running) {
+      console.log("⏳ Drain skipped: the game loop is not running");
+      return Promise.resolve();
+    }
+
     this.draining = true;
 
     // Cancel active abilities immediately so coins can settle
@@ -271,6 +314,15 @@ export class GameLoop {
    * would otherwise re-throw on every subsequent tick and never clear.
    */
   private tick(opts: { emitState: boolean } = { emitState: true }): void {
+    // A stopped loop does not tick. In practice `stop()` also stops the
+    // scheduler that calls this, so nothing should arrive — but the breaker
+    // depends on "stopped" being absolute. Without this, a tick slipping
+    // through after the terminal trip would call the unrecoverable handler
+    // again on every firing, and one after a non-terminal trip would keep
+    // publishing slot_status, which is the very signal going quiet that tells
+    // the backend to stop selling coins.
+    if (!this.running) return;
+
     try {
       this.runTick(opts.emitState);
       this.consecutiveTickErrors = 0;
@@ -290,13 +342,70 @@ export class GameLoop {
       }
 
       if (this.consecutiveTickErrors >= GameLoop.MAX_CONSECUTIVE_TICK_ERRORS) {
-        console.error(
-          `❌ ${this.consecutiveTickErrors} consecutive tick failures — stopping the ` +
-            `game loop. The simulation is not recoverable in place.`,
-        );
-        this.stop();
+        this.tripBreaker();
       }
     }
+  }
+
+  /**
+   * The breaker: too many consecutive failures, so stop simulating.
+   *
+   * Stopping is itself the safety mechanism. `slot_status` is published from
+   * inside `runTick()`, so a stopped loop stops the heartbeat, and the backend
+   * refuses coin inserts once its liveness TTL lapses (D-006). No new protocol
+   * is needed to tell anyone the room is down — going quiet *is* the signal.
+   *
+   * Then one restart attempt, because the table survives it: `stop()` leaves
+   * every coin body in the world untouched, so a successful restart resumes
+   * the exact scene players were looking at. A process exit does not — the
+   * table is memory-only and comes back empty, which is why exiting is the
+   * last resort rather than the first response. Each failure also ran a full
+   * `evictUnusableCoins()` sweep, so by 30 failures anything coin-shaped has
+   * been swept out; what survives that is structural, and a second trip means
+   * restarting in place cannot fix it.
+   */
+  private tripBreaker(): void {
+    metrics.tickBreakerTripsTotal.inc();
+
+    if (this.breakerRestartUsed) {
+      console.error(
+        `❌ ${this.consecutiveTickErrors} consecutive tick failures again after a ` +
+          `restart — the simulation is not recoverable in this process. Leaving so ` +
+          `the supervisor can start a clean one. The table will come back empty.`,
+      );
+      this.stop();
+      this.unrecoverableHandler();
+      return;
+    }
+
+    this.breakerRestartUsed = true;
+    console.error(
+      `❌ ${this.consecutiveTickErrors} consecutive tick failures — stopping the game ` +
+        `loop. slot_status stops with it, so the backend will refuse coin inserts. ` +
+        `Retrying once in ${GameLoop.BREAKER_RESTART_DELAY_MS}ms with the table intact.`,
+    );
+
+    // stop() clears any pending restart, so schedule strictly after it.
+    this.stop();
+
+    this.breakerRestartTimer = setTimeout(() => {
+      this.breakerRestartTimer = undefined;
+      metrics.tickBreakerRestartsTotal.inc();
+      console.error("♻️  Restarting the game loop after a breaker trip");
+      // Give the restart a full error budget. Left at the threshold, the very
+      // first tick after the restart would re-trip and the second chance would
+      // be one tick wide.
+      this.consecutiveTickErrors = 0;
+      this.start();
+    }, GameLoop.BREAKER_RESTART_DELAY_MS);
+  }
+
+  /**
+   * Wire the terminal-failure action. index.ts points this at the graceful
+   * shutdown so a breaker exit still drains NATS.
+   */
+  setUnrecoverableHandler(handler: () => void): void {
+    this.unrecoverableHandler = handler;
   }
 
   /**

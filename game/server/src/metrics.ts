@@ -26,6 +26,22 @@ export const tickErrorsTotal = new client.Counter({
   help: "Total game ticks that threw and were contained by the tick guard.",
 });
 
+// Times the tick breaker tripped: MAX_CONSECUTIVE_TICK_ERRORS failures in a
+// row with no good tick between them. Every trip takes the room dark — the
+// loop stops, slot_status stops, and the backend gates coin inserts within its
+// liveness TTL. Alert on any increase.
+export const tickBreakerTripsTotal = new client.Counter({
+  name: "coinpusher_game_tick_breaker_trips_total",
+  help: "Total times the game loop stopped itself after consecutive tick failures.",
+});
+
+// The one restart attempt each process gets after a trip. A restart followed
+// by a second trip means the failure is structural, and the process leaves.
+export const tickBreakerRestartsTotal = new client.Counter({
+  name: "coinpusher_game_tick_breaker_restarts_total",
+  help: "Total times the game loop restarted itself after a breaker trip.",
+});
+
 // Coins evicted by the post-error sweep because their rigid body no longer
 // answers. These are the stale references that would otherwise re-throw on
 // every subsequent tick.

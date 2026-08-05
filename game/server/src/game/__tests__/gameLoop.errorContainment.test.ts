@@ -1,13 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { GameLoop } from "../GameLoop.js";
-import { GameState } from "../GameState.js";
-import { CoinManager } from "../CoinManager.js";
-import { DropScheduler } from "../DropScheduler.js";
-import { PhysicsWorld } from "../../physics/PhysicsWorld.js";
-import { SceneBuilder } from "../../physics/SceneBuilder.js";
-import { Pusher } from "../../physics/Pusher.js";
 import { Coin } from "../../physics/Coin.js";
+import { PhysicsWorld } from "../../physics/PhysicsWorld.js";
 import { COIN_CONFIG } from "@coin-pusher/shared";
+import { buildLoop, runTick, isRunning, coinCount } from "./loopHarness.js";
 
 /**
  * Acceptance test for tick error containment.
@@ -18,78 +13,6 @@ import { COIN_CONFIG } from "@coin-pusher/shared";
  * every player in the room. The loop must absorb the failure, shed whatever
  * caused it, and keep simulating.
  */
-
-/** Minimal NATS stub — records publishes, never touches the network. */
-function makeNatsStub() {
-  const calls: string[] = [];
-  const despawnedIds: number[] = [];
-  const rec = (name: string) => (..._args: unknown[]) => {
-    calls.push(name);
-  };
-  return {
-    calls,
-    despawnedIds,
-    publishCoinSpawn: rec("publishCoinSpawn"),
-    publishCoinDespawn: rec("publishCoinDespawn"),
-    publishDespawn: (msg: { ids: number[] }) => {
-      calls.push("publishDespawn");
-      despawnedIds.push(...msg.ids);
-    },
-    publishKeyCoinFrontDespawn: rec("publishKeyCoinFrontDespawn"),
-    publishSlotCounter: rec("publishSlotCounter"),
-    publishSlotSpin: rec("publishSlotSpin"),
-    publishSlotStatus: rec("publishSlotStatus"),
-    publishStateDelta: rec("publishStateDelta"),
-    publishWheelCounter: rec("publishWheelCounter"),
-    publishWheelSpin: rec("publishWheelSpin"),
-  };
-}
-
-/** Minimal SponsorManager stub — no timers, no spawning. */
-function makeSponsorStub() {
-  return {
-    setSpawnFn: (_fn: unknown) => {},
-    tick: (_tick: number) => {},
-    onCoinDespawn: (_id: number) => undefined,
-  };
-}
-
-async function buildLoop() {
-  const physicsWorld = new PhysicsWorld();
-  await physicsWorld.init();
-  new SceneBuilder(physicsWorld).buildStaticScene();
-
-  const pusher = new Pusher(physicsWorld);
-  const gameState = new GameState();
-  const coinManager = new CoinManager(gameState);
-  const dropScheduler = new DropScheduler();
-  const nats = makeNatsStub();
-  const sponsor = makeSponsorStub();
-
-  const loop = new GameLoop(
-    physicsWorld,
-    pusher,
-    gameState,
-    coinManager,
-    nats as never,
-    dropScheduler,
-    sponsor as never,
-  );
-
-  // Mark the loop live without calling start() — we drive tick() by hand rather
-  // than waiting on a real 30Hz setInterval, but stop() is a no-op unless the
-  // loop believes it is running.
-  (loop as unknown as { running: boolean }).running = true;
-
-  return { loop, physicsWorld, gameState, coinManager, nats };
-}
-
-/** Invoke the private guarded entry point. */
-const runTick = (loop: GameLoop) => (loop as unknown as { tick(): void }).tick();
-const isRunning = (loop: GameLoop) =>
-  (loop as unknown as { running: boolean }).running;
-const coinCount = (loop: GameLoop) =>
-  (loop as unknown as { coins: Map<number, unknown> }).coins.size;
 
 describe("GameLoop tick error containment", () => {
   beforeEach(() => {
