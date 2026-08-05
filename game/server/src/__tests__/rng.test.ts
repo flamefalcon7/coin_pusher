@@ -1,4 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { randomBytes } from "node:crypto";
+
+// Mocked so one test can pin what generateSeed draws from the CSPRNG. The
+// factory delegates to the real implementation, so every other test in this
+// file still gets genuine entropy; only that test overrides a single call.
+vi.mock("node:crypto", async (importActual) => {
+  const actual = await importActual<typeof import("node:crypto")>();
+  return { ...actual, randomBytes: vi.fn(actual.randomBytes) };
+});
 import {
   xoshiro128ss,
   generateSeed,
@@ -147,19 +156,27 @@ describe("xoshiro128ss", () => {
     expect(seeds.size).toBe(200);
   });
 
-  it("mints seeds across the full 128-bit state, not one 32-bit word", () => {
-    // The whole point of widening: if only one word carried entropy, the
-    // effective seed space would stay at 2^32 and remain brute-forceable
-    // offline no matter how wide the generator's state is.
-    const samples = Array.from({ length: 64 }, () => generateSeed());
+  it("takes all 128 bits of the state from the CSPRNG, not one word expanded", () => {
+    // This has to be asserted against the entropy source, not the output. A
+    // seed expanded from one 32-bit word through splitmix32 produces four
+    // words that all look random and all vary between sessions — it is
+    // indistinguishable downstream, which is exactly why the narrow version
+    // survived every output-level check. What differs is the size of the
+    // search space: 2^32 candidates is an offline brute force, 2^128 is not.
+    const bytes = Buffer.from([
+      0xde, 0xad, 0xbe, 0xef, 0x0b, 0xad, 0xf0, 0x0d,
+      0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00, 0xff,
+    ]);
+    const mocked = vi.mocked(randomBytes);
+    mocked.mockClear();
+    mocked.mockReturnValueOnce(bytes as never);
 
-    for (let word = 0; word < 4; word++) {
-      const distinct = new Set(samples.map((s) => s[word]));
-      expect(
-        distinct.size,
-        `state word ${word} is not varying — seed entropy is narrower than it looks`,
-      ).toBeGreaterThan(60);
-    }
+    const seed = generateSeed();
+
+    expect(mocked).toHaveBeenCalledWith(16);
+    // Straight from the bytes: any mixing step here would mean the entropy
+    // came from somewhere narrower than the 16 bytes drawn.
+    expect(seed).toEqual([0xdeadbeef, 0x0badf00d, 0x12345678, 0x000000ff]);
   });
 
   it("never mints the all-zero state, which only ever yields zero", () => {
