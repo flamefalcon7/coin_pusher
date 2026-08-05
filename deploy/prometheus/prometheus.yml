@@ -21,10 +21,18 @@ scrape_configs:
       - targets: ["executor:9092"]
     metrics_path: /metrics
 
-  # IMPORTANT: Prometheus does NOT support env var substitution.
-  # Replace the IP below with the game machine's VPC private IP.
-  # On the game droplet, run: ip addr show eth1
+  # The game server runs on a SEPARATE droplet, so there is no Docker DNS name
+  # for it the way there is for backend/indexer/executor above — it has to be
+  # reached over the VPC by address. Prometheus does not support env var
+  # substitution, so the address is committed rather than templated.
+  #
+  # This was a REPLACE_WITH_GAME_VPC_IP placeholder until 2026-08-05, while the
+  # running container held the real value. Recreating Prometheus from git would
+  # have resolved the literal placeholder, failed, and silently dropped every
+  # game-server metric — including the tick-breaker counters. Keep it a real
+  # address. If the game droplet is ever rebuilt, get the new one with
+  # `ip addr show eth1` on that box and update this line.
   - job_name: "game"
     static_configs:
-      - targets: ["REPLACE_WITH_GAME_VPC_IP:9100"]
+      - targets: ["10.104.0.2:9100"]
     metrics_path: /metrics
