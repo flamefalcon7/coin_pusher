@@ -10,6 +10,7 @@ export const debugConfig = {
   interpolationDelayMultiplier: NETWORK_CONFIG.INTERPOLATION_DELAY_MULTIPLIER,
   interpolationDelayMin: NETWORK_CONFIG.INTERPOLATION_DELAY_MIN,
   interpolationDelayMax: NETWORK_CONFIG.INTERPOLATION_DELAY_MAX,
+  interpolationDelayJitterMargin: NETWORK_CONFIG.INTERPOLATION_DELAY_JITTER_MARGIN,
   extrapolationMaxTime: NETWORK_CONFIG.EXTRAPOLATION_MAX_TIME,
 };
 

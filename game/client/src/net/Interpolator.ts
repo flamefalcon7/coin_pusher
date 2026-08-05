@@ -1,6 +1,8 @@
 import { StateBuffer } from "./StateBuffer";
 import { ClockSync } from "./ClockSync";
+import { ArrivalJitter } from "./ArrivalJitter";
 import { debugConfig } from "./debugConfig";
+import { NETWORK_CONFIG } from "@coin-pusher/shared";
 
 export interface InterpolatedCoin {
   id: number;
@@ -36,17 +38,67 @@ export class Interpolator {
   // Reusable result object to avoid allocation per frame
   private resultState: InterpolatedState = { coins: [], pusherZ: 0 };
 
-  constructor(stateBuffer: StateBuffer, clockSync: ClockSync) {
+  /** Measured unevenness of state_delta arrivals; drives the delay below. */
+  private readonly arrivalJitter: ArrivalJitter;
+
+  /**
+   * Jitter contribution to the delay, smoothed asymmetrically: it rises the
+   * moment jitter does, so the very next stall is already covered, and falls
+   * slowly, because dropping the delay yanks render time forward and that is
+   * itself visible. Updated on arrival rather than per frame so the behaviour
+   * does not depend on the client's frame rate.
+   */
+  private smoothedJitterDelay = 0;
+
+  /** Fraction of the gap closed per arrival when the delay is coming down. */
+  private static readonly JITTER_DECAY = 0.05;
+
+  constructor(stateBuffer: StateBuffer, clockSync: ClockSync, arrivalJitter?: ArrivalJitter) {
     this.stateBuffer = stateBuffer;
     this.clockSync = clockSync;
+    this.arrivalJitter = arrivalJitter ?? new ArrivalJitter();
   }
 
+  /**
+   * Call once per arriving state_delta (not on world_snapshot — that is a
+   * one-off and would pollute the cadence measurement).
+   */
+  noteArrival(): void {
+    this.arrivalJitter.record();
+
+    // Only the part of the tail that extrapolation cannot already cover needs
+    // buffering. On a clean link p99 sits at the send cadence, the subtraction
+    // goes negative, and the term contributes nothing — a good connection must
+    // not pay latency for a problem it does not have.
+    const p99 = this.arrivalJitter.p99();
+    const uncovered = p99 - NETWORK_CONFIG.EXTRAPOLATION_MAX_TIME;
+    const target =
+      uncovered > 0 ? uncovered + debugConfig.interpolationDelayJitterMargin : 0;
+
+    if (target > this.smoothedJitterDelay) {
+      this.smoothedJitterDelay = target;
+    } else {
+      this.smoothedJitterDelay +=
+        (target - this.smoothedJitterDelay) * Interpolator.JITTER_DECAY;
+    }
+  }
+
+  /**
+   * How far behind the server clock to render.
+   *
+   * RTT alone is the wrong input: a link can have a fine RTT and still stall
+   * for hundreds of ms when a lost packet blocks the stream until retransmit.
+   * When a stall outlasts this delay plus the extrapolation window, the buffer
+   * has nothing left and the table freezes — measured at ~10 times a minute on
+   * a real connection before the jitter term was added. See ArrivalJitter.
+   */
   private getInterpolationDelay(): number {
     const rtt = this.clockSync.getRTT();
 
     const adaptiveDelay = Math.max(
       debugConfig.interpolationDelayBase,
-      rtt * debugConfig.interpolationDelayMultiplier
+      rtt * debugConfig.interpolationDelayMultiplier,
+      this.smoothedJitterDelay
     );
 
     return Math.max(

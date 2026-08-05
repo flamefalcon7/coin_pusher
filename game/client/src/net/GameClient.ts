@@ -223,6 +223,9 @@ export class GameClient {
       case "state_delta":
         // Sync clock to game server's timestamps (not Go backend's pong)
         this.clockSync.recordStateDeltaTime(message.serverTime);
+        // Feed the arrival-cadence measurement that sizes the interpolation
+        // delay. Deliberately only on state_delta: world_snapshot is one-off.
+        this.interpolator.noteArrival();
         // Add to state buffer
         this.stateBuffer.addState({
           serverTime: message.serverTime,
