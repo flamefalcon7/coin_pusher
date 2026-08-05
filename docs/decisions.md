@@ -227,7 +227,8 @@ never as a replacement.
 
 ## D-005: Seed the physics RNG for replay; keep slot/wheel outcomes on crypto
 
-**Status**: Accepted
+**Status**: Accepted · **amended 2026-08-05** — the boundary below was drawn in the wrong place;
+see *Amendment* at the end of this entry before relying on any of it.
 **Date**: 2026-08-02 · **Component**: game-server (RNG, economy)
 
 ### Context — where does randomness decide money?
@@ -250,16 +251,19 @@ The obvious reflex is "seed everything so the whole session replays". That is wr
 ### Decision
 
 Seed category (1) from a per-session RNG (`xoshiro128**`, seeded at process start, recorded in
-logs and in every `world_snapshot` as `rng_seed`). Leave category (2) on `node:crypto.randomInt`.
+logs ~~and in every `world_snapshot` as `rng_seed`~~ — **server-side only, see the Amendment**).
+Leave category (2) on `node:crypto.randomInt`.
 
-`SESSION_RNG_SEED` (hex) overrides the minted seed, which is how a recorded session is re-run
-against a changed build.
+`SESSION_RNG_SEED` (32 hex characters) overrides the minted seed, which is how a recorded session
+is re-run against a changed build.
 
 ### Rationale
 
-- For physics randomness, reproducibility is the valuable property and predictability costs
+- ~~For physics randomness, reproducibility is the valuable property and predictability costs
   nothing: knowing the coin-scatter stream does not let a player choose a better moment to
-  insert — the pusher phase and pile state dominate, and they are not secret anyway.
+  insert — the pusher phase and pile state dominate, and they are not secret anyway.~~
+  **False — see the Amendment.** It considered only coin inserts, where the player's timing
+  barely moves the outcome, and missed abilities, where it moves it a great deal.
 - For reel and wheel outcomes, unpredictability **is** the security property. A seeded stream that
   a player can observe (they see every spin result) or that leaks (it is in the snapshot) turns
   into a jackpot-prediction exploit. Auditability there is better served by recording the drawn
@@ -281,8 +285,8 @@ against a changed build.
 
 ### Consequences
 
-- ✅ A session's coin scatter replays bit-for-bit from `rng_seed` on the same build; asserted by
-  `game/server/src/game/__tests__/gameLoop.determinism.test.ts`.
+- ✅ A session's coin scatter replays bit-for-bit from the recorded seed on the same build;
+  asserted by `game/server/src/game/__tests__/gameLoop.determinism.test.ts`.
 - ✅ Physics parameter changes are now regression-testable against a fixed input.
 - ⚠️ **Replay is partial.** Reel and wheel draws are not derivable from the seed, so a full
   session replay also needs those outcomes recorded. Anyone building an arbitration tool must
@@ -295,8 +299,50 @@ against a changed build.
 ### Related
 
 - `game/server/src/rng.ts` · `game/server/src/game/{GameLoop,DropScheduler,SponsorManager,GameState}.ts`
-- `game/shared/proto/game.proto` (`WorldSnapshot.rng_seed`)
+- `game/shared/proto/game.proto` (`WorldSnapshot` field 5, now `reserved`)
 - Tests: `src/__tests__/rng.test.ts` · `src/game/__tests__/gameLoop.determinism.test.ts`
+
+### Amendment (2026-08-05): the seed is secret, and the boundary is exposure — not "physics vs payout"
+
+**What was wrong.** The rationale above claimed physics randomness has no security value because
+a player cannot time an insert to exploit it. True for inserts, false for abilities. Lightning
+draws each of its ~22 strike positions from the seeded stream (`GameLoop.updateLightning`), and
+the player chooses when to spend the scroll — so anyone who can follow the stream can start a
+storm at a moment when the upcoming strikes land on the biggest pile. The published `rng_seed`
+handed them exactly that. Tornado and bonus-rain placement sit on the same footing.
+
+**What changed.**
+
+1. `rng_seed` is out of `WorldSnapshot` (field 5 `reserved`). Nothing ever consumed it — the
+   client-side replay it was added for was never built — so it was pure exposure. The seed lives
+   in the process log and `GameState.getRngSeed()`, which is where replay and arbitration
+   actually read it.
+2. The seed is 128 bits, drawn straight from the CSPRNG. It was one 32-bit word expanded through
+   splitmix32, so the effective search space was 2^32 however wide the generator's state was —
+   an offline brute force, not a wall.
+3. A malformed `SESSION_RNG_SEED` now refuses to start instead of parsing to `NaN` and landing on
+   state word 0, which produced a "replay" on a seed nobody chose.
+
+**The boundary, restated.** It is not physics-vs-payout. It is: *can an observer obtain the
+stream state?*
+
+- Seeded stream, for everything that must replay — **conditional on the seed never leaving the
+  server.** Publishing it, in any form, voids this entry.
+- `node:crypto`, for outcomes valuable enough that a single seed leak would compromise them
+  retroactively across the whole session: reel symbols, wheel segments.
+
+**Residual risk, stated plainly.** `xoshiro128**` is not cryptographically secure; its state is
+recoverable from enough raw outputs. Players do not see raw outputs — they see coin positions
+after a lossy, non-invertible physics simulation — so recovery is hard, but "hard" is not
+"impossible" and this is an accepted risk, not an absent one. If ability outcomes ever need to be
+provably unpredictable, move those specific draws to `node:crypto`; abilities already break
+replay (their timing comes off `performance.now()`), so that costs nothing that is not already
+lost.
+
+**If public verifiability is ever wanted**, the answer is commit-reveal — publish `sha256(seed)`
+live, reveal the seed when the session closes — not a field on the snapshot.
+
+**Related:** `docs/solutions/integration-issues/game-server-outage-charged-players-2026-08-05.md`
 
 ---
 
