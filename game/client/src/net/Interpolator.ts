@@ -86,11 +86,15 @@ export class Interpolator {
   /**
    * How far behind the server clock to render.
    *
-   * RTT alone is the wrong input: a link can have a fine RTT and still stall
-   * for hundreds of ms when a lost packet blocks the stream until retransmit.
-   * When a stall outlasts this delay plus the extrapolation window, the buffer
-   * has nothing left and the table freezes — measured at ~10 times a minute on
-   * a real connection before the jitter term was added. See ArrivalJitter.
+   * RTT alone is an incomplete input: a link can have a fine RTT and still
+   * stall for hundreds of ms when a lost packet blocks the stream until
+   * retransmit. When a stall outlasts this delay plus the extrapolation window,
+   * the buffer has nothing left and the table freezes.
+   *
+   * The three terms are floors, and which one binds depends on the link. On a
+   * high-RTT connection the RTT term usually dominates and the jitter term adds
+   * little; on a low-RTT lossy one the jitter term is the only thing that
+   * responds at all. See ArrivalJitter for the measurements behind this.
    */
   private getInterpolationDelay(): number {
     const rtt = this.clockSync.getRTT();

@@ -1,20 +1,23 @@
 /**
  * Rolling measure of how unevenly `state_delta` messages arrive.
  *
- * Why this exists: the interpolation delay used to be derived from RTT alone.
- * RTT and jitter are different properties of a link, and this game's problem is
- * the second one — measured from a real client on 2026-08-05, the server
- * published evenly (verified inside DigitalOcean: zero gaps over 250ms in 90s)
- * while the browser saw 21 gaps over 250ms with a 678ms worst case. A link can
- * have a perfectly good RTT and still stall for half a second when a packet is
- * lost and TCP head-of-line blocking holds the stream until the retransmit
- * lands.
+ * Why this exists: the interpolation delay used to be derived from RTT alone,
+ * and RTT does not see jitter. Measured from a real client on 2026-08-05, the
+ * server published evenly (verified inside DigitalOcean: zero gaps over 250ms
+ * in 90s, both direct and through nginx) while the browser over the public
+ * internet saw 21 gaps over 250ms with a 678ms worst case — the signature of a
+ * lost packet holding the stream until TCP retransmits. Same p50 either way;
+ * the whole difference is in the tail.
  *
  * When a gap outlasts the delay plus the extrapolation window, the renderer has
- * nothing to interpolate toward and the table visibly freezes. Feeding a
- * percentile of recent gaps into the delay is what lets a jittery client buy
- * itself enough buffer to ride them out, while a clean client keeps the low
- * latency it already had.
+ * nothing to interpolate toward and the table visibly freezes.
+ *
+ * Honest scope, measured after deploying this: on THAT link the RTT was ~200ms,
+ * so `RTT × 1.5` already produced a 288ms delay and covered most of the tail on
+ * its own — adding this term moved tolerance 438ms → 479ms and the freeze rate
+ * from roughly 3/min to 2/min. It is not a dramatic win there. It matters on
+ * the case RTT cannot see at all: a nearby server (low RTT, so a low delay) on
+ * a lossy last mile, where nothing else would buy the buffer.
  *
  * p95 rather than max: one outlier should not pin the delay at its ceiling for
  * the next several seconds. With a 64-sample window a single stall sits at
@@ -62,10 +65,11 @@ export class ArrivalJitter {
    * samples exist to say anything — callers fall back to their static floor,
    * which is the right behaviour for a connection that just opened.
    *
-   * p99 rather than p95 because that is where the freezes actually live. On the
-   * link measured 2026-08-05 the p95 was a harmless 133ms while gaps past 260ms
-   * — the ones that empty the buffer — occurred 8 times in 50 seconds, i.e. in
-   * the top ~2%. Sizing off p95 would have left every one of them a freeze.
+   * p99 rather than p95 because that is where the buffer-emptying gaps live. On
+   * the link measured 2026-08-05 the p95 was 133ms — inside what the delay
+   * already covered — while the gaps that actually outlast delay plus
+   * extrapolation sat in the top ~2% (p99 242ms, max 626ms). Sizing off p95
+   * would have measured the harmless part of the distribution.
    */
   p99(): number {
     return this.cachedP99;

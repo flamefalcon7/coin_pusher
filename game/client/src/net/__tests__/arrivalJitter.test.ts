@@ -11,10 +11,15 @@ import { debugConfig } from "../debugConfig";
  *
  * Measured on a live client 2026-08-05: the server published evenly (verified
  * from inside DigitalOcean — zero gaps over 250ms in 90s), while the browser
- * saw 21 gaps over 250ms with a 678ms worst case. The delay was pinned at its
- * 110ms floor the whole time, because it was computed from RTT alone and this
- * link's RTT was fine. Every gap that outlasted delay + extrapolation (260ms)
- * froze the table: 8 of them in 50 seconds.
+ * saw 21 gaps over 250ms with a 678ms worst case. Same p50 both sides; the
+ * difference is entirely in the tail.
+ *
+ * That link's RTT was ~200ms, so `RTT × 1.5` already gave a 288ms delay and did
+ * most of the covering; the jitter term took tolerance to 479ms and the freeze
+ * rate from about 3/min to 2/min. The reason to keep it is the case RTT cannot
+ * express: low RTT with a lossy last mile, where the delay would sit at its
+ * 110ms floor while gaps ran to half a second. These tests pin that case, which
+ * is why they use a deliberately small RTT.
  */
 
 /** Drive ArrivalJitter with a scripted sequence of gaps instead of real time. */

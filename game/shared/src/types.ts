@@ -495,11 +495,12 @@ export const NETWORK_CONFIG = {
   INTERPOLATION_DELAY_MULTIPLIER: 1.5, // Multiply RTT by this for delay (min 1.0, handles high latency)
   INTERPOLATION_DELAY_MIN: 100, // ms (minimum delay)
   INTERPOLATION_DELAY_MAX: 500, // ms (maximum delay)
-  // Head-room added on top of the measured p95 arrival gap. The delay only has
-  // to cover a gap minus what extrapolation already absorbs, but the margin is
-  // what turns "usually enough" into "enough for the tail". Measured 2026-08-05:
-  // p95 133ms with gaps reaching 626ms, so a margin in this range moves the
-  // freeze rate from ~10/min to ~3/min without a latency cost anyone can feel.
+  // Head-room added on top of the part of the p99 arrival gap that extrapolation
+  // cannot already absorb. The margin is what turns "usually enough" into
+  // "enough for the tail". Measured 2026-08-05 on a ~200ms-RTT link: tolerance
+  // 438ms -> 479ms, freeze rate roughly 3/min -> 2/min. Modest there because the
+  // RTT term already dominated; the margin earns its keep on low-RTT lossy links
+  // where nothing else responds to jitter.
   INTERPOLATION_DELAY_JITTER_MARGIN: 120, // ms
   EXTRAPOLATION_MAX_TIME: 150, // ms (max time to extrapolate into the future)
   PING_INTERVAL: 3000, // ms
