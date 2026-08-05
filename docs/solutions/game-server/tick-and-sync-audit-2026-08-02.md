@@ -148,8 +148,9 @@ handlers that drain and exit non-zero.
 
 All physics perturbation came from `Math.random()`, so a disputed round could
 not be replayed and a physics parameter change could not be regression-tested.
-Now drawn from a per-session `xoshiro128**` seed, logged and carried in
-`world_snapshot.rng_seed`, overridable via `SESSION_RNG_SEED`.
+Now drawn from a per-session `xoshiro128**` seed, written to the process log and
+overridable via `SESSION_RNG_SEED`. (It was also carried in
+`world_snapshot.rng_seed`; that was removed on 2026-08-05 — see below.)
 
 Slot reels and the wheel segment deliberately stay on `node:crypto` — see
 **ADR D-005**, which also records that replay is therefore partial and that
@@ -237,11 +238,12 @@ Still open, both needing a product decision rather than a patch:
    not exit or unsubscribe, so `batch_insert` keeps enqueuing coins the backend has already debited
    into a simulation that no longer runs. Options: exit non-zero and let the supervisor restart, or
    unsubscribe and serve degraded with a readiness signal.
-2. **The seeded/crypto boundary is drawn one call site too wide.** Lightning strike coordinates come
-   from the published seed while the player chooses when to spend the scroll — a predictable,
-   payout-affecting outcome under player control, which is the exact class D-005 argues belongs on
-   `node:crypto`. Note that a 32-bit seed is brute-forceable from broadcast data, so simply removing
-   `rng_seed` from the snapshot is not sufficient on its own.
+2. ~~**The seeded/crypto boundary is drawn one call site too wide.**~~ **Resolved 2026-08-05.**
+   Lightning strike coordinates came from the published seed while the player chooses when to spend
+   the scroll — a predictable, payout-affecting outcome under player control. Fixed by removing
+   `rng_seed` from the snapshot entirely (nothing consumed it) and widening the seed from 32 to 128
+   bits, since a 32-bit seed would have stayed brute-forceable even unpublished. D-005's boundary
+   argument was rewritten: the line is exposure of the stream state, not physics-vs-payout.
 
 ## Watch items
 

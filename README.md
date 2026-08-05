@@ -39,13 +39,14 @@ Browser --HTTPS--> Cloudflare --->  |   WebSocket /ws  |
   still measured against `performance.now()`, so the server does not yet run on a single clock.
 - **Broadcast equals physics** — the pusher is a position-based kinematic body advanced per
   substep; the Z sent to clients is the same value handed to the solver (residual ~3e-8 m).
-- **Seeded physics randomness** — coin scatter and ability jitter come from a per-session seed,
-  logged and carried in `world_snapshot.rng_seed`. Slot reel and wheel outcomes deliberately stay on
-  `node:crypto` — see ADR D-005 for that trade-off and for the limits of replay.
+- **Seeded physics randomness** — coin scatter and ability jitter come from a per-session 128-bit
+  seed, written to the process log and **never sent to clients**: lightning strike positions are
+  drawn from that stream and the player picks when to spend the scroll, so a published seed is a
+  predictable payout. Slot reel and wheel outcomes stay on `node:crypto`. See ADR D-005 (and its
+  2026-08-05 amendment) for the boundary and the residual risk.
 
-  Replay is **not** yet end-to-end: ability durations run on the wall clock (above), so a session
-  containing a tornado or lightning does not reproduce. The seed also does not currently reach any
-  client — nothing decodes the field.
+  Replay is **not** end-to-end: ability durations run on the wall clock (above), so a session
+  containing a tornado or lightning does not reproduce.
 - **Bounded body count** — a hard cap (`MAX_ACTIVE_COINS`) applies to every spawn path. Queued
   coins are held rather than dropped when the table is full.
 
