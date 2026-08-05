@@ -83,8 +83,16 @@ class SlotQueue {
 
 export class DropScheduler {
   private slots: SlotQueue[];
+  private readonly rng: () => number;
 
-  constructor() {
+  /**
+   * @param rng session RNG. The per-drop X offset decides where a coin lands
+   *   and therefore contributes directly to RTP, so it must come from the
+   *   recorded seed rather than Math.random() if a session is to be replayable.
+   *   Defaults to Math.random() so callers that predate seeding still work.
+   */
+  constructor(rng: () => number = Math.random) {
+    this.rng = rng;
     this.slots = Array.from({ length: SLOT_CONFIG.POSITIONS.length }, () => new SlotQueue());
   }
 
@@ -98,7 +106,7 @@ export class DropScheduler {
     for (let i = 0; i < this.slots.length; i++) {
       const drop = this.slots[i].tick();
       if (drop) {
-        const offset = (Math.random() * 2 - 1) * DROP_SCHEDULER_CONFIG.RANDOM_X_OFFSET;
+        const offset = (this.rng() * 2 - 1) * DROP_SCHEDULER_CONFIG.RANDOM_X_OFFSET;
         results.push({
           userId: drop.userId,
           slotX: SLOT_CONFIG.POSITIONS[i] + offset,

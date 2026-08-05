@@ -225,12 +225,130 @@ never as a replacement.
 
 ---
 
+## D-005: Seed the physics RNG for replay; keep slot/wheel outcomes on crypto
+
+**Status**: Accepted · **amended 2026-08-05** — the boundary below was drawn in the wrong place;
+see *Amendment* at the end of this entry before relying on any of it.
+**Date**: 2026-08-02 · **Component**: game-server (RNG, economy)
+
+### Context — where does randomness decide money?
+
+The game server draws randomness in two very different places:
+
+1. **Physics perturbation** — drop-slot X jitter, tornado/lightning/explosion force jitter,
+   bonus-rain placement, sponsor slot choice, `fillPlatform` scatter. These decide where coins
+   land, and where coins land decides RTP.
+2. **Discrete payout outcomes** — slot machine reel symbols, jackpot wheel segment.
+
+Until now (1) was `Math.random()` throughout the live loop, while (2) already used
+`node:crypto.randomInt`. The offline `SimLoop` harness had a seeded path, but the loop that
+actually takes players' money did not. Consequences: a disputed round could not be replayed and
+arbitrated, and a physics parameter change could not be regression-tested — you could only observe
+that RTP moved and guess why.
+
+The obvious reflex is "seed everything so the whole session replays". That is wrong for (2).
+
+### Decision
+
+Seed category (1) from a per-session RNG (`xoshiro128**`, seeded at process start, recorded in
+logs ~~and in every `world_snapshot` as `rng_seed`~~ — **server-side only, see the Amendment**).
+Leave category (2) on `node:crypto.randomInt`.
+
+`SESSION_RNG_SEED` (32 hex characters) overrides the minted seed, which is how a recorded session
+is re-run against a changed build.
+
+### Rationale
+
+- ~~For physics randomness, reproducibility is the valuable property and predictability costs
+  nothing: knowing the coin-scatter stream does not let a player choose a better moment to
+  insert — the pusher phase and pile state dominate, and they are not secret anyway.~~
+  **False — see the Amendment.** It considered only coin inserts, where the player's timing
+  barely moves the outcome, and missed abilities, where it moves it a great deal.
+- For reel and wheel outcomes, unpredictability **is** the security property. A seeded stream that
+  a player can observe (they see every spin result) or that leaks (it is in the snapshot) turns
+  into a jackpot-prediction exploit. Auditability there is better served by recording the drawn
+  outcomes than by making them derivable.
+- `xoshiro128**` over `mulberry32` (which `simulation/Rng.ts` uses for tests): 128-bit state and
+  a 2^128-1 period suit a process that draws continuously for weeks, where a 32-bit state does
+  not. Over BigInt-based `xorshift128+`: pure 32-bit ops, so no allocation in a function called
+  several times per tick inside the frame budget.
+
+### Alternatives Considered
+
+- **Seed everything, including reels** — rejected: makes jackpots predictable from a value we
+  publish in the world snapshot. Replayability is not worth an exploit on the payout path.
+- **Keep `Math.random()` and record outcomes instead** — rejected: recording every physics
+  perturbation is far more data than one seed, and still does not let you re-run the session
+  against a modified build.
+- **Reuse `mulberry32` from the sim harness** — rejected on state size (see above), though it
+  stays in place for the existing offline tests rather than churning them.
+
+### Consequences
+
+- ✅ A session's coin scatter replays bit-for-bit from the recorded seed on the same build;
+  asserted by `game/server/src/game/__tests__/gameLoop.determinism.test.ts`.
+- ✅ Physics parameter changes are now regression-testable against a fixed input.
+- ⚠️ **Replay is partial.** Reel and wheel draws are not derivable from the seed, so a full
+  session replay also needs those outcomes recorded. Anyone building an arbitration tool must
+  capture them separately.
+- ⚠️ Determinism holds for the same Rapier WASM build on the same platform. Rapier does not
+  guarantee cross-platform bit-identical results; do not claim replay across architectures.
+- 🔮 If reel/wheel arbitration becomes a requirement, the answer is a commit-reveal scheme
+  (publish a hash of the outcome before the spin, reveal after), not seeding.
+
+### Related
+
+- `game/server/src/rng.ts` · `game/server/src/game/{GameLoop,DropScheduler,SponsorManager,GameState}.ts`
+- `game/shared/proto/game.proto` (`WorldSnapshot` field 5, now `reserved`)
+- Tests: `src/__tests__/rng.test.ts` · `src/game/__tests__/gameLoop.determinism.test.ts`
+
+### Amendment (2026-08-05): the seed is secret, and the boundary is exposure — not "physics vs payout"
+
+**What was wrong.** The rationale above claimed physics randomness has no security value because
+a player cannot time an insert to exploit it. True for inserts, false for abilities. Lightning
+draws each of its ~22 strike positions from the seeded stream (`GameLoop.updateLightning`), and
+the player chooses when to spend the scroll — so anyone who can follow the stream can start a
+storm at a moment when the upcoming strikes land on the biggest pile. The published `rng_seed`
+handed them exactly that. Tornado and bonus-rain placement sit on the same footing.
+
+**What changed.**
+
+1. `rng_seed` is out of `WorldSnapshot` (field 5 `reserved`). Nothing ever consumed it — the
+   client-side replay it was added for was never built — so it was pure exposure. The seed lives
+   in the process log and `GameState.getRngSeed()`, which is where replay and arbitration
+   actually read it.
+2. The seed is 128 bits, drawn straight from the CSPRNG. It was one 32-bit word expanded through
+   splitmix32, so the effective search space was 2^32 however wide the generator's state was —
+   an offline brute force, not a wall.
+3. A malformed `SESSION_RNG_SEED` now refuses to start instead of parsing to `NaN` and landing on
+   state word 0, which produced a "replay" on a seed nobody chose.
+
+**The boundary, restated.** It is not physics-vs-payout. It is: *can an observer obtain the
+stream state?*
+
+- Seeded stream, for everything that must replay — **conditional on the seed never leaving the
+  server.** Publishing it, in any form, voids this entry.
+- `node:crypto`, for outcomes valuable enough that a single seed leak would compromise them
+  retroactively across the whole session: reel symbols, wheel segments.
+
+**Residual risk, stated plainly.** `xoshiro128**` is not cryptographically secure; its state is
+recoverable from enough raw outputs. Players do not see raw outputs — they see coin positions
+after a lossy, non-invertible physics simulation — so recovery is hard, but "hard" is not
+"impossible" and this is an accepted risk, not an absent one. If ability outcomes ever need to be
+provably unpredictable, move those specific draws to `node:crypto`; abilities already break
+replay (their timing comes off `performance.now()`), so that costs nothing that is not already
+lost.
+
+**If public verifiability is ever wanted**, the answer is commit-reveal — publish `sha256(seed)`
+live, reveal the seed when the session closes — not a field on the snapshot.
+
+**Related:** `docs/solutions/integration-issues/game-server-outage-charged-players-2026-08-05.md`
+
+---
+
 ## D-006: Gate all fund/item-consuming paths on a game-server liveness heartbeat
 **Status**: Accepted
 **Date**: 2026-08-02 · **Component**: backend (Go) / game server sync
-
-> D-005 is reserved by the PRNG-boundary decision on `fix/server-tick-and-sync`, which is not
-> merged yet. Numbering skips ahead rather than risking a reused number.
 
 ### Context
 
@@ -305,8 +423,10 @@ through, so a sixth ability cannot be added without inheriting it.
 - `backend/business/web/ws/{liveness,handler}.go` · `backend/app/services/api/handlers/v1/gamegrp/gamegrp.go`
 - `backend/business/core/bot/scheduler.go` · `game/server/src/game/GameLoop.ts:412` (heartbeat source)
 - `game/client/src/App.tsx` (renders the `game_unavailable` ack)
-- The tick circuit breaker planned on `fix/server-tick-and-sync` depends on this gate: it stops
-  the game loop to shed load, which stops `slot_status`, which is what makes that safe.
+- The tick breaker in `GameLoop.tripBreaker()` depends on this gate: it stops the game loop on
+  repeated failures, which stops `slot_status`, which is what makes stopping safe. Its 10s
+  restart delay is chosen to clear the 5s TTL here.
+- `docs/solutions/integration-issues/game-server-outage-charged-players-2026-08-05.md`
 
 ---
 

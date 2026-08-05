@@ -8,6 +8,7 @@ import type { GameState } from "./GameState.js";
 import type { CoinManager } from "./CoinManager.js";
 import type { NATSClient } from "../nats/NATSClient.js";
 import type { DropScheduler } from "./DropScheduler.js";
+import { TickScheduler } from "./TickScheduler.js";
 import * as metrics from "../metrics.js";
 import type {
   StateDeltaMessage,
@@ -33,7 +34,7 @@ export class GameLoop {
   private running: boolean = false;
   private draining: boolean = false;
   private drainResolve?: () => void;
-  private intervalId?: NodeJS.Timeout;
+  private readonly scheduler: TickScheduler;
   private statsIntervalId?: NodeJS.Timeout;
   private tickCount: number = 0;
 
@@ -73,6 +74,48 @@ export class GameLoop {
   private tickTimings: number[] = [];
   private static readonly TIMING_WINDOW = 300; // samples (~10s at 30Hz)
 
+  // Tick error containment. A throw inside a setInterval callback becomes an
+  // uncaughtException, which kills the process — one bad coin would drop every
+  // player in the room. Errors are contained per-tick; if they never stop we
+  // give up deliberately rather than spin at 30Hz writing stack traces.
+  private consecutiveTickErrors: number = 0;
+  private static readonly MAX_CONSECUTIVE_TICK_ERRORS = 30; // ~1s at 30Hz
+
+  /**
+   * How long the room stays dark between a breaker trip and the single restart
+   * attempt. Long enough that the backend's slot_status liveness TTL (5s, see
+   * docs/decisions.md D-006) has certainly lapsed, so no coins are being sold
+   * for a simulation that is not running; short enough that a transient cause
+   * does not cost players a visibly long outage.
+   */
+  private static readonly BREAKER_RESTART_DELAY_MS = 10_000;
+
+  /** Pending restart attempt. Cleared by stop() so shutdown cannot be undone. */
+  private breakerRestartTimer?: NodeJS.Timeout;
+
+  /** Each process gets exactly one restart. The second trip is terminal. */
+  private breakerRestartUsed: boolean = false;
+
+  /**
+   * Called when the loop has tripped the breaker twice and cannot be recovered
+   * in place. Defaults to a hard exit so a loop nobody wired still leaves
+   * rather than sitting dark forever; index.ts replaces it with the graceful
+   * shutdown, which unsubscribes commands and flushes NATS on the way out.
+   */
+  private unrecoverableHandler: () => void = () => process.exit(1);
+
+  /**
+   * Session RNG for everything that perturbs physics: coin scatter, ability
+   * force jitter, bonus-rain placement. All of it feeds back into where coins
+   * end up and therefore into RTP, so it is drawn from the recorded seed.
+   *
+   * Deliberately NOT used for slot reels or the jackpot wheel segment — those
+   * keep node:crypto.randomInt, because for those outcomes unpredictability is
+   * a security property and a seeded stream is a prediction exploit.
+   * See docs/decisions.md D-005.
+   */
+  private readonly rng: () => number;
+
   // Per-phase profiling accumulators (reset every TIMING_WINDOW)
   private profilePusher: number[] = [];
   private profileCoinUpdate: number[] = [];
@@ -90,8 +133,10 @@ export class GameLoop {
     coinManager: CoinManager,
     natsClient: NATSClient,
     dropScheduler: DropScheduler,
-    sponsorManager: SponsorManager
+    sponsorManager: SponsorManager,
+    rng: () => number = Math.random
   ) {
+    this.rng = rng;
     this.physicsWorld = physicsWorld;
     this.pusher = pusher;
     this.gameState = gameState;
@@ -99,10 +144,12 @@ export class GameLoop {
     this.natsClient = natsClient;
     this.dropScheduler = dropScheduler;
     this.sponsorManager = sponsorManager;
+    this.scheduler = new TickScheduler((opts) => this.tick(opts));
 
     // Wire up sponsor coin spawn callback so SponsorManager can create
     // both game state entries and physics bodies
     this.sponsorManager.setSpawnFn((x, y, sponsorId) => {
+      if (this.atCoinCap()) return null;
       const coinId = this.coinManager.spawnCoin(x, y, undefined, undefined, "sponsor_coin", sponsorId);
       if (coinId !== null) {
         const coin = new SponsorCoin(this.physicsWorld, coinId, x, y, 0);
@@ -112,16 +159,54 @@ export class GameLoop {
     });
   }
 
+  /**
+   * Hard cap on live physics bodies. Physics cost grows with body count, so
+   * this is what keeps a busy room from pushing the tick past its 33.3ms
+   * budget. Every spawn path must consult it — there is no rate limit anywhere
+   * else that bounds the total.
+   */
+  private atCoinCap(): boolean {
+    return this.coins.size >= RATE_LIMIT_CONFIG.MAX_ACTIVE_COINS;
+  }
+
+  /**
+   * Spawn a single coin body, respecting the cap. Returns the new coin id, or
+   * null if the position was rejected or the table is full.
+   *
+   * This is the shared entry point for externally-triggered spawns (NATS
+   * coin_insert, spawn_stack) so those paths cannot bypass the cap the way
+   * they did when they called CoinManager directly.
+   */
+  trySpawnCoin(
+    x: number,
+    y: number,
+    z: number,
+    rotation?: { x: number; y: number; z: number; w: number },
+  ): number | null {
+    if (this.atCoinCap()) return null;
+
+    const rot: [number, number, number, number] | undefined = rotation
+      ? [rotation.x, rotation.y, rotation.z, rotation.w]
+      : undefined;
+
+    const coinId = this.coinManager.spawnCoin(x, y, z, rot);
+    if (coinId === null) return null;
+
+    this.addCoin(new Coin(this.physicsWorld, coinId, x, y, z, rotation));
+    return coinId;
+  }
+
   start(): void {
     if (this.running) return;
 
     this.running = true;
     console.log(`🎮 Game loop started at ${PHYSICS_CONFIG.TICK_RATE}Hz`);
 
-    // Use setInterval for fixed tick rate
-    this.intervalId = setInterval(() => {
-      this.tick();
-    }, PHYSICS_CONFIG.TICK_INTERVAL);
+    // Fixed timestep with drift correction. A bare setInterval loses time on
+    // every late firing and never gets it back; TickScheduler measures real
+    // elapsed time and spends it in whole dt steps. See TickScheduler for why
+    // catch-up is capped and why only the last step of a burst emits state.
+    this.scheduler.start();
 
     // Start periodic stats logging (every 10 seconds)
     this.statsIntervalId = setInterval(() => {
@@ -130,12 +215,20 @@ export class GameLoop {
   }
 
   stop(): void {
+    // Before the early return, not after. A breaker trip leaves the loop
+    // stopped with a restart pending; a shutdown arriving in that window would
+    // hit `!this.running` and return, and the timer would fire afterwards and
+    // restart the loop on a process that is trying to leave.
+    if (this.breakerRestartTimer) {
+      clearTimeout(this.breakerRestartTimer);
+      this.breakerRestartTimer = undefined;
+      console.log("🛑 Pending breaker restart cancelled");
+    }
+
     if (!this.running) return;
 
     this.running = false;
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-    }
+    this.scheduler.stop();
     if (this.statsIntervalId) {
       clearInterval(this.statsIntervalId);
     }
@@ -161,6 +254,16 @@ export class GameLoop {
    */
   drain(timeoutMs: number = 60_000): Promise<void> {
     if (this.draining) return Promise.resolve();
+
+    // Draining is driven by drainCheck() at the end of each tick, so a stopped
+    // loop can never complete one — waiting would just burn the full timeout
+    // before shutdown continues. This is the state a breaker trip leaves
+    // behind, so it is reachable in production, not just in theory.
+    if (!this.running) {
+      console.log("⏳ Drain skipped: the game loop is not running");
+      return Promise.resolve();
+    }
+
     this.draining = true;
 
     // Cancel active abilities immediately so coins can settle
@@ -201,32 +304,216 @@ export class GameLoop {
     }
   }
 
-  private tick(): void {
+  /**
+   * Guarded tick entry point. `runTick()` holds the real work; this wrapper
+   * exists so that a throw anywhere inside it cannot escape into the
+   * setInterval callback and terminate the process.
+   *
+   * Recovery strategy: log, count, then sweep out coins whose rigid body no
+   * longer answers — a destroyed-but-still-mapped coin is the failure that
+   * would otherwise re-throw on every subsequent tick and never clear.
+   */
+  private tick(opts: { emitState: boolean } = { emitState: true }): void {
+    // A stopped loop does not tick. In practice `stop()` also stops the
+    // scheduler that calls this, so nothing should arrive — but the breaker
+    // depends on "stopped" being absolute. Without this, a tick slipping
+    // through after the terminal trip would call the unrecoverable handler
+    // again on every firing, and one after a non-terminal trip would keep
+    // publishing slot_status, which is the very signal going quiet that tells
+    // the backend to stop selling coins.
+    if (!this.running) return;
+
+    try {
+      this.runTick(opts.emitState);
+      this.consecutiveTickErrors = 0;
+    } catch (error) {
+      this.consecutiveTickErrors++;
+      metrics.tickErrorsTotal.inc();
+
+      console.error(
+        `❌ Tick ${this.tickCount} threw (${this.consecutiveTickErrors} in a row, ` +
+          `${this.coins.size} coins):`,
+        error,
+      );
+
+      const evicted = this.evictUnusableCoins();
+      if (evicted > 0) {
+        console.error(`   Evicted ${evicted} unusable coin(s) during recovery`);
+      }
+
+      if (this.consecutiveTickErrors >= GameLoop.MAX_CONSECUTIVE_TICK_ERRORS) {
+        this.tripBreaker();
+      }
+    }
+  }
+
+  /**
+   * The breaker: too many consecutive failures, so stop simulating.
+   *
+   * Stopping is itself the safety mechanism. `slot_status` is published from
+   * inside `runTick()`, so a stopped loop stops the heartbeat, and the backend
+   * refuses coin inserts once its liveness TTL lapses (D-006). No new protocol
+   * is needed to tell anyone the room is down — going quiet *is* the signal.
+   *
+   * Then one restart attempt, because the table survives it: `stop()` leaves
+   * every coin body in the world untouched, so a successful restart resumes
+   * the exact scene players were looking at. A process exit does not — the
+   * table is memory-only and comes back empty, which is why exiting is the
+   * last resort rather than the first response. Each failure also ran a full
+   * `evictUnusableCoins()` sweep, so by 30 failures anything coin-shaped has
+   * been swept out; what survives that is structural, and a second trip means
+   * restarting in place cannot fix it.
+   */
+  private tripBreaker(): void {
+    metrics.tickBreakerTripsTotal.inc();
+
+    if (this.breakerRestartUsed) {
+      console.error(
+        `❌ ${this.consecutiveTickErrors} consecutive tick failures again after a ` +
+          `restart — the simulation is not recoverable in this process. Leaving so ` +
+          `the supervisor can start a clean one. The table will come back empty.`,
+      );
+      this.stop();
+      this.unrecoverableHandler();
+      return;
+    }
+
+    this.breakerRestartUsed = true;
+    console.error(
+      `❌ ${this.consecutiveTickErrors} consecutive tick failures — stopping the game ` +
+        `loop. slot_status stops with it, so the backend will refuse coin inserts. ` +
+        `Retrying once in ${GameLoop.BREAKER_RESTART_DELAY_MS}ms with the table intact.`,
+    );
+
+    // stop() clears any pending restart, so schedule strictly after it.
+    this.stop();
+
+    this.breakerRestartTimer = setTimeout(() => {
+      this.breakerRestartTimer = undefined;
+      metrics.tickBreakerRestartsTotal.inc();
+      console.error("♻️  Restarting the game loop after a breaker trip");
+      // Give the restart a full error budget. Left at the threshold, the very
+      // first tick after the restart would re-trip and the second chance would
+      // be one tick wide.
+      this.consecutiveTickErrors = 0;
+      this.start();
+    }, GameLoop.BREAKER_RESTART_DELAY_MS);
+  }
+
+  /**
+   * Wire the terminal-failure action. index.ts points this at the graceful
+   * shutdown so a breaker exit still drains NATS.
+   */
+  setUnrecoverableHandler(handler: () => void): void {
+    this.unrecoverableHandler = handler;
+  }
+
+  /**
+   * Drop coins whose rigid body can no longer be read. `destroy()` nulls the
+   * body, so a coin left in the map after a failed despawn throws on every
+   * access; evicting it is what turns a permanent crash loop into one lost tick.
+   * Returns the number evicted.
+   */
+  private evictUnusableCoins(): number {
+    const dead: number[] = [];
+    this.coins.forEach((coin, id) => {
+      try {
+        coin.getPosition();
+      } catch {
+        dead.push(id);
+      }
+    });
+
+    for (const id of dead) {
+      const coin = this.coins.get(id);
+
+      // Release the Rapier body. In the expected case (a coin whose destroy()
+      // already ran and nulled the body) this throws and there is nothing to
+      // release — but if the coin failed for any other reason the body is still
+      // in the world, and dropping only the map entry would leak it: invisible
+      // to atCoinCap(), still costing solver time every step.
+      try {
+        coin?.destroy(this.physicsWorld);
+      } catch {
+        // Body already gone — nothing to release.
+      }
+
+      try {
+        this.sponsorManager.onCoinDespawn(id);
+      } catch {
+        // Sponsor bookkeeping is best-effort during recovery.
+      }
+
+      this.coins.delete(id);
+      this.coinOwners.delete(id);
+      this.keyCoinIds.delete(id);
+      try {
+        this.coinManager.removeCoin(id);
+      } catch {
+        // Game state is already inconsistent for this id; the map delete above
+        // is what matters for keeping the loop alive.
+      }
+      metrics.coinsEvictedOnError.inc();
+    }
+
+    // Tell clients the coins are gone. This is the only removal path in the
+    // class that used to skip it, which left the meshes on screen forever —
+    // clients only drop a coin when they are told to.
+    if (dead.length > 0) {
+      try {
+        this.natsClient.publishDespawn({
+          op: "despawn",
+          tick: this.gameState.getTick(),
+          ids: dead,
+        });
+      } catch (err) {
+        console.error("   Failed to publish despawn for evicted coins:", err);
+      }
+    }
+
+    return dead.length;
+  }
+
+  /**
+   * @param emitState false on catch-up steps — advance physics but skip state
+   *   collection and the state_delta publish, so a burst of catch-up ticks does
+   *   not fire several snapshots into the same millisecond and make clients
+   *   jump. Discrete events (spawns, despawns, abilities) still publish.
+   */
+  private runTick(emitState: boolean = true): void {
     const tickStart = performance.now();
 
-    // 1. Update pusher position (dynamic amplitude based on coin count)
+    // 1. Set the pusher's amplitude for this tick (grows with coin count).
+    //    The pusher itself is advanced inside the physics step, once per
+    //    substep — see step 3.
     this.pusher.updateAmplitude(this.coins.size);
-    this.pusher.update();
+    const tickStartSimMs = this.gameState.getTick() * PHYSICS_CONFIG.TICK_INTERVAL;
+    const substepMs = PHYSICS_CONFIG.TICK_INTERVAL / this.physicsWorld.getSubsteps();
     const tAfterPusher = performance.now();
 
-    // 1b. Check drop scheduler for coins to drop (one per slot per tick)
-    const drops = this.dropScheduler.tick();
-    for (const drop of drops) {
-      // Skip user coin spawns if at hard cap
-      if (this.coins.size >= RATE_LIMIT_CONFIG.MAX_ACTIVE_COINS) {
-        break;
-      }
-      const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
-      const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
-      if (coinId !== null) {
-        const coin = new Coin(this.physicsWorld, coinId, drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
-        this.addCoin(coin);
-        this.coinOwners.set(coinId, drop.userId);
-        // Publish coin_spawn event
-        this.natsClient.publishCoinSpawn({
-          op: "coin_spawn",
-          coins: [{ id: coinId, owner_id: drop.userId }],
-        });
+    // 1b. Check drop scheduler for coins to drop (one per slot per tick).
+    //
+    // The cap is checked BEFORE dequeuing, not after. DropScheduler.tick()
+    // decrements the queue, so testing the cap inside the loop and breaking
+    // would throw away a coin the player has already been debited for. Holding
+    // the queue instead means those coins simply drop later, once the table
+    // drains. The cost is a bounded overshoot: one tick can return at most one
+    // drop per slot, so the live count can exceed the cap by (slots - 1).
+    if (!this.atCoinCap()) {
+      const drops = this.dropScheduler.tick();
+      for (const drop of drops) {
+        const spawnZ = SCENE_CONFIG.BACK_WALL.POSITION.z;
+        const coinId = this.coinManager.spawnCoin(drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
+        if (coinId !== null) {
+          const coin = new Coin(this.physicsWorld, coinId, drop.slotX, COIN_CONFIG.SPAWN_HEIGHT, spawnZ);
+          this.addCoin(coin);
+          this.coinOwners.set(coinId, drop.userId);
+          // Publish coin_spawn event
+          this.natsClient.publishCoinSpawn({
+            op: "coin_spawn",
+            coins: [{ id: coinId, owner_id: drop.userId }],
+          });
+        }
       }
     }
 
@@ -251,8 +538,19 @@ export class GameLoop {
     this.coins.forEach((coin) => coin.update());
     const tAfterCoinUpdate = performance.now();
 
-    // 3. Step physics simulation
-    this.physicsWorld.step();
+    // 3. Step physics simulation.
+    //    The pusher is advanced before each substep, to the position it should
+    //    occupy when that substep ends. Advancing it once per tick would make
+    //    it jump a whole tick of travel on the first substep and sit still for
+    //    the rest, which both looks wrong and hands the solver the wrong
+    //    contact velocity for coins riding on the face.
+    //
+    //    After the final substep the body sits exactly on the analytic value
+    //    that getCurrentZ() reports, so what clients receive is the physics
+    //    truth rather than an estimate of it.
+    this.physicsWorld.step((substep) => {
+      this.pusher.update(tickStartSimMs + (substep + 1) * substepMs);
+    });
     const tAfterPhysics = performance.now();
 
     // 4. Despawn check + optional state collection
@@ -264,7 +562,8 @@ export class GameLoop {
     const f = GameLoop.Q_FACTOR;
     let sleepingCount = 0;
     const classifiedDespawns: { id: number; zone: string; owner_id: string; sponsor_id?: string }[] = [];
-    const isNetworkTick = (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
+    const isNetworkTick =
+      emitState && (this.tickCount + 1) % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0;
 
     // Despawn + state collection only on network ticks (15Hz, every 2nd physics tick)
     if (isNetworkTick) {
@@ -408,8 +707,9 @@ export class GameLoop {
 
     this.tickCount++;
 
-    // 7. Broadcast state delta at 15Hz (every 2nd physics tick)
-    if (this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
+    // 7. Broadcast state delta at 15Hz (every 2nd physics tick). Suppressed on
+    //    catch-up steps — `updates` was not collected for those anyway.
+    if (emitState && this.tickCount % PHYSICS_CONFIG.NETWORK_SEND_INTERVAL === 0) {
       const stateDelta: StateDeltaMessage = {
         op: "state_delta",
         serverTime: Date.now(),
@@ -651,18 +951,21 @@ export class GameLoop {
 
       for (let x = -halfW + xOffset; x <= halfW; x += colSpacing) {
         if (x < -halfW || x > halfW) continue;
+        // fillPlatform is an operator command; it must still respect the cap or
+        // it can single-handedly push the tick past budget.
+        if (this.atCoinCap()) break;
         // ~10% chance to skip this grid point for a messier look
-        if (Math.random() < 0.1) continue;
-        const layers = 1 + Math.floor(Math.random() * 2); // 1-2
+        if (this.rng() < 0.1) continue;
+        const layers = 1 + Math.floor(this.rng() * 2); // 1-2
         for (let layer = 0; layer < layers; layer++) {
           // Drop from above — stagger height by layer + random offset to avoid all spawning at once
-          const dropHeight = 0.3 + layer * coinT * 3 + Math.random() * 0.1;
+          const dropHeight = 0.3 + layer * coinT * 3 + this.rng() * 0.1;
           const cy = surfaceY + dropHeight;
-          const rx = x + (Math.random() - 0.5) * 0.06;
-          const rz = z + (Math.random() - 0.5) * 0.06;
+          const rx = x + (this.rng() - 0.5) * 0.06;
+          const rz = z + (this.rng() - 0.5) * 0.06;
 
           // Small random Y-axis rotation for variety
-          const angle = (Math.random() - 0.5) * Math.PI * 0.3;
+          const angle = (this.rng() - 0.5) * Math.PI * 0.3;
           const rot: [number, number, number, number] = [0, Math.sin(angle / 2), 0, Math.cos(angle / 2)];
 
           const coinId = this.coinManager.spawnCoinUnchecked(rx, cy, rz, rot);
@@ -784,9 +1087,9 @@ export class GameLoop {
       // Strong outward blast + upward launch + random scatter
       body.applyImpulse(
         {
-          x: nx * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+          x: nx * 0.08 * strength + (this.rng() - 0.5) * 0.01,
           y: 0.06 * strength,
-          z: nz * 0.08 * strength + (Math.random() - 0.5) * 0.01,
+          z: nz * 0.08 * strength + (this.rng() - 0.5) * 0.01,
         },
         true,
       );
@@ -794,9 +1097,9 @@ export class GameLoop {
       // Random torque for tumbling
       body.applyTorqueImpulse(
         {
-          x: (Math.random() - 0.5) * 0.002 * strength,
-          y: (Math.random() - 0.5) * 0.002 * strength,
-          z: (Math.random() - 0.5) * 0.002 * strength,
+          x: (this.rng() - 0.5) * 0.002 * strength,
+          y: (this.rng() - 0.5) * 0.002 * strength,
+          z: (this.rng() - 0.5) * 0.002 * strength,
         },
         true,
       );
@@ -842,7 +1145,7 @@ export class GameLoop {
     const frontZ = PLAT_POS.z + PLAT_DEPTH / 2;
 
     // Pick random strike position
-    const sz = backZ + Math.random() * (frontZ - backZ);
+    const sz = backZ + this.rng() * (frontZ - backZ);
     let halfW: number;
     if (sz < FLARE_Z) {
       halfW = hw;
@@ -850,7 +1153,7 @@ export class GameLoop {
       halfW = hw + Math.tan(flareRad) * (sz - FLARE_Z);
     }
     halfW -= 0.05; // inset from walls
-    const sx = (Math.random() * 2 - 1) * halfW;
+    const sx = (this.rng() * 2 - 1) * halfW;
 
     // Mini explosion at strike point — bigger radius & stronger impulse
     const radius = 0.35;
@@ -878,9 +1181,9 @@ export class GameLoop {
 
       body.applyImpulse(
         {
-          x: nx * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+          x: nx * 0.06 * strength + (this.rng() - 0.5) * 0.008,
           y: 0.055 * strength,
-          z: nz * 0.06 * strength + (Math.random() - 0.5) * 0.008,
+          z: nz * 0.06 * strength + (this.rng() - 0.5) * 0.008,
         },
         true,
       );
@@ -888,9 +1191,9 @@ export class GameLoop {
       // Torque for tumbling
       body.applyTorqueImpulse(
         {
-          x: (Math.random() - 0.5) * 0.002 * strength,
-          y: (Math.random() - 0.5) * 0.002 * strength,
-          z: (Math.random() - 0.5) * 0.002 * strength,
+          x: (this.rng() - 0.5) * 0.002 * strength,
+          y: (this.rng() - 0.5) * 0.002 * strength,
+          z: (this.rng() - 0.5) * 0.002 * strength,
         },
         true,
       );
@@ -970,12 +1273,16 @@ export class GameLoop {
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
-        // Random X across platform width, high Y for rain effect
-        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
-        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
-        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
+        // Checked at fire time, not schedule time — the table fills up while
+        // this rain is still in flight.
+        if (this.atCoinCap()) return;
 
-        const angle = (Math.random() - 0.5) * Math.PI;
+        // Random X across platform width, high Y for rain effect
+        const x = (this.rng() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH;
+        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + this.rng() * 0.5;
+        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (this.rng() - 0.5) * 0.4;
+
+        const angle = (this.rng() - 0.5) * Math.PI;
         const rot: { x: number; y: number; z: number; w: number } = {
           x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
         };
@@ -1040,12 +1347,15 @@ export class GameLoop {
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
-        // Random X across platform width, high Y for rain effect
-        const x = (Math.random() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH * 0.4;
-        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + Math.random() * 0.5;
-        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (Math.random() - 0.5) * 0.4;
+        // Checked at fire time — see spawnBonusCoins.
+        if (this.atCoinCap()) return;
 
-        const angle = (Math.random() - 0.5) * Math.PI;
+        // Random X across platform width, high Y for rain effect
+        const x = (this.rng() - 0.5) * SCENE_CONFIG.PLATFORM.WIDTH * 0.4;
+        const y = COIN_CONFIG.SPAWN_HEIGHT + 0.5 + this.rng() * 0.5;
+        const z = SCENE_CONFIG.PLATFORM.POSITION.z + (this.rng() - 0.5) * 0.4;
+
+        const angle = (this.rng() - 0.5) * Math.PI;
         const rot: { x: number; y: number; z: number; w: number } = {
           x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2),
         };
@@ -1081,9 +1391,9 @@ export class GameLoop {
         body.wakeUp();
         // Apply random impulse: forward (positive Z), slight downward, random lateral
         const impulse = {
-          x: (Math.random() - 0.5) * 0.005,
+          x: (this.rng() - 0.5) * 0.005,
           y: -0.002,
-          z: 0.005 + Math.random() * 0.005,
+          z: 0.005 + this.rng() * 0.005,
         };
         body.applyImpulse(impulse, true);
         shocked++;

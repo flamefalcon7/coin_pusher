@@ -18,6 +18,47 @@ export const tickPhaseDuration = new client.Histogram({
   buckets: [0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.033],
 });
 
+// Ticks that threw and were contained by the game loop's guard. Any non-zero
+// value means the simulation lost a frame of work; a sustained rate means the
+// loop is limping and the cause needs finding, not just absorbing.
+export const tickErrorsTotal = new client.Counter({
+  name: "coinpusher_game_tick_errors_total",
+  help: "Total game ticks that threw and were contained by the tick guard.",
+});
+
+// Times the tick breaker tripped: MAX_CONSECUTIVE_TICK_ERRORS failures in a
+// row with no good tick between them. Every trip takes the room dark — the
+// loop stops, slot_status stops, and the backend gates coin inserts within its
+// liveness TTL. Alert on any increase.
+export const tickBreakerTripsTotal = new client.Counter({
+  name: "coinpusher_game_tick_breaker_trips_total",
+  help: "Total times the game loop stopped itself after consecutive tick failures.",
+});
+
+// The one restart attempt each process gets after a trip. A restart followed
+// by a second trip means the failure is structural, and the process leaves.
+export const tickBreakerRestartsTotal = new client.Counter({
+  name: "coinpusher_game_tick_breaker_restarts_total",
+  help: "Total times the game loop restarted itself after a breaker trip.",
+});
+
+// Coins evicted by the post-error sweep because their rigid body no longer
+// answers. These are the stale references that would otherwise re-throw on
+// every subsequent tick.
+export const coinsEvictedOnError = new client.Counter({
+  name: "coinpusher_coins_evicted_on_error_total",
+  help: "Total coins removed by the tick-error recovery sweep.",
+});
+
+// Spawn requests refused because the table is at MAX_ACTIVE_COINS (or the
+// position was out of range). Rising values mean the room is saturated and
+// players are being told "no" — a capacity signal, not an error.
+export const coinSpawnsRejected = new client.Counter({
+  name: "coinpusher_coin_spawns_rejected_total",
+  help: "Total coin spawn requests rejected, by source.",
+  labelNames: ["source"] as const,
+});
+
 // ── Coin gauges ──────────────────────────────────────────────────────
 
 export const coinsActive = new client.Gauge({

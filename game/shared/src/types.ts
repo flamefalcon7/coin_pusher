@@ -163,6 +163,10 @@ export type WorldSnapshotMessage = {
   serverTime: number;
   tick: number;
   bodies: BodyState[];
+  // No rngSeed here, deliberately. A client that knows the seed can predict
+  // every draw the simulation makes — including lightning strike positions,
+  // which the player can exploit by choosing when to spend the scroll. The seed
+  // lives server-side only. See docs/decisions.md D-005.
 };
 
 // Server → Client: State delta (incremental update)

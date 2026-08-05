@@ -1,11 +1,11 @@
 import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type SuperPushCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
 import { RefIDDedup } from "./nats/dedup.js";
 import { startMetricsServer } from "./metrics.js";
+import { xoshiro128ss, generateSeed, formatSeed, parseSeed } from "./rng.js";
 import * as metrics from "./metrics.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
 import { Pusher } from "./physics/Pusher.js";
-import { Coin } from "./physics/Coin.js";
 import { StackSpawner } from "./game/StackSpawner.js";
 import { GameState } from "./game/GameState.js";
 import { CoinManager } from "./game/CoinManager.js";
@@ -20,9 +20,41 @@ const NATS_URL = process.env.NATS_URL || "nats://localhost:4222";
 console.log("Starting Coin Pusher Game Server (NATS worker)...");
 console.log(`NATS URL: ${NATS_URL}`);
 
+// Session RNG. Minted per process and logged immediately — a seed that is not
+// written down somewhere durable cannot be used to replay the session, which is
+// the only reason to seed at all. The process log is the durable record;
+// the seed is deliberately NOT sent to clients (see docs/decisions.md D-005).
+// SESSION_RNG_SEED (32 hex chars) overrides it, which is how a recorded session
+// is re-run against a changed build.
+const seedOverride = process.env.SESSION_RNG_SEED;
+let rngSeed;
+if (seedOverride) {
+  const parsed = parseSeed(seedOverride);
+  if (parsed === null) {
+    // Refuse rather than fall back to a fresh seed. Setting SESSION_RNG_SEED
+    // means someone is re-running a recorded session; quietly running on a
+    // different seed produces a "replay" that proves nothing, and the operator
+    // has no way to tell. The old code parsed this with parseInt and turned a
+    // typo into state word 0.
+    console.error(
+      `SESSION_RNG_SEED is not a valid seed: ${JSON.stringify(seedOverride)}. ` +
+        `Expected 32 hex characters (as printed at startup), and not all zeroes.`
+    );
+    process.exit(1);
+  }
+  rngSeed = parsed;
+} else {
+  rngSeed = generateSeed();
+}
+const rngSeedHex = formatSeed(rngSeed);
+const rng = xoshiro128ss(rngSeed);
+console.log(
+  `🎲 Session RNG seed: ${rngSeedHex}${seedOverride ? " (from SESSION_RNG_SEED)" : ""}`
+);
+
 // Initialize game components
 const physicsWorld = new PhysicsWorld();
-const gameState = new GameState();
+const gameState = new GameState(rngSeedHex);
 const coinManager = new CoinManager(gameState);
 const natsClient = new NATSClient("main");
 
@@ -48,8 +80,8 @@ async function initialize() {
   await natsClient.connect(NATS_URL);
 
   // Create drop scheduler, sponsor manager, and game loop
-  const dropScheduler = new DropScheduler();
-  sponsorManager = new SponsorManager(natsClient);
+  const dropScheduler = new DropScheduler(rng);
+  sponsorManager = new SponsorManager(natsClient, rng);
 
   gameLoop = new GameLoop(
     physicsWorld,
@@ -58,49 +90,54 @@ async function initialize() {
     coinManager,
     natsClient,
     dropScheduler,
-    sponsorManager
+    sponsorManager,
+    rng
   );
+
+  // The breaker stops the loop on repeated tick failures and retries once. If
+  // that retry also trips, the simulation is structurally broken and the
+  // process should leave so the supervisor can start a clean one. Route that
+  // through the same graceful shutdown as SIGTERM rather than a bare exit, so
+  // commands are unsubscribed and NATS is flushed on the way out.
+  gameLoop.setUnrecoverableHandler(() => {
+    shutdown(1).catch((err) => {
+      console.error("Shutdown after breaker exhaustion failed:", err);
+      process.exit(1);
+    });
+  });
 
   // Subscribe to coin_insert commands from Go backend
   natsClient.subscribeCoinInsert((cmd: CoinInsertCommand) => {
-    const coinId = coinManager.spawnCoin(cmd.x, cmd.y, cmd.z);
-    if (coinId !== null) {
-      const coin = new Coin(physicsWorld, coinId, cmd.x, cmd.y, cmd.z);
-      gameLoop.addCoin(coin);
+    // Routed through the game loop so the hard body cap applies here too —
+    // spawning via CoinManager directly bypassed it.
+    if (gameLoop.trySpawnCoin(cmd.x, cmd.y, cmd.z) === null) {
+      metrics.coinSpawnsRejected.labels("coin_insert").inc();
     }
   });
 
   // Subscribe to spawn_stack commands from Go backend
   natsClient.subscribeSpawnStack((cmd: SpawnStackCommand) => {
     const coins = StackSpawner.getStackCoins(cmd.type as StackType, cmd.x, cmd.y, cmd.z);
+    let spawned = 0;
     coins.forEach((coinData) => {
-      const rot: [number, number, number, number] = [
-        coinData.rotation.x,
-        coinData.rotation.y,
-        coinData.rotation.z,
-        coinData.rotation.w,
-      ];
-
-      const coinId = coinManager.spawnCoin(
+      // A stack is the largest single-command spawn in the game; it must go
+      // through the capped path or one command can blow past the body budget.
+      const coinId = gameLoop.trySpawnCoin(
         coinData.x,
         coinData.y,
         coinData.z,
-        rot
+        coinData.rotation
       );
-
-      if (coinId !== null) {
-        const coin = new Coin(
-          physicsWorld,
-          coinId,
-          coinData.x,
-          coinData.y,
-          coinData.z,
-          coinData.rotation
-        );
-        gameLoop.addCoin(coin);
+      if (coinId === null) {
+        metrics.coinSpawnsRejected.labels("spawn_stack").inc();
+      } else {
+        spawned++;
       }
     });
-    console.log(`Spawned ${cmd.type} stack with ${coins.length} coins`);
+    console.log(
+      `Spawned ${cmd.type} stack: ${spawned}/${coins.length} coins` +
+        (spawned < coins.length ? " (rest rejected — at coin cap)" : "")
+    );
   });
 
   // Subscribe to shock commands from Go backend
@@ -211,7 +248,7 @@ async function initialize() {
 
 // Graceful shutdown with drain
 let shuttingDown = false;
-const shutdown = async () => {
+const shutdown = async (exitCode: number = 0) => {
   if (shuttingDown) return;
   shuttingDown = true;
 
@@ -241,11 +278,28 @@ const shutdown = async () => {
   await natsClient.close();
 
   console.log("✅ Shutdown complete");
-  process.exit(0);
+  process.exit(exitCode);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
+
+// Last-resort guards. The game loop contains its own tick failures, so anything
+// reaching here came from a NATS callback, a timer, or an await we do not own.
+// Log it loudly with the full stack — an unattributed silent exit is the worst
+// possible outcome for a server that holds player balances — then drain and
+// leave with a non-zero code so the supervisor restarts us.
+const fatal = (kind: string) => (error: unknown) => {
+  console.error(`💀 ${kind}:`, error);
+  if (shuttingDown) return;
+  shutdown(1).catch((err) => {
+    console.error("Shutdown after fatal error failed:", err);
+    process.exit(1);
+  });
+};
+
+process.on("uncaughtException", fatal("Uncaught exception"));
+process.on("unhandledRejection", fatal("Unhandled promise rejection"));
 
 // Start initialization
 initialize().catch((error) => {

@@ -58,10 +58,15 @@ export class SponsorManager {
   /** Timers for bonus drop staggered spawns. */
   private bonusDropTimers: ReturnType<typeof setTimeout>[] = [];
 
+  private readonly rng: () => number;
+
+  /** @param rng session RNG — see DropScheduler for why this is not Math.random. */
   constructor(
     natsClient: NATSClient,
+    rng: () => number = Math.random,
   ) {
     this.natsClient = natsClient;
+    this.rng = rng;
   }
 
   /** Set the spawn callback (called by GameLoop after construction). */
@@ -118,8 +123,18 @@ export class SponsorManager {
     this.sponsorRoundRobin = this.sponsorRoundRobin % this.pendingQuotas.length;
     const quota = this.pendingQuotas[this.sponsorRoundRobin];
 
-    // Spawn one coin for this quota's sponsor
-    this.spawnOneSponsorCoin(quota.sponsorId);
+    // Spawn one coin for this quota's sponsor.
+    //
+    // Only charge the quota if a coin actually reached the table. The spawn is
+    // refused whenever the table is at MAX_ACTIVE_COINS, and that is a normal
+    // condition in a busy room — decrementing anyway would consume a paying
+    // sponsor's impression that was never delivered, and the
+    // sponsor_quota_consumed event below would then report coins_spawned:
+    // quota.total, over-reporting delivery to the advertiser. Holding the quota
+    // means the impression is served later, once the table drains.
+    if (!this.spawnOneSponsorCoin(quota.sponsorId)) {
+      return;
+    }
     quota.remaining--;
 
     // If quota fully drained, publish consumed event and remove
@@ -145,23 +160,26 @@ export class SponsorManager {
    * Uses the spawn callback set by GameLoop to create both game state
    * and physics body. Registers the coin in coinSponsorMap for despawn tracking.
    */
-  spawnOneSponsorCoin(sponsorId: string): void {
-    if (!this.spawnFn) return;
+  /** @returns true if a coin body was actually created. */
+  spawnOneSponsorCoin(sponsorId: string): boolean {
+    if (!this.spawnFn) return false;
 
     // Pick random slot X from the predefined positions
-    const slotX = SPONSOR_SLOT_POSITIONS[Math.floor(Math.random() * SPONSOR_SLOT_POSITIONS.length)];
+    const slotX = SPONSOR_SLOT_POSITIONS[Math.floor(this.rng() * SPONSOR_SLOT_POSITIONS.length)];
 
     const coinId = this.spawnFn(slotX, COIN_CONFIG.SPAWN_HEIGHT, sponsorId);
 
-    if (coinId !== null) {
-      this.coinSponsorMap.set(coinId, sponsorId);
+    if (coinId === null) return false;
 
-      // Publish coin_spawn event with sponsor_id
-      this.natsClient.publishCoinSpawn({
-        op: "coin_spawn",
-        coins: [{ id: coinId, owner_id: "", sponsor_id: sponsorId }],
-      });
-    }
+    this.coinSponsorMap.set(coinId, sponsorId);
+
+    // Publish coin_spawn event with sponsor_id
+    this.natsClient.publishCoinSpawn({
+      op: "coin_spawn",
+      coins: [{ id: coinId, owner_id: "", sponsor_id: sponsorId }],
+    });
+
+    return true;
   }
 
   /**

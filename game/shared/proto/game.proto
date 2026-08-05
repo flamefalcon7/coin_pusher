@@ -59,6 +59,16 @@ message WorldSnapshot {
   double server_time = 2;
   uint32 tick = 3;
   repeated BodyState bodies = 4;
+
+  // Field 5 was the session RNG seed, broadcast so a session could be replayed.
+  // Removed: a client holding the seed can predict everything the seeded stream
+  // drives — coin scatter, and in particular lightning strike positions, which
+  // is exploitable because the player chooses when to spend the scroll. The
+  // seed stays server-side (process log + GameState.getRngSeed) where replay
+  // and arbitration actually happen. Publishing it live again requires
+  // commit-reveal, not a field. See docs/decisions.md D-005.
+  reserved 5;
+  reserved "rng_seed";
 }
 
 message SlotSpin {

@@ -10,7 +10,20 @@ export class GameState {
   private tick: number = 0;
   private pusherZ: number = 0;
 
-  constructor() {
+  /**
+   * Seed of this session's simulation RNG. Held here because it belongs to the
+   * world, and read by whatever records or arbitrates a session.
+   *
+   * Deliberately NOT in getWorldSnapshot(): anyone holding the seed can
+   * reproduce every draw the simulation will make, and lightning strike
+   * positions come off that stream while the player chooses when to spend the
+   * scroll. It used to ship in the snapshot; that is the hole this removes.
+   * See docs/decisions.md D-005.
+   */
+  private readonly rngSeed: string;
+
+  constructor(rngSeed: string = "") {
+    this.rngSeed = rngSeed;
     // Initialize pusher at ID 0
     this.bodies.set(0, {
       id: 0,
@@ -85,6 +98,10 @@ export class GameState {
 
   incrementTick(): void {
     this.tick++;
+  }
+
+  getRngSeed(): string {
+    return this.rngSeed;
   }
 
   getWorldSnapshot(): WorldState {

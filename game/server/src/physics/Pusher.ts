@@ -19,8 +19,19 @@ function easeInOutQuad(t: number): number {
 
 export class Pusher {
   private rigidBody: RAPIER.RigidBody;
-  private startTime: number;
   private currentZ: number = 0;
+
+  /**
+   * Simulated time in milliseconds, supplied by the caller every update().
+   *
+   * The pusher used to read Date.now() directly, which put a second clock in
+   * the system: coins advance by a fixed dt per tick (simulated time) while the
+   * pusher advanced by wall time. Any drift between the two — and a setInterval
+   * loop always drifts — silently changed the phase relationship between the
+   * pusher and the coins it is pushing, and made the run unreproducible. Time
+   * now comes from the tick index, so there is exactly one clock.
+   */
+  private simTimeMs: number = 0;
 
   // Pre-computed constants to avoid recalculating every tick
   private readonly omega: number;
@@ -41,13 +52,8 @@ export class Pusher {
   private spStartZ: number = 0;
   private recoveryTargetZ: number = 0;
 
-  // Injectable clock (defaults to Date.now for production)
-  private getTime: () => number;
-
-  constructor(physicsWorld: PhysicsWorld, getTime?: () => number) {
+  constructor(physicsWorld: PhysicsWorld) {
     const world = physicsWorld.getWorld();
-    this.getTime = getTime ?? (() => Date.now());
-    this.startTime = this.getTime();
 
     const { WIDTH, HEIGHT, DEPTH, POSITION, FRICTION, RESTITUTION } =
       SCENE_CONFIG.PUSHER;
@@ -65,9 +71,22 @@ export class Pusher {
     this.baseY = POSITION.y;
     this.baseZ = POSITION.z;
 
-    // Create kinematic rigid body
+    // Position-based kinematic body.
+    //
+    // The pusher's position is a closed-form function of time, so position is
+    // the authoritative quantity and velocity is derived — which is exactly the
+    // case Rapier's `kinematicPositionBased` + `setNextKinematicTranslation()`
+    // is for. Rapier computes the artificial velocity between the current and
+    // next position itself and uses it to resolve contacts with the coins.
+    //
+    // The previous body was `kinematicVelocityBased` and set BOTH a velocity
+    // and an absolute translation each tick. Rapier integrated the velocity on
+    // top of the position that had already been written, so the body ended each
+    // step a full tick of travel ahead of the analytic value being broadcast to
+    // clients. Setting position alone removes the double integration by
+    // construction: there is nothing left to integrate.
     const bodyDesc =
-      RAPIER.RigidBodyDesc.kinematicVelocityBased().setTranslation(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(
         POSITION.x,
         POSITION.y,
         POSITION.z
@@ -104,53 +123,60 @@ export class Pusher {
     }
   }
 
-  update(): void {
+  /** @param simTimeMs simulated time since start, in milliseconds. */
+  update(simTimeMs: number): void {
+    this.simTimeMs = simTimeMs;
+
     if (this.spState !== 'idle') {
       this.updateSuperPush();
       return;
     }
 
-    const elapsedTime = (this.getTime() - this.startTime) / 1000;
-
+    const elapsedTime = simTimeMs / 1000;
     const phase = this.omega * elapsedTime + this.initialPhase;
 
-    // Position (synced to client)
-    this.currentZ =
-      this.amplitude * Math.sin(phase) + this.zOffset;
+    this.setTargetZ(this.amplitude * Math.sin(phase) + this.zOffset);
+  }
 
-    // Velocity (v = dz/dt = A * omega * cos(phase))
-    const velocityZ = this.amplitude * this.omega * Math.cos(phase);
-
-    this.rigidBody.setLinvel({ x: 0, y: 0, z: velocityZ }, true);
-
-    // Set position to correct drift
-    this.rigidBody.setTranslation(
-      {
-        x: this.baseX,
-        y: this.baseY,
-        z: this.baseZ + this.currentZ,
-      },
-      true
-    );
+  /**
+   * Commit the pusher's position for the upcoming substep.
+   *
+   * `currentZ` is what gets broadcast, and it is set from the same value handed
+   * to Rapier — so the number clients receive and the number the solver uses
+   * cannot diverge.
+   */
+  private setTargetZ(z: number): void {
+    this.currentZ = z;
+    this.rigidBody.setNextKinematicTranslation({
+      x: this.baseX,
+      y: this.baseY,
+      z: this.baseZ + z,
+    });
   }
 
   startSuperPush(): void {
     if (this.spState !== 'idle') return;
 
     this.spStartZ = this.currentZ;
-    this.spStartTime = this.getTime();
+    // Anchored to the last simulated time seen, not the wall clock — this is
+    // called from a NATS callback between ticks, and the state machine below
+    // measures elapsed time in the same units.
+    this.spStartTime = this.simTimeMs;
     this.spState = 'pullback';
 
     console.log("💥 Super push activated!");
   }
 
   private updateSuperPush(): void {
-    const now = this.getTime();
+    const now = this.simTimeMs;
     const elapsed = now - this.spStartTime;
     const { PULLBACK_Z, THRUST_Z, PULLBACK_DURATION, THRUST_DURATION, HOLD_DURATION, RECOVERY_DURATION } = SUPER_PUSH_CONFIG;
 
+    // Each phase yields a target position only. The hand-derived velocities
+    // that used to accompany them are gone: Rapier derives the contact velocity
+    // from the position delta between substeps, which is both exact and
+    // impossible to get out of step with the position clients are shown.
     let targetZ: number;
-    let velocityZ: number;
 
     switch (this.spState) {
       case 'pullback': {
@@ -158,15 +184,10 @@ export class Pusher {
           this.spStartTime = now;
           this.spState = 'thrust';
           targetZ = PULLBACK_Z;
-          velocityZ = 0;
           break;
         }
         const t = elapsed / PULLBACK_DURATION;
-        const eased = easeInCubic(t);
-        targetZ = this.spStartZ + (PULLBACK_Z - this.spStartZ) * eased;
-        // Analytical derivative: dz/dt = (PULLBACK_Z - spStartZ) * 3t^2 / PULLBACK_DURATION
-        const range = PULLBACK_Z - this.spStartZ;
-        velocityZ = range * 3 * t * t / (PULLBACK_DURATION / 1000);
+        targetZ = this.spStartZ + (PULLBACK_Z - this.spStartZ) * easeInCubic(t);
         break;
       }
 
@@ -175,16 +196,10 @@ export class Pusher {
           this.spStartTime = now;
           this.spState = 'hold';
           targetZ = THRUST_Z;
-          velocityZ = 0;
           break;
         }
         const t = elapsed / THRUST_DURATION;
-        const eased = easeOutExpo(t);
-        targetZ = PULLBACK_Z + (THRUST_Z - PULLBACK_Z) * eased;
-        // Analytical derivative of easeOutExpo: d/dt = (range * 10 * ln(2) * 2^(-10t)) / duration
-        const range = THRUST_Z - PULLBACK_Z;
-        const deriv = 10 * Math.LN2 * Math.pow(2, -10 * t);
-        velocityZ = range * deriv / (THRUST_DURATION / 1000);
+        targetZ = PULLBACK_Z + (THRUST_Z - PULLBACK_Z) * easeOutExpo(t);
         break;
       }
 
@@ -192,38 +207,26 @@ export class Pusher {
         if (elapsed >= HOLD_DURATION) {
           this.spStartTime = now;
           this.spState = 'recovery';
-          // Pre-compute where the sin wave will be when recovery ends
-          const recoveryEndTime = (now + RECOVERY_DURATION - this.startTime) / 1000;
+          // Pre-compute where the sin wave will be when recovery ends.
+          // Simulated time starts at 0, so it is already "elapsed".
+          const recoveryEndTime = (now + RECOVERY_DURATION) / 1000;
           const recoveryEndPhase = this.omega * recoveryEndTime + this.initialPhase;
           this.recoveryTargetZ = this.amplitude * Math.sin(recoveryEndPhase) + this.zOffset;
-          targetZ = THRUST_Z;
-          velocityZ = 0;
-          break;
         }
         targetZ = THRUST_Z;
-        velocityZ = 0;
         break;
       }
 
       case 'recovery': {
         if (elapsed >= RECOVERY_DURATION) {
           this.spState = 'idle';
-          // Resume normal oscillation — the sin wave's startTime was never modified
-          this.update();
+          // Resume normal oscillation — the sin wave is a pure function of
+          // simulated time, so it was never interrupted.
+          this.update(now);
           return;
         }
         const t = elapsed / RECOVERY_DURATION;
-        const eased = easeInOutQuad(t);
-        targetZ = THRUST_Z + (this.recoveryTargetZ - THRUST_Z) * eased;
-        // Analytical derivative of easeInOutQuad
-        const range = this.recoveryTargetZ - THRUST_Z;
-        let derivEase: number;
-        if (t < 0.5) {
-          derivEase = 4 * t;
-        } else {
-          derivEase = -4 * t + 4;
-        }
-        velocityZ = range * derivEase / (RECOVERY_DURATION / 1000);
+        targetZ = THRUST_Z + (this.recoveryTargetZ - THRUST_Z) * easeInOutQuad(t);
         break;
       }
 
@@ -231,16 +234,7 @@ export class Pusher {
         return;
     }
 
-    this.currentZ = targetZ;
-    this.rigidBody.setLinvel({ x: 0, y: 0, z: velocityZ }, true);
-    this.rigidBody.setTranslation(
-      {
-        x: this.baseX,
-        y: this.baseY,
-        z: this.baseZ + this.currentZ,
-      },
-      true
-    );
+    this.setTargetZ(targetZ);
   }
 
   getCurrentZ(): number {
