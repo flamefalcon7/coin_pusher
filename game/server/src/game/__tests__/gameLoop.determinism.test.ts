@@ -6,7 +6,7 @@ import { DropScheduler } from "../DropScheduler.js";
 import { PhysicsWorld } from "../../physics/PhysicsWorld.js";
 import { SceneBuilder } from "../../physics/SceneBuilder.js";
 import { Pusher } from "../../physics/Pusher.js";
-import { xoshiro128ss, formatSeed } from "../../rng.js";
+import { xoshiro128ss, formatSeed, type RngState } from "../../rng.js";
 
 /**
  * Replay determinism for the LIVE game loop — not the offline SimLoop harness,
@@ -47,13 +47,20 @@ const makeSponsorStub = () => ({
 
 type Snapshot = Array<[number, number, number, number]>;
 
+/** Two distinct full-width session seeds. */
+const SEED_A: RngState = [0x00c0ffee, 0, 0, 0];
+const SEED_B: RngState = [0x0badf00d, 0, 0, 0];
+
 /**
  * Run a session: enqueue coins on every slot, tick, and return each surviving
  * coin's id and position.
  */
-async function runSession(seed: number, ticks: number): Promise<{
+async function runSession(seed: RngState, ticks: number): Promise<{
   positions: Snapshot;
-  snapshotSeed: string | undefined;
+  /** The seed the server holds, read from where arbitration would read it. */
+  heldSeed: string;
+  /** Keys actually present on the wire-facing snapshot. */
+  snapshotKeys: string[];
 }> {
   const rng = xoshiro128ss(seed);
 
@@ -97,7 +104,11 @@ async function runSession(seed: number, ticks: number): Promise<{
   }
   positions.sort((a, b) => a[0] - b[0]);
 
-  return { positions, snapshotSeed: gameState.getWorldSnapshot().rngSeed };
+  return {
+    positions,
+    heldSeed: gameState.getRngSeed(),
+    snapshotKeys: Object.keys(gameState.getWorldSnapshot()),
+  };
 }
 
 describe("GameLoop replay determinism", () => {
@@ -111,24 +122,33 @@ describe("GameLoop replay determinism", () => {
   });
 
   it("reproduces coin positions bit-for-bit from the same seed", async () => {
-    const a = await runSession(0xc0ffee, 400);
-    const b = await runSession(0xc0ffee, 400);
+    const a = await runSession(SEED_A, 400);
+    const b = await runSession(SEED_A, 400);
 
     expect(a.positions.length).toBeGreaterThan(0); // not a vacuous pass
     expect(b.positions).toEqual(a.positions);
   }, 120_000);
 
   it("produces a different world from a different seed", async () => {
-    const a = await runSession(0xc0ffee, 400);
-    const c = await runSession(0xbadf00d, 400);
+    const a = await runSession(SEED_A, 400);
+    const c = await runSession(SEED_B, 400);
 
     expect(a.positions.length).toBeGreaterThan(0);
     // If the seed were not actually reaching the simulation, these would match.
     expect(c.positions).not.toEqual(a.positions);
   }, 120_000);
 
-  it("records the seed in the world snapshot so a session can be replayed", async () => {
-    const { snapshotSeed } = await runSession(0xc0ffee, 30);
-    expect(snapshotSeed).toBe("00c0ffee");
+  it("keeps the seed server-side, out of anything sent to clients", async () => {
+    const { heldSeed, snapshotKeys } = await runSession(SEED_A, 30);
+
+    // Still recorded — a seed nobody wrote down cannot replay a session.
+    expect(heldSeed).toBe("00c0ffee000000000000000000000000");
+
+    // But not on the wire. A client holding the seed reproduces every draw the
+    // simulation will make, and lightning strike positions come off that stream
+    // while the player picks the moment to spend the scroll. This assertion is
+    // the guard against someone helpfully adding the field back.
+    expect(snapshotKeys).not.toContain("rngSeed");
+    expect(snapshotKeys).not.toContain("rng_seed");
   }, 60_000);
 });

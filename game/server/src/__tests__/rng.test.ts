@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { xoshiro128ss, generateSeed, formatSeed, splitmix32State } from "../rng.js";
+import {
+  xoshiro128ss,
+  generateSeed,
+  formatSeed,
+  parseSeed,
+  splitmix32State,
+  type RngState,
+} from "../rng.js";
 
 /**
  * Properties the seeded generator must hold for it to be worth replacing
@@ -131,14 +138,85 @@ describe("xoshiro128ss", () => {
   });
 
   it("mints distinct seeds", () => {
-    const seeds = new Set(Array.from({ length: 200 }, () => generateSeed()));
-    // Birthday collisions in 32 bits over 200 draws are vanishingly unlikely.
-    expect(seeds.size).toBeGreaterThan(195);
+    // Compare the formatted strings, not the arrays: a Set of arrays dedupes
+    // by reference, so it would report 200 distinct seeds even if generateSeed
+    // returned the same four words every time.
+    const seeds = new Set(
+      Array.from({ length: 200 }, () => formatSeed(generateSeed())),
+    );
+    expect(seeds.size).toBe(200);
   });
 
-  it("formats seeds as fixed-width hex for logs and snapshots", () => {
-    expect(formatSeed(0)).toBe("00000000");
-    expect(formatSeed(0xdeadbeef)).toBe("deadbeef");
-    expect(formatSeed(255)).toBe("000000ff");
+  it("mints seeds across the full 128-bit state, not one 32-bit word", () => {
+    // The whole point of widening: if only one word carried entropy, the
+    // effective seed space would stay at 2^32 and remain brute-forceable
+    // offline no matter how wide the generator's state is.
+    const samples = Array.from({ length: 64 }, () => generateSeed());
+
+    for (let word = 0; word < 4; word++) {
+      const distinct = new Set(samples.map((s) => s[word]));
+      expect(
+        distinct.size,
+        `state word ${word} is not varying — seed entropy is narrower than it looks`,
+      ).toBeGreaterThan(60);
+    }
+  });
+
+  it("never mints the all-zero state, which only ever yields zero", () => {
+    for (let i = 0; i < 500; i++) {
+      const s = generateSeed();
+      expect(s[0] | s[1] | s[2] | s[3]).not.toBe(0);
+    }
+  });
+
+  it("formats seeds as fixed-width hex, one group per state word", () => {
+    expect(formatSeed([0, 0, 0, 1])).toBe("00000000000000000000000000000001");
+    expect(formatSeed([0xdeadbeef, 0x0badf00d, 0x12345678, 0x000000ff])).toBe(
+      "deadbeef0badf00d12345678000000ff",
+    );
+  });
+
+  it("round-trips a formatted seed", () => {
+    for (let i = 0; i < 50; i++) {
+      const seed = generateSeed();
+      expect(parseSeed(formatSeed(seed))).toEqual(seed);
+    }
+  });
+
+  it("parses the same stream the seed was minted for", () => {
+    // Round-tripping the text is not enough — the parsed state has to drive an
+    // identical sequence, which is the only thing a replay actually needs.
+    const seed = generateSeed();
+    const reparsed = parseSeed(formatSeed(seed))!;
+
+    const a = xoshiro128ss(seed);
+    const b = xoshiro128ss(reparsed);
+    for (let i = 0; i < 1000; i++) expect(b()).toBe(a());
+  });
+
+  it("rejects anything that is not a seed instead of quietly picking one", () => {
+    // SESSION_RNG_SEED is set when someone is re-running a recorded session.
+    // Silently running on a different seed produces a replay that proves
+    // nothing, so every one of these must be refused, not coerced.
+    const rejected = [
+      "",
+      "  ",
+      "zzzz",
+      "deadbeef", // the old 8-char format
+      "deadbeef0badf00d12345678000000f", // 31 chars
+      "deadbeef0badf00d12345678000000fff", // 33 chars
+      "deadbeef 0badf00d 12345678 000000ff", // separators
+      "0x deadbeef0badf00d12345678000000f",
+      "00000000000000000000000000000000", // all-zero: a fixed point
+    ];
+    for (const bad of rejected) {
+      expect(parseSeed(bad), `should have rejected ${JSON.stringify(bad)}`).toBeNull();
+    }
+  });
+
+  it("accepts a seed however it was capitalised or padded", () => {
+    const want: RngState = [0xdeadbeef, 0x0badf00d, 0x12345678, 0x000000ff];
+    expect(parseSeed("DEADBEEF0BADF00D12345678000000FF")).toEqual(want);
+    expect(parseSeed("  deadbeef0badf00d12345678000000ff\n")).toEqual(want);
   });
 });

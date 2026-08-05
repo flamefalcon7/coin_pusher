@@ -63,8 +63,17 @@ export function splitmix32State(seed: number): [number, number, number, number] 
   return s;
 }
 
-export function xoshiro128ss(seed: number): Rng {
-  let [a, b, c, d] = splitmix32State(seed);
+/**
+ * The generator's full state: four 32-bit words, 128 bits of entropy.
+ *
+ * Seeding from a single 32-bit word (the previous shape) left the *effective*
+ * seed space at 2^32 no matter how wide the state was — 4.3 billion candidates,
+ * which is an offline search, not a wall. Sessions now seed the state directly.
+ */
+export type RngState = [number, number, number, number];
+
+export function xoshiro128ss(seed: number | RngState): Rng {
+  let [a, b, c, d] = typeof seed === "number" ? splitmix32State(seed) : seed;
 
   return function (): number {
     // Reference (Blackman & Vigna, prng.di.unimi.it/xoshiro128starstar.c):
@@ -90,15 +99,47 @@ export function xoshiro128ss(seed: number): Rng {
 }
 
 /**
- * A fresh unpredictable seed for a new session. Unpredictable so that players
- * cannot anticipate coin scatter from a previous session's recorded seed;
- * recorded so the session stays replayable afterwards.
+ * A fresh unpredictable seed for a new session: the generator's whole state,
+ * straight from the CSPRNG. Unpredictable so a leaked or brute-forced seed
+ * cannot let a player anticipate coin scatter or lightning strike positions;
+ * recorded (server-side only) so the session stays replayable afterwards.
  */
-export function generateSeed(): number {
-  return randomBytes(4).readUInt32BE(0);
+export function generateSeed(): RngState {
+  const b = randomBytes(16);
+  const s: RngState = [
+    b.readUInt32BE(0),
+    b.readUInt32BE(4),
+    b.readUInt32BE(8),
+    b.readUInt32BE(12),
+  ];
+  // An all-zero state is a fixed point that only ever yields zero. The odds are
+  // 2^-128, but the failure is total and silent, so it is worth two words.
+  if ((s[0] | s[1] | s[2] | s[3]) === 0) s[0] = 1;
+  return s;
 }
 
-/** Format a seed for logs and the world snapshot. */
-export function formatSeed(seed: number): string {
-  return seed.toString(16).padStart(8, "0");
+/**
+ * Format a seed for logs and for SESSION_RNG_SEED. 32 hex characters, one
+ * 8-character group per state word, no separators.
+ */
+export function formatSeed(seed: RngState): string {
+  return seed.map((w) => (w >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+/**
+ * Parse a seed produced by formatSeed. Returns null on anything that is not
+ * exactly 32 hex characters — callers must decide what to do rather than
+ * silently running on a seed nobody chose. A malformed SESSION_RNG_SEED used
+ * to fall through `parseInt` to NaN and then to state word 0.
+ */
+export function parseSeed(hex: string): RngState | null {
+  const trimmed = hex.trim().toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(trimmed)) return null;
+
+  const s: RngState = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    s[i] = parseInt(trimmed.slice(i * 8, i * 8 + 8), 16) >>> 0;
+  }
+  if ((s[0] | s[1] | s[2] | s[3]) === 0) return null;
+  return s;
 }

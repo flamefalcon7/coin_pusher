@@ -1,7 +1,7 @@
 import { NATSClient, type CoinInsertCommand, type SpawnStackCommand, type ShockCommand, type TornadoCommand, type ExplosionCommand, type LightningCommand, type SuperPushCommand, type ClearAllCommand, type FillPlatformCommand, type UpdateSceneObjectsCommand } from "./nats/NATSClient.js";
 import { RefIDDedup } from "./nats/dedup.js";
 import { startMetricsServer } from "./metrics.js";
-import { xoshiro128ss, generateSeed, formatSeed } from "./rng.js";
+import { xoshiro128ss, generateSeed, formatSeed, parseSeed } from "./rng.js";
 import * as metrics from "./metrics.js";
 import { PhysicsWorld } from "./physics/PhysicsWorld.js";
 import { SceneBuilder } from "./physics/SceneBuilder.js";
@@ -20,13 +20,32 @@ const NATS_URL = process.env.NATS_URL || "nats://localhost:4222";
 console.log("Starting Coin Pusher Game Server (NATS worker)...");
 console.log(`NATS URL: ${NATS_URL}`);
 
-// Session RNG. Minted per process, logged immediately, and carried in every
-// world snapshot — a seed that is not written down somewhere durable cannot be
-// used to replay the session, which is the only reason to seed at all.
-// SESSION_RNG_SEED (hex) overrides it, which is how a recorded session is
-// re-run against a changed build.
+// Session RNG. Minted per process and logged immediately — a seed that is not
+// written down somewhere durable cannot be used to replay the session, which is
+// the only reason to seed at all. The process log is the durable record;
+// the seed is deliberately NOT sent to clients (see docs/decisions.md D-005).
+// SESSION_RNG_SEED (32 hex chars) overrides it, which is how a recorded session
+// is re-run against a changed build.
 const seedOverride = process.env.SESSION_RNG_SEED;
-const rngSeed = seedOverride ? parseInt(seedOverride, 16) >>> 0 : generateSeed();
+let rngSeed;
+if (seedOverride) {
+  const parsed = parseSeed(seedOverride);
+  if (parsed === null) {
+    // Refuse rather than fall back to a fresh seed. Setting SESSION_RNG_SEED
+    // means someone is re-running a recorded session; quietly running on a
+    // different seed produces a "replay" that proves nothing, and the operator
+    // has no way to tell. The old code parsed this with parseInt and turned a
+    // typo into state word 0.
+    console.error(
+      `SESSION_RNG_SEED is not a valid seed: ${JSON.stringify(seedOverride)}. ` +
+        `Expected 32 hex characters (as printed at startup), and not all zeroes.`
+    );
+    process.exit(1);
+  }
+  rngSeed = parsed;
+} else {
+  rngSeed = generateSeed();
+}
 const rngSeedHex = formatSeed(rngSeed);
 const rng = xoshiro128ss(rngSeed);
 console.log(

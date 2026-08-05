@@ -12,9 +12,13 @@ export class GameState {
 
   /**
    * Seed of this session's simulation RNG. Held here because it belongs to the
-   * world, and because the world snapshot is what carries it to clients and
-   * into any recording of the session — a seed nobody wrote down cannot be
-   * replayed, which defeats the point of seeding at all.
+   * world, and read by whatever records or arbitrates a session.
+   *
+   * Deliberately NOT in getWorldSnapshot(): anyone holding the seed can
+   * reproduce every draw the simulation will make, and lightning strike
+   * positions come off that stream while the player chooses when to spend the
+   * scroll. It used to ship in the snapshot; that is the hole this removes.
+   * See docs/decisions.md D-005.
    */
   private readonly rngSeed: string;
 
@@ -106,7 +110,6 @@ export class GameState {
       tick: this.tick,
       serverTime: Date.now(),
       bodies: Array.from(this.bodies.values()),
-      rngSeed: this.rngSeed,
     };
   }
 
