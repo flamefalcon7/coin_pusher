@@ -153,6 +153,35 @@ describe("Interpolator delay", () => {
     expect(delayOf(interp)).toBe(debugConfig.interpolationDelayBase);
   });
 
+  it("never drops the delay in one visible step when the link recovers", () => {
+    // The percentile window alone is not enough here. Once 256 good arrivals
+    // roll the jittered ones out, p99 collapses in a single sample — and a
+    // delay that falls with it yanks render time forward by hundreds of ms,
+    // which is its own visible artefact. The decay is what spreads that out.
+    let t = 1_000_000;
+    const jitter = new ArrivalJitter(256, () => t);
+    const interp = new Interpolator(new StateBuffer(), fixedRttClock(20), jitter);
+
+    for (let i = 0; i < 256; i++) {
+      t += 400;
+      interp.noteArrival();
+    }
+
+    let prev = delayOf(interp);
+    let worstDrop = 0;
+    for (let i = 0; i < 512; i++) {
+      t += 66;
+      interp.noteArrival();
+      const now = delayOf(interp);
+      worstDrop = Math.max(worstDrop, prev - now);
+      prev = now;
+    }
+
+    expect(worstDrop, "delay must ease down, not snap").toBeLessThan(20);
+    // ...and it must actually arrive back at the floor, not merely creep.
+    expect(prev).toBe(debugConfig.interpolationDelayBase);
+  });
+
   it("still honours RTT when that is the larger term", () => {
     // The jitter term is an additional floor, not a replacement.
     let t = 1_000_000;
