@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/flamefalcon/coin-pusher/backend/business/core/heat"
 	"github.com/flamefalcon/coin-pusher/backend/business/core/user"
 	v1 "github.com/flamefalcon/coin-pusher/backend/business/web/v1"
+	"github.com/flamefalcon/coin-pusher/backend/business/web/ws"
+	"github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
 // ---------------------------------------------------------------------------
@@ -78,15 +81,15 @@ func newTestRand() *rand.Rand {
 // ---------------------------------------------------------------------------
 
 type schedulerHarness struct {
-	sched         *Scheduler
-	clock         *fakeClock
-	players       *fakePlayerCounter
-	configMap     map[string]string
-	bots          []Bot
-	dailyTotal    decimal.Decimal
-	storer        *mockBotStorer
-	insertCalls   *insertCallRecorder
-	heatCalls     *heatCallRecorder
+	sched       *Scheduler
+	clock       *fakeClock
+	players     *fakePlayerCounter
+	configMap   map[string]string
+	bots        []Bot
+	dailyTotal  decimal.Decimal
+	storer      *mockBotStorer
+	insertCalls *insertCallRecorder
+	heatCalls   *heatCallRecorder
 }
 
 // insertCallRecorder counts ProcessBatchInsert invocations and remembers
@@ -966,3 +969,106 @@ var (
 	_ = (*heat.HeatEngine)(nil)
 	_ = user.RoleBot
 )
+
+// ---------------------------------------------------------------------------
+// Game server liveness gate (D-006)
+// ---------------------------------------------------------------------------
+
+// gameUnavailableRejects reads the bot_insert rejection counter so the tests
+// below can assert on a delta rather than an absolute (the counter is a
+// process-global shared with other packages' tests).
+func gameUnavailableRejects() float64 {
+	return testutil.ToFloat64(metrics.GameUnavailableRejects.WithLabelValues("bot_insert"))
+}
+
+// TestFireOneInsert_SkipsWhenGameServerStale pins the bot half of D-006.
+//
+// The scheduler here has a nil gameCore on purpose: if the gate fails to stop
+// the insert, ProcessBatchInsert dereferences nil and fireOneInsert's recover()
+// converts that into a BotInsertPanicTotal increment. Asserting that counter
+// stays flat is what makes this test fail when the gate is removed — without
+// it the panic would be swallowed and the test would pass on a bot that
+// "didn't insert" for entirely the wrong reason.
+func TestFireOneInsert_SkipsWhenGameServerStale(t *testing.T) {
+	// Not parallel: asserts on process-global counter deltas.
+	s := &Scheduler{
+		rng:      newTestRand(),
+		log:      zap.NewNop().Sugar(),
+		liveness: ws.NewGameLiveness(ws.GameLivenessTTL), // never touched → stale
+	}
+
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	st := &botState{accountID: uuid.New(), online: true}
+
+	rejectsBefore := gameUnavailableRejects()
+	panicsBefore := testutil.ToFloat64(metrics.BotInsertPanicTotal)
+
+	s.fireOneInsert(context.Background(), st, now, 0)
+
+	if got := gameUnavailableRejects() - rejectsBefore; got != 1 {
+		t.Errorf("GameUnavailableRejects{bot_insert} delta = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(metrics.BotInsertPanicTotal) - panicsBefore; got != 0 {
+		t.Errorf("BotInsertPanicTotal delta = %v, want 0 — the insert reached "+
+			"the nil gameCore, so the liveness gate did not stop it", got)
+	}
+	if !st.nextActionAt.After(now) {
+		t.Error("nextActionAt was not advanced — the bot will retry every tick during an outage")
+	}
+}
+
+// TestFireOneInsert_ProceedsWhenGameServerLive is the inverse: with a live
+// heartbeat the same call must get as far as the debit. On this nil-gameCore
+// scheduler that shows up as the recovered panic, which is precisely the
+// evidence that the gate let it through.
+func TestFireOneInsert_ProceedsWhenGameServerLive(t *testing.T) {
+	// Not parallel: asserts on process-global counter deltas.
+	live := ws.NewGameLiveness(ws.GameLivenessTTL)
+	live.Touch()
+
+	s := &Scheduler{
+		rng:      newTestRand(),
+		log:      zap.NewNop().Sugar(),
+		liveness: live,
+	}
+
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	st := &botState{accountID: uuid.New(), online: true}
+
+	rejectsBefore := gameUnavailableRejects()
+	panicsBefore := testutil.ToFloat64(metrics.BotInsertPanicTotal)
+
+	s.fireOneInsert(context.Background(), st, now, 0)
+
+	if got := gameUnavailableRejects() - rejectsBefore; got != 0 {
+		t.Errorf("GameUnavailableRejects{bot_insert} delta = %v, want 0 with a live gate", got)
+	}
+	if got := testutil.ToFloat64(metrics.BotInsertPanicTotal) - panicsBefore; got != 1 {
+		t.Errorf("BotInsertPanicTotal delta = %v, want 1 — with a live gate the "+
+			"insert must reach the (nil) gameCore instead of being skipped", got)
+	}
+}
+
+// TestFireOneInsert_NilGateIsTreatedAsStale guards the wiring mistake: a
+// SchedulerDeps built without Liveness must refuse to insert, not silently
+// revert to the pre-D-006 behaviour.
+func TestFireOneInsert_NilGateIsTreatedAsStale(t *testing.T) {
+	// Not parallel: asserts on process-global counter deltas.
+	s := &Scheduler{
+		rng: newTestRand(),
+		log: zap.NewNop().Sugar(),
+		// liveness deliberately left nil
+	}
+
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	st := &botState{accountID: uuid.New(), online: true}
+
+	panicsBefore := testutil.ToFloat64(metrics.BotInsertPanicTotal)
+
+	s.fireOneInsert(context.Background(), st, now, 0)
+
+	if got := testutil.ToFloat64(metrics.BotInsertPanicTotal) - panicsBefore; got != 0 {
+		t.Errorf("BotInsertPanicTotal delta = %v, want 0 — an unwired gate must "+
+			"fail closed", got)
+	}
+}

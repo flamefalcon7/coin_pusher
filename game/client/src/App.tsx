@@ -377,7 +377,13 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
     gameClient.onBatchInsertAck((queued, error, balPlay, balCash) => {
       if (balPlay !== undefined) setBalance(balPlay);
       if (balCash !== undefined) setBalanceCash(balCash);
-      if (error === "table_full") {
+      if (error === "game_unavailable") {
+        // Backend refuses inserts once the game server's slot_status heartbeat
+        // goes stale, so the coins are never charged (D-006). Held longer than
+        // the other notices: this one is an outage, not a retry-now condition.
+        setInsertAckMsg("Game server disconnected — inserts paused");
+        setTimeout(() => setInsertAckMsg(null), 4000);
+      } else if (error === "table_full") {
         setInsertAckMsg("Table is full!");
         setTimeout(() => setInsertAckMsg(null), 2000);
       } else if (error === "slot_full") {

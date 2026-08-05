@@ -23,6 +23,15 @@ import (
 	fmetrics "github.com/flamefalcon/coin-pusher/backend/foundation/metrics"
 )
 
+// liveGate returns a game-server liveness gate that reads as alive, for the
+// tests whose subject is something other than the gate itself. Passing nil
+// instead would make every one of them pass vacuously on a 503.
+func liveGate() *ws.GameLiveness {
+	l := ws.NewGameLiveness(ws.GameLivenessTTL)
+	l.Touch()
+	return l
+}
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -256,7 +265,7 @@ func TestEvent(t *testing.T) {
 			t.Parallel()
 
 			gameCore := newGameCore(accountID, tc.balance)
-			grp := New(gameCore, heat.New(), nil, false)
+			grp := New(gameCore, heat.New(), nil, false, liveGate())
 
 			r := httptest.NewRequest(http.MethodPost, "/v1/game/event", strings.NewReader(tc.body))
 			r.Header.Set("Content-Type", "application/json")
@@ -292,7 +301,7 @@ func TestBatchInsert_CountExceedsMax(t *testing.T) {
 	log := zap.NewNop().Sugar()
 	accountID := uuid.New()
 	gameCore := newGameCore(accountID, decimal.NewFromInt(100000))
-	grp := New(gameCore, heat.New(), nil, false)
+	grp := New(gameCore, heat.New(), nil, false, liveGate())
 
 	tests := []struct {
 		name       string
@@ -480,7 +489,7 @@ func TestBatchInsert_OutboxPathWritesRowAndSkipsInlinePublish(t *testing.T) {
 	// flag = true. nc can stay nil: if the handler ever tries to publish
 	// inline, the nil dereference will panic and fail the test — that's
 	// the strongest "no inline publish" guard.
-	grp := New(gameCore, heat.New(), nil, true)
+	grp := New(gameCore, heat.New(), nil, true, liveGate())
 
 	body := `{"count":5}`
 	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(body))
@@ -580,7 +589,7 @@ func TestBatchInsert_LegacyPathPublishesReferenceID(t *testing.T) {
 
 	pub := &recordingPublisher{}
 	// flag = false → legacy inline-publish path.
-	grp := New(gameCore, heat.New(), pub, false)
+	grp := New(gameCore, heat.New(), pub, false, liveGate())
 
 	body := `{"slot_id":2,"count":5}`
 	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(body))
@@ -630,5 +639,96 @@ func TestBatchInsert_LegacyPathPublishesReferenceID(t *testing.T) {
 		if ref != cmd.ReferenceID {
 			t.Errorf("ledger debit reference %q != published reference_id %q", ref, cmd.ReferenceID)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Game server liveness gate (D-006)
+// ---------------------------------------------------------------------------
+
+// staleGate returns a liveness gate that has never seen a heartbeat, which is
+// how the backend sees a game server that is down.
+func staleGate() *ws.GameLiveness {
+	return ws.NewGameLiveness(ws.GameLivenessTTL)
+}
+
+// TestBatchInsert_RefusedWhenGameServerStale is the regression for the window
+// this endpoint left open: with the game server gone, the debit committed, the
+// command published into a subject with no subscriber, and the caller got a
+// 200 reporting success. The balance must be untouched and no outbox row
+// written.
+func TestBatchInsert_RefusedWhenGameServerStale(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+	gameCore, captured := newGameCoreWithOutboxCapture(accountID, decimal.NewFromInt(100), decimal.Zero)
+
+	// nc nil: an inline publish would panic. outbox flag on, so `captured`
+	// records whether a debit-and-enqueue happened at all.
+	grp := New(gameCore, heat.New(), nil, true, staleGate())
+
+	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(`{"count":5}`))
+	r.Header.Set("Content-Type", "application/json")
+	r = r.WithContext(mid.SetClaims(r.Context(), mid.Claims{AccountID: accountID.String()}))
+
+	w := httptest.NewRecorder()
+	errHandler(log, grp.BatchInsert).ServeHTTP(w, r)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body = %s", w.Code, w.Body.String())
+	}
+	if captured.called {
+		t.Error("debit ran while the game server was stale — the coins are charged for nothing")
+	}
+}
+
+// TestBatchInsert_AcceptedWhenGameServerLive is the other half: the gate must
+// not be a blanket refusal. Same request, live heartbeat, normal 200.
+func TestBatchInsert_AcceptedWhenGameServerLive(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+	gameCore, captured := newGameCoreWithOutboxCapture(accountID, decimal.NewFromInt(100), decimal.Zero)
+
+	grp := New(gameCore, heat.New(), nil, true, liveGate())
+
+	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(`{"count":5}`))
+	r.Header.Set("Content-Type", "application/json")
+	r = r.WithContext(mid.SetClaims(r.Context(), mid.Claims{AccountID: accountID.String()}))
+
+	w := httptest.NewRecorder()
+	errHandler(log, grp.BatchInsert).ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	if !captured.called {
+		t.Error("live heartbeat but no debit — the gate is refusing valid inserts")
+	}
+}
+
+// TestBatchInsert_GateRunsBeforeValidation pins the ordering: a request that
+// would fail validation anyway must still be rejected as 400, not 503. The
+// gate must not swallow client errors, or callers lose the ability to tell a
+// bad request from an outage.
+func TestBatchInsert_GateRunsAfterCountValidation(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop().Sugar()
+	accountID := uuid.New()
+	gameCore := newGameCore(accountID, decimal.NewFromInt(100))
+	grp := New(gameCore, heat.New(), nil, true, staleGate())
+
+	r := httptest.NewRequest(http.MethodPost, "/v1/game/batch-insert", strings.NewReader(`{"count":0}`))
+	r.Header.Set("Content-Type", "application/json")
+	r = r.WithContext(mid.SetClaims(r.Context(), mid.Claims{AccountID: accountID.String()}))
+
+	w := httptest.NewRecorder()
+	errHandler(log, grp.BatchInsert).ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 — an invalid count is a client error even during an outage", w.Code)
 	}
 }

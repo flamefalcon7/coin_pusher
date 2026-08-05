@@ -60,6 +60,17 @@ var (
 	})
 )
 
+// Game server liveness metrics
+var (
+	// GameUnavailableRejects counts operations refused because the game server
+	// stopped publishing slot_status. Any nonzero rate means the game server is
+	// gone and players are being turned away — alert on it. See D-006.
+	GameUnavailableRejects = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "coinpusher_game_unavailable_rejects_total",
+		Help: "Balance-debiting or inventory-consuming operations refused because the game server heartbeat went stale.",
+	}, []string{"path"})
+)
+
 // NATS metrics
 var (
 	NATSDisconnects = promauto.NewCounter(prometheus.CounterOpts{

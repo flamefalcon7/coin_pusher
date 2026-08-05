@@ -117,6 +117,11 @@ type testHandlerOpts struct {
 	decrementMegaspeakerFn func(ctx context.Context, accountID uuid.UUID) error
 	getInventoryFn         func(ctx context.Context, accountID uuid.UUID) (inventory.Inventory, error)
 	queryByIDFn            func(ctx context.Context, accountID uuid.UUID) (user.Account, error)
+	// gameServerDown leaves the liveness gate untouched, so it reads stale.
+	// The default is a live gate: a stale one refuses inserts and abilities
+	// (D-006), which would make every unrelated test pass for the wrong
+	// reason.
+	gameServerDown bool
 }
 
 func newTestHandler(t *testing.T, opts testHandlerOpts) (*Handler, *Connection) {
@@ -136,11 +141,17 @@ func newTestHandler(t *testing.T, opts testHandlerOpts) (*Handler, *Connection) 
 	}
 	usrCore := user.NewCore(usrStorer)
 
+	liveness := NewGameLiveness(GameLivenessTTL)
+	if !opts.gameServerDown {
+		liveness.Touch()
+	}
+
 	h := &Handler{
 		log:           log,
 		hub:           hub,
 		inventoryCore: invCore,
 		userCore:      usrCore,
+		liveness:      liveness,
 	}
 
 	userID := uuid.New().String()
@@ -435,11 +446,15 @@ func newTestHandlerAdmin(t *testing.T) (*Handler, *Connection) {
 	usrStorer := &mockUserStorer{}
 	usrCore := user.NewCore(usrStorer)
 
+	liveness := NewGameLiveness(GameLivenessTTL)
+	liveness.Touch()
+
 	h := &Handler{
 		log:           log,
 		hub:           hub,
 		inventoryCore: invCore,
 		userCore:      usrCore,
+		liveness:      liveness,
 	}
 
 	userID := uuid.New().String()

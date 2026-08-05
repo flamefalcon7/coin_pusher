@@ -36,6 +36,10 @@ type Group struct {
 	heat *heat.HeatEngine
 	nc   natsPublisher
 	room string
+	// liveness is the game server's heartbeat gate, shared with the WS handler
+	// that feeds it. Without it this endpoint would keep debiting balances into
+	// a dead NATS subject after the game server stops. See D-006.
+	liveness *ws.GameLiveness
 	// outboxEnabled routes batch_insert through nats_outbox (flag on) or
 	// keeps the legacy inline-publish-with-refund path (flag off). See
 	// docs/plans/2026-04-13-001 Unit 6. Flag set at process start via
@@ -43,14 +47,17 @@ type Group struct {
 	outboxEnabled bool
 }
 
-// New constructs a handler Group.
-func New(game *game.Core, heat *heat.HeatEngine, nc natsPublisher, outboxEnabled bool) *Group {
+// New constructs a handler Group. liveness must be the same gate the WS
+// handler's slot_status subscription feeds; a nil gate reads as dead and
+// BatchInsert will refuse every request.
+func New(game *game.Core, heat *heat.HeatEngine, nc natsPublisher, outboxEnabled bool, liveness *ws.GameLiveness) *Group {
 	return &Group{
 		game:          game,
 		heat:          heat,
 		nc:            nc,
 		room:          "main",
 		outboxEnabled: outboxEnabled,
+		liveness:      liveness,
 	}
 }
 
@@ -103,6 +110,14 @@ func (g *Group) BatchInsert(ctx context.Context, w http.ResponseWriter, r *http.
 
 	if req.Count <= 0 || req.Count > ws.MaxBatchCount {
 		return v1.NewRequestError(fmt.Errorf("count must be between 1 and %d", ws.MaxBatchCount), http.StatusBadRequest)
+	}
+
+	// Refuse before the debit if the game server's heartbeat is stale — the
+	// published command would be dropped and the player charged for it.
+	// 503 rather than 400: the request is valid, the dependency is not.
+	if !g.liveness.Live() {
+		metrics.GameUnavailableRejects.WithLabelValues("http_batch_insert").Inc()
+		return v1.NewRequestError(fmt.Errorf("game server unavailable"), http.StatusServiceUnavailable)
 	}
 
 	// Extract user ID from auth context.

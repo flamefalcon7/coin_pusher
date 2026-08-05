@@ -181,6 +181,12 @@ type Scheduler struct {
 	log           *zap.SugaredLogger
 	db            *sqlx.DB
 
+	// liveness is the game server's heartbeat gate (fed by the WS handler's
+	// slot_status subscription). Bots debit real ledger rows, so an insert
+	// fired while the game server is down leaves the bot's balance and heat
+	// drifting away from a table that never received the coins. See D-006.
+	liveness *ws.GameLiveness
+
 	// configCacheReader (test seam): when non-nil, replaces botCore-backed
 	// config fetches. Production wiring leaves this nil and uses botCore.
 	configCacheReader func(ctx context.Context) (map[string]string, error)
@@ -235,6 +241,10 @@ type SchedulerDeps struct {
 	RNG           *rand.Rand
 	Log           *zap.SugaredLogger
 	DB            *sqlx.DB
+	// Liveness gates inserts on the game server's heartbeat. Leaving it nil
+	// reads as dead and the scheduler will never insert — deliberate, so an
+	// unwired gate fails loudly rather than resurrecting the old behaviour.
+	Liveness *ws.GameLiveness
 }
 
 // NewScheduler constructs a Scheduler. None of the dependencies are validated
@@ -251,6 +261,7 @@ func NewScheduler(deps SchedulerDeps) *Scheduler {
 		rng:           deps.RNG,
 		log:           deps.Log,
 		db:            deps.DB,
+		liveness:      deps.Liveness,
 		state:         make(map[uuid.UUID]*botState),
 	}
 	s.botIDs.Store(map[uuid.UUID]struct{}{})
@@ -936,6 +947,17 @@ func (s *Scheduler) fireOneInsert(ctx context.Context, st *botState, now time.Ti
 			// Intentionally do NOT advance nextActionAt — next tick retries.
 		}
 	}()
+
+	// Skip while the game server's heartbeat is stale: the debit would commit
+	// and the outbox row would publish into a subject with no subscriber,
+	// leaving this bot's balance and heat drifting from a table that never got
+	// the coins. Advances nextActionAt like the other failure paths so the
+	// bot keeps its cadence instead of retrying every tick. See D-006.
+	if !s.liveness.Live() {
+		metrics.GameUnavailableRejects.WithLabelValues("bot_insert").Inc()
+		st.nextActionAt = now.Add(s.intervalJitter())
+		return
+	}
 
 	slotID := s.rng.Intn(insertSlotCount)
 	amount := insertAmountMin + s.rng.Intn(insertAmountMax-insertAmountMin+1)
