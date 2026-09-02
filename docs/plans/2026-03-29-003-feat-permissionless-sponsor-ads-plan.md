@@ -5,7 +5,7 @@ status: partial
 date: 2026-03-29
 origin: docs/archive/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md
 reviewed: 2026-09-02
-outcome: "Core shipped (dfa368a, billboard fix a16b3dc). Quota/config/bonus publishing never wired: sponsor.NewPublisher and ConnectWithJetStream have no callers. UI hidden until deposit gate (6d95ff7)."
+outcome: "Core shipped (dfa368a, billboard fix a16b3dc). Quota/config/bonus publishing was never wired; the unused sponsor.Publisher, ConnectWithJetStream and the sponsor_quota topic builders were deleted 2026-09-02 (last present at bac1cda; restore from there if this is resumed). The TS game server still subscribes to cmd.sponsor_quota. UI hidden until deposit gate (6d95ff7)."
 ---
 
 # feat: Permissionless Sponsor Ads

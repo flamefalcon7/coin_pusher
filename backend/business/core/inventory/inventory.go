@@ -55,14 +55,6 @@ func (c *Core) SetDevDefaults(d DevDefaults) {
 	c.devDefaults = &d
 }
 
-// EnsureInventory creates an inventory row for the account if it doesn't exist.
-func (c *Core) EnsureInventory(ctx context.Context, accountID uuid.UUID) error {
-	if err := c.storer.EnsureInventory(ctx, accountID, c.devDefaults); err != nil {
-		return fmt.Errorf("ensure inventory: %w", err)
-	}
-	return nil
-}
-
 // CreditKeyCoins adds key coins to an account's inventory.
 func (c *Core) CreditKeyCoins(ctx context.Context, accountID uuid.UUID, count int) error {
 	if err := c.storer.EnsureInventory(ctx, accountID, c.devDefaults); err != nil {

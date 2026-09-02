@@ -514,11 +514,6 @@ func (c *Core) SetCustomReferralCode(ctx context.Context, accountID uuid.UUID, c
 	return c.storer.SetReferralCode(ctx, accountID, code)
 }
 
-// QueryByReferralCode looks up an account by referral code.
-func (c *Core) QueryByReferralCode(ctx context.Context, code string) (Account, error) {
-	return c.storer.QueryByReferralCode(ctx, code)
-}
-
 // IncrementLifetimeDeposit adds to lifetime deposit tracker.
 func (c *Core) IncrementLifetimeDeposit(ctx context.Context, accountID uuid.UUID, amount decimal.Decimal) error {
 	return c.storer.IncrementLifetimeDeposit(ctx, accountID, amount)
