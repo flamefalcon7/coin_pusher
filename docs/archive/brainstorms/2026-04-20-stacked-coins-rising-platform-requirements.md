@@ -1,9 +1,9 @@
 ---
 date: 2026-04-20
 topic: stacked-coins-rising-platform
-status: proposed
+status: abandoned
 reviewed: 2026-09-02
-outcome: "Never started; see the matching plan. Its 2-degree tilt premise is dead config."
+outcome: "Never started (no commits, no branch, none of the planned files exist). Dropped by owner 2026-09-02. PLATFORM.TILT_ANGLE premise was already dead config."
 ---
 
 # Stacked Coins with Rising Platform

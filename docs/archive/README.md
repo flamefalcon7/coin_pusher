@@ -16,7 +16,7 @@ Status vocabulary, shared with `docs/plans/` and `docs/brainstorms/`:
 | `active` | Work in progress right now. |
 
 Audited 2026-09-02. Still live in `docs/plans/`: sponsor ads (partial), batch-insert outbox (partial, Unit 8
-cleanup pending), stacked coins rising platform (proposed).
+cleanup pending). Stacked coins rising platform was dropped unstarted on 2026-09-02.
 
 Also archived here with a banner: `Scene.md` (Rev B PoC scene numbers) and `backend-optimization.md`
 (early-2026 optimization plan, mostly done or superseded by the outbox).

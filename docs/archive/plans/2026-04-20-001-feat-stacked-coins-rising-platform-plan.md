@@ -1,11 +1,11 @@
 ---
 title: "feat: Stacked coins with pusher notch and rising platform"
 type: feat
-status: proposed
+status: abandoned
 date: 2026-04-20
 origin: docs/brainstorms/2026-04-20-stacked-coins-rising-platform-requirements.md
 reviewed: 2026-09-02
-outcome: "Never started: no commits, no branch, none of the planned files exist. PLATFORM.TILT_ANGLE premise is dead config; re-verify before executing."
+outcome: "Never started (no commits, no branch, none of the planned files exist). Dropped by owner 2026-09-02. PLATFORM.TILT_ANGLE premise was already dead config."
 ---
 
 # feat: Stacked coins with pusher notch and rising platform

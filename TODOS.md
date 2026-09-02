@@ -119,7 +119,7 @@ retention + metric names, `DEPLOYMENT.md` RPC env names, `security-audit.md` sta
   wire them per the sponsor plan or delete. A Go dead-code gate (`golang.org/x/tools/cmd/deadcode`) in CI
   would catch the next one; knip only covers TypeScript.
 - `game/shared/src/types.ts` `HEAT_CONFIG.ALPHA: 0.7` is unread; `heat.go` uses 0.95.
-- `game/shared/src/types.ts` `PLATFORM.TILT_ANGLE: 2` is unread (premise of the proposed rising-platform plan).
+- `game/shared/src/types.ts` `PLATFORM.TILT_ANGLE: 2` is unread (the rising-platform plan that assumed it was dropped).
 - `game/client/src/pages/{AdminSponsorsPage,SponsorPage}.tsx`, `ui/{CampaignCard,SponsorBalances}.tsx`:
   parked "until deposit gate" (imports commented out in `App.tsx`), ignored in `knip.jsonc`. Decide.
 - Outbox plan Unit 8: `RefundBatchInsert` / `ProcessGameInsertRefund` and the `BACKEND_OUTBOX_ENABLED`
