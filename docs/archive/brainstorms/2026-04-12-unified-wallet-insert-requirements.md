@@ -1,3 +1,10 @@
+---
+date: 2026-04-12
+status: superseded
+reviewed: 2026-09-02
+outcome: "Became docs/plans/2026-04-12-001, shipped."
+---
+
 # Unified Wallet for Coin Insert — Requirements
 
 **Date:** 2026-04-12

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: 遊戲 Juice 強化 — 手感、期待感與獎勵體驗</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#faf9f7; --surface:#ffffff; --ink:#26221c; --muted:#6f675c;
+  --accent:#b3541e; --accent-soft:#fbeee4; --accent-text:#8a3d12;
+  --gold:#a07714; --gold-soft:#faf3dd; --gold-text:#7a5a0e;
+  --teal:#0f766e; --teal-soft:#e4f4f2; --teal-text:#0b5d57;
+  --warn:#b91c1c; --warn-soft:#fdecec; --warn-text:#991616;
+  --line:#e5e0d8; --code-bg:#f2efe9;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-size:15.5px;line-height:1.75;}
+.page{max-width:920px;margin-inline:auto;padding:48px 28px 64px;}
+p,li{max-width:72ch}
+code{font-family:var(--mono);font-size:.86em;background:var(--code-bg);padding:1.5px 5px;border-radius:4px;}
+h1{font-size:1.9rem;font-weight:900;line-height:1.3;margin:.4em 0 .2em}
+h2{font-size:1.32rem;font-weight:700;margin:2.6em 0 .6em;padding-top:.6em;border-top:1px solid var(--line)}
+h3{font-size:1.08rem;font-weight:700;margin:1.4em 0 .4em}
+a{color:var(--accent-text)}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-text);font-weight:700}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+.meta span{font-size:.78rem;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 12px;color:var(--muted)}
+.meta span b{color:var(--ink);font-weight:600}
+.stats{display:flex;flex-wrap:wrap;gap:12px;margin:22px 0 6px}
+.stat{flex:1 1 130px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+.stat .n{font-size:1.5rem;font-weight:900;line-height:1.2}
+.stat .l{font-size:.78rem;color:var(--muted)}
+.jump{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 20px;margin:18px 0 26px}
+.jump ol{margin:6px 0 2px;padding-left:1.3em}
+.jump li{margin:3px 0}
+.jump a{text-decoration:none}
+.jump a:hover{text-decoration:underline}
+article.idea{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px 26px 20px;margin:22px 0}
+.idea-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.idchip{font-family:var(--mono);font-weight:600;font-size:.8rem;background:var(--accent-soft);color:var(--accent-text);border-radius:999px;padding:3px 12px}
+.idea h3{margin:0;font-size:1.18rem}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px}
+.chip{font-size:.74rem;border-radius:999px;padding:3px 11px;font-weight:600}
+.chip.axis{background:var(--teal-soft);color:var(--teal-text)}
+.chip.conf{background:var(--gold-soft);color:var(--gold-text)}
+.chip.cx{background:var(--code-bg);color:var(--muted)}
+.idea dl{margin:14px 0 0}
+.idea dt{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-top:14px}
+.idea dd{margin:4px 0 0}
+.basis{background:var(--code-bg);border-radius:8px;padding:10px 14px;font-size:.92em}
+.basis .tag{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--accent-text)}
+figure{margin:18px 0 6px;text-align:center}
+figcaption{font-size:.78rem;color:var(--muted);margin-top:6px}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.92rem}
+th{text-align:left;font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--line);padding:8px 10px}
+td{border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top}
+.callout{border-radius:12px;padding:14px 18px;margin:16px 0}
+.callout.warn{background:var(--warn-soft)}
+.callout.warn .eyebrow{color:var(--warn-text)}
+.callout.gold{background:var(--gold-soft)}
+.callout.gold .eyebrow{color:var(--gold-text)}
+footer.composition-signal{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:.78rem;color:var(--muted)}
+svg text{font-family:"Noto Sans TC",sans-serif}
+svg .mono{font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="eyebrow">Ideation · Compound Engineering</div>
+<h1>遊戲 Juice 強化 — 手感、期待感與獎勵體驗</h1>
+<div class="meta">
+  <span>date <b>2026-07-02</b></span>
+  <span>topic <b>juice-game-feel</b></span>
+  <span>focus <b>how to juice this game（打擊感 / 回饋感 / 爽感）</b></span>
+  <span>mode <b>repo-grounded</b></span>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="n">44</div><div class="l">原始構想（5 個框架 agents）</div></div>
+  <div class="stat"><div class="n">19+4</div><div class="l">合併後候選 + 跨框架綜合</div></div>
+  <div class="stat"><div class="n">7</div><div class="l">存活構想（對抗性驗證後）</div></div>
+  <div class="stat"><div class="n">5/5</div><div class="l">軸線全覆蓋</div></div>
+</div>
+
+<h2 id="grounding">Grounding Context</h2>
+<div class="eyebrow">Codebase Context</div>
+<p>即時多人 3D 推幣機：BabylonJS v6.49 客戶端、Rapier 物理（TS game server，15 Hz WebSocket + MessagePack，客戶端 100–500ms 插值緩衝）、Go 後端（NATS relay、PostgreSQL、SUI/USDC 鏈上經濟）。產品四支柱（<code>docs/spec.md</code>）：物理爽感（連鎖瀑布）、多人張力（heat 零和競爭）、策略深度（投幣位選擇）、經濟刺激（變異數）。</p>
+<p>既有 juice 基礎設施：<code>VFXManager</code>（池化粒子、combo 偵測、牆面脈動、五種能力特效、幣雨）、<code>SoundManager</code>（Web Audio，5 個取樣音效 + 8 個程序化能力音 + 3 首 BGM、±8–12% 音高隨機化）、卡通渲染 + 靜態後處理（Sobel 描邊、bloom、色差、暗角）、<code>ComboCounter</code>（3 階 CSS 樣式，純裝飾）、slot machine（左牆 50 幣觸發）、jackpot 輪盤（右牆 50 幣）、寶箱（已有依稀有度分階的程序化音效）、megaspeaker。</p>
+<p>硬性約束：juice 屬客戶端表現層（不得為伺服器物理參數做客戶端控制）；所有新特效須符合池化 + <code>dispose()</code> 紀律與 count-baseline 洩漏測試（D-003）；表現時序須以插值後的畫面為準，而非伺服器訊息到達瞬間（D-004）；鏈上經濟不得有「把輸包裝成贏」的慶祝（提領信任優先）。外部研究（高價值）：Vlambeer juice 經典、實體推幣機 near-miss 幾何學、賭場音效研究（任何贏都給慶祝音 → 場次 +30%）、gacha 揭示節奏、2025 留存數據（社交功能 D30 26–31%）。</p>
+
+<h2 id="axes">Topic Axes</h2>
+<ol>
+  <li><b>impact-cascade</b> — 落幣與連鎖瞬間的打擊感（screen shake、hit-stop、粒子、飄字、combo 升級）</li>
+  <li><b>anticipation-near-miss</b> — 期待感與「差一點」（邊緣搖搖欲墜、蓄力、推桿節奏預告）</li>
+  <li><b>reward-reveal</b> — 獎勵揭示與慶祝（寶箱、jackpot 輪盤、slot、抽獎、彩帶時刻）</li>
+  <li><b>audio</b> — 音效層（音高變化、慶祝音、緊張音景 — 制度上全新領域，零既有決策）</li>
+  <li><b>multiplayer-spectacle</b> — 多人共感與回訪鉤子（廣播大獎、共同儀表、狂熱狀態）</li>
+</ol>
+
+<h2 id="ideas">Ranked Ideas</h2>
+<div class="jump">
+  <div class="eyebrow">快速跳轉</div>
+  <ol>
+    <li><a href="#i1">邊緣劇場 — 讓「會不會掉？」被看見、被聽見</a></li>
+    <li><a href="#i2">興奮度中樞 — 一個 0–1 訊號驅動所有 juice</a></li>
+    <li><a href="#i3">揭示語彙 — 慶祝強度 = 真實獎勵大小</a></li>
+    <li><a href="#i4">子彈時間 — 插值時鐘的時間魔法</a></li>
+    <li><a href="#i5">音階瀑布 — 聽得見的 combo</a></li>
+    <li><a href="#i6">大獎警報 — 把私有的贏廣播成全室劇場</a></li>
+    <li><a href="#i7">壓力計狂熱列車 — 讓隱藏的振幅機制現身</a></li>
+  </ol>
+</div>
+
+<!-- ══════════ IDEA 1 ══════════ -->
+<article class="idea" id="i1">
+  <div class="idea-head"><span class="idchip">#1</span><h3>邊緣劇場（Edge Drama）— 讓「會不會掉？」被看見、被聽見</h3></div>
+  <div class="chips"><span class="chip axis">anticipation-near-miss</span><span class="chip conf">信心 90%</span><span class="chip cx">複雜度 Medium</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>純客戶端的前緣張力表現系統，三層疊加：<b>（a）搖搖欲墜偵測</b> — 客戶端已持有每枚幣的插值位置（<code>Interpolator.ts</code> 的 <code>knownCoins</code> map），前緣門檻是已知常數（z &gt; 0.7m）；對距邊緣 ~0.1m 內的幣加上依「距離 + 停留時間」漸強的邊緣微光/微顫，掛在邊緣越久的幣越亮 — 全房間每個客戶端會獨立指認出同一批幣，共享注意力自然湧現。<b>(b) 推桿節奏漸強</b> — 推桿是確定性 0.6 Hz 正弦波，插值後的 <code>pusherZ</code> 每幀可讀；當有幣在懸崖邊時，隨下一次前推衝程逼近播放漸強 tick/微光，衝程頂點正好是「going once…」的拍點。<b>(c) 命定之幣預示</b> — despawn 訊息比插值畫面早 100–500ms 到達，但目前 <code>removeCoin()</code> 收到訊息立即刪除（<code>GameClient.ts:235</code> 呼叫），造成幣提早消失的視覺 bug；改為收到 despawn 時不刪除，標記為「命定」，在提前量窗口內播放上升 rim-glow + 音效 shimmer，讓緩衝的軌跡把幣可見地帶過邊緣再爆發。零協定變更。</dd>
+    <dt>Axis</dt><dd>anticipation-near-miss</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>Interpolator.ts:20-26</code>「Coins are only removed via removeCoin() (on despawn), so sleeping coins… keep rendering at their last position」；<code>Interpolator.ts:119</code> <code>targetTime = serverTime - interpolationDelay</code>；<code>CoinOutcome.ts:19</code> <code>platformFrontZ = 0.05 + 1.3/2 = 0.7m</code>（驗證者已修正原引用行號）；證據 dossier 明確標記「No Near-Miss Feedback Loop — Design intent says 'will it fall?' but mechanic is invisible」對照 <code>docs/spec.md:73-81</code> 的設計意圖。<span class="tag">external:</span> 實體推幣機的核心強迫循環正是「特定一枚看得見的懸崖幣」（palm-fun 機構分析）。五個構想 agent 獨立收斂到此方向。</dd>
+    <dt>Rationale</dt>
+    <dd>這是 <b>spec 設計意圖與實際畫面之間最大的落差</b>：物理和幾何都為「會不會掉？」設計好了，表現層卻完全沒渲染它。所需資料全部已在客戶端記憶體中，天生符合 D-004（以插值畫面為準）；(c) 還順手修掉一個真實存在的提早消失 bug。近失多巴胺只在「真實的差一點」上觸發，倫理上乾淨。</dd>
+    <dt>Downsides</dt>
+    <dd>需要為 teeter 訊號設計良好的每幀掃描（幣數多時要做距離預篩）；「命定之幣」延後刪除需小心與後續 state_delta 的一致性；微光強度曲線需要調校避免視覺噪音。</dd>
+    <dt>Confidence</dt><dd>90%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 720 190" width="100%" style="max-width:720px">
+    <line x1="40" y1="150" x2="690" y2="150" stroke="#c9c2b6" stroke-width="2"/>
+    <text x="40" y="172" font-size="11" fill="#6f675c">時間 →</text>
+    <rect x="60" y="60" width="170" height="60" rx="10" fill="#e4f4f2"/>
+    <text x="145" y="86" font-size="12.5" text-anchor="middle" fill="#0b5d57" font-weight="700">(a) 搖搖欲墜</text>
+    <text x="145" y="104" font-size="10.5" text-anchor="middle" fill="#0b5d57">邊緣微光，隨停留漸強</text>
+    <rect x="250" y="60" width="170" height="60" rx="10" fill="#faf3dd"/>
+    <text x="335" y="86" font-size="12.5" text-anchor="middle" fill="#7a5a0e" font-weight="700">(b) 節奏漸強</text>
+    <text x="335" y="104" font-size="10.5" text-anchor="middle" fill="#7a5a0e">0.6Hz 衝程逼近 → riser</text>
+    <rect x="440" y="60" width="170" height="60" rx="10" fill="#fbeee4"/>
+    <text x="525" y="86" font-size="12.5" text-anchor="middle" fill="#8a3d12" font-weight="700">(c) 命定預示</text>
+    <text x="525" y="104" font-size="10.5" text-anchor="middle" fill="#8a3d12">despawn 提前量 100–500ms</text>
+    <path d="M 232 90 L 246 90" stroke="#a89f90" stroke-width="2" marker-end="url(#ar1)"/>
+    <path d="M 422 90 L 436 90" stroke="#a89f90" stroke-width="2" marker-end="url(#ar1)"/>
+    <circle cx="640" cy="150" r="14" fill="#b3541e"/>
+    <text x="640" y="155" font-size="12" text-anchor="middle" fill="#fff" font-weight="700">爆</text>
+    <path d="M 612 96 Q 640 110 640 132" stroke="#b3541e" stroke-width="2" fill="none" marker-end="url(#ar2)"/>
+    <text x="640" y="30" font-size="11" text-anchor="middle" fill="#6f675c">不確定 ──── 張力升高 ──── 確定但尚未發生 ── 釋放</text>
+    <defs>
+      <marker id="ar1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#a89f90"/></marker>
+      <marker id="ar2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#b3541e"/></marker>
+    </defs>
+  </svg>
+  <figcaption>張力三層疊加：從不確定的懸崖顫動，到節奏拍點，到已知結局的預示演出（示意，非規格）</figcaption>
+  </figure>
+</article>
+
+<!-- ══════════ IDEA 2 ══════════ -->
+<article class="idea" id="i2">
+  <div class="idea-head"><span class="idchip">#2</span><h3>興奮度中樞（Juice Spine）— 一個 0–1 訊號驅動所有 juice</h3></div>
+  <div class="chips"><span class="chip axis">impact-cascade · 基礎設施</span><span class="chip conf">信心 85%</span><span class="chip cx">複雜度 Medium</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>建立一個客戶端每幀更新的 <code>excitementIntensity</code>（0–1）標量：輸入為 combo 階層 + 同時進行的能力數 + 近期連鎖規模；所有 juice 消費端改讀這個訊號 — 相機震動幅度、bloom/色差/暗角權重（目前 <code>PostProcessing.ts:120-142</code> 全是寫死常數）、粒子發射密度、以及配套的 <b>audio bus 側鏈 ducking</b>（BGM 增益目前在 <code>SoundManager.ts</code> 三處寫死 0.15/0，大招音效與 BGM 毫無混音層級）。第一個消費者就是「combo 全機台接管」：把宣告了卻從未使用的 <code>comboThreshold</code> 接上目前只吃時間的 <code>updateWallPulse()</code>，combo 升階時牆面脈動加速、金色調染、bloom 門檻下降 — 像彈珠台進 multiball 時整台機都變燈。</dd>
+    <dt>Axis</dt><dd>impact-cascade</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>VFXManager.ts:24,31</code> <code>comboThreshold</code> 宣告後全檔案再無引用（驗證者 grep 確認恰好只有 2 處宣告）；<code>VFXManager.ts:1134-1148</code> <code>updateWallPulse</code> 純 dt 正弦、無任何遊戲狀態輸入；<code>PostProcessing.ts</code> bloomWeight 0.4 / aberration 1.0 / vignette 2.5 固定；<code>SoundManager.ts:65,72-73,93</code> BGM 增益三處寫死。<span class="tag">reasoned:</span> 目前每個特效各自手調升級曲線（explosion 0.08 震動、tornado 0.012 晃動、牆面不理 combo）— 共享訊號把「讓它感覺更大」從 N 系統修改變成一條公式，未來每個新功能（里程碑、streak、廣播事件）自動繼承升級。</dd>
+    <dt>Rationale</dt>
+    <dd>這是槓桿型選擇：先建這條「脊椎」，後面每一個 moment 型構想（#1、#3、#6、#7）都變成它的便宜消費者。audio 在制度上是全新領域（零既有決策），此案同時確立第一個音訊架構慣例，值得一條 ADR。</dd>
+    <dt>Downsides</dt>
+    <dd>先建基礎設施會延後第一個「看得見」的成果；訊號輸入權重需要迭代調校；後處理從靜態變動態是第一次，需議定調變上限避免暈眩/噪音（wayline 的過度 juice 警告）。</dd>
+    <dt>Confidence</dt><dd>85%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 720 210" width="100%" style="max-width:720px">
+    <rect x="280" y="80" width="160" height="52" rx="26" fill="#b3541e"/>
+    <text x="360" y="102" font-size="13" text-anchor="middle" fill="#fff" font-weight="700">excitementIntensity</text>
+    <text x="360" y="119" font-size="11" text-anchor="middle" fill="#fbeee4">0 – 1 · 每幀更新</text>
+    <rect x="30" y="20" width="130" height="34" rx="8" fill="#f2efe9"/><text x="95" y="42" font-size="11.5" text-anchor="middle" fill="#26221c">combo 階層</text>
+    <rect x="30" y="88" width="130" height="34" rx="8" fill="#f2efe9"/><text x="95" y="110" font-size="11.5" text-anchor="middle" fill="#26221c">同時能力數</text>
+    <rect x="30" y="156" width="130" height="34" rx="8" fill="#f2efe9"/><text x="95" y="178" font-size="11.5" text-anchor="middle" fill="#26221c">近期連鎖規模</text>
+    <path d="M 160 37 Q 230 37 276 88" stroke="#a89f90" stroke-width="2" fill="none" marker-end="url(#ar3)"/>
+    <path d="M 160 105 L 276 105" stroke="#a89f90" stroke-width="2" fill="none" marker-end="url(#ar3)"/>
+    <path d="M 160 173 Q 230 173 276 124" stroke="#a89f90" stroke-width="2" fill="none" marker-end="url(#ar3)"/>
+    <rect x="560" y="12" width="130" height="34" rx="8" fill="#e4f4f2"/><text x="625" y="34" font-size="11.5" text-anchor="middle" fill="#0b5d57">相機震動幅度</text>
+    <rect x="560" y="58" width="130" height="34" rx="8" fill="#e4f4f2"/><text x="625" y="80" font-size="11.5" text-anchor="middle" fill="#0b5d57">bloom / 色差 / 暗角</text>
+    <rect x="560" y="104" width="130" height="34" rx="8" fill="#e4f4f2"/><text x="625" y="126" font-size="11.5" text-anchor="middle" fill="#0b5d57">牆面脈動 + 調染</text>
+    <rect x="560" y="150" width="130" height="34" rx="8" fill="#e4f4f2"/><text x="625" y="172" font-size="11.5" text-anchor="middle" fill="#0b5d57">BGM ducking</text>
+    <path d="M 440 96 Q 510 60 556 30" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar4)"/>
+    <path d="M 440 102 L 556 78" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar4)"/>
+    <path d="M 440 112 L 556 120" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar4)"/>
+    <path d="M 440 120 Q 510 155 556 166" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar4)"/>
+    <defs>
+      <marker id="ar3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#a89f90"/></marker>
+      <marker id="ar4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#0f766e"/></marker>
+    </defs>
+  </svg>
+  <figcaption>中樞訊號：多輸入匯聚成一個標量，所有現有與未來的 juice 消費端統一讀取（示意）</figcaption>
+  </figure>
+</article>
+
+<!-- ══════════ IDEA 3 ══════════ -->
+<article class="idea" id="i3">
+  <div class="idea-head"><span class="idchip">#3</span><h3>揭示語彙（Reveal Vocabulary）— 慶祝強度 = 真實獎勵大小</h3></div>
+  <div class="chips"><span class="chip axis">reward-reveal</span><span class="chip conf">信心 88%</span><span class="chip cx">複雜度 Medium–High</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>把寶箱已有的「依稀有度分階」模式（<code>playChestBuildup/Burst/Reveal(tier)</code> — 全 codebase 唯一的分階慶祝）抽成共享的 <b>Celebration Tier Registry</b>，讓所有獎勵時刻走同一套「量級 → 演出」對照表：<b>(a)</b> RewardToast 依金額分階（目前 <code>RewardToast.tsx:20-24</code> 無論 0.5 或 50 幣都渲染相同 <code>+X coins</code>），大獎改為數字滾動 count-up（只朝伺服器確認的真實總額動畫）；<b>(b)</b> 輪盤煙火階梯 — segment [3,3,3,6,6,9] 目前視覺完全相同，9 幣大獎改為「近乎靜默一拍 → 加速齊發」的 finale；<b>(c)</b> 寶箱視覺 cinematic — 音效合約已建好（分階 buildup→burst→reveal），<code>ChestPage.tsx</code> 卻零視覺呼叫，補上與音效時長同步的暗角、震動、爆裂粒子、卡片揭示；<b>(d)</b> slot 第三轉軸誠實拖延 — <code>spinReels</code> 目前無視 <code>_jackpot</code> 參數、固定 [1500,2500,3500] 停軸，改為前兩軸相同時延長第三軸 + 心跳音（只演出真實的 two-match，絕不製造假近失）；<b>(e)</b> 池化世界空間飄字（+N 數值、combo 色階）作為同一語彙的場內管道。個人化原則：慶祝強度以「你的 heat-share 實拿金額」為準 — 同一場瀑布對大戶是煙火、對路過者是輕響。</dd>
+    <dt>Axis</dt><dd>reward-reveal</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>SoundManager.ts:535-656</code> 寶箱三段式分階音效（驗證者確認 <code>ChestPage.tsx</code> 只呼叫音效、無任何粒子/mesh/動畫呼叫 — 音畫不匹配為真）；<code>SlotMachine.ts:205,217</code> <code>_jackpot</code> 底線棄用參數 + 固定 stopTimes（結果在動畫開始前已完整到達客戶端）；<code>types.ts:647</code> <code>SEGMENT_REWARDS: [3,3,3,6,6,9]</code>。<span class="tag">external:</span> gacha 揭示節奏（期待拍 → 慢建 → 依稀有度爆發）；煙火表演的量級編碼（齊發前刻意停頓）；賭場第三轉軸拖延 — 結構同構成立因為結局同樣預先決定，時序純屬表現。</dd>
+    <dt>Rationale</dt>
+    <dd>「經濟刺激（變異數）」是產品支柱，但揭示層目前把變異數壓平了 — 打中 1/6 頂級 segment 的玩家得不到任何身體感證據。以真實金額分階天生站在「不把輸包裝成贏」約束的正確一側；registry 形式讓未來每個新獎勵型別（里程碑、推薦獎）註冊一行就繼承完整演出。</dd>
+    <dt>Downsides</dt>
+    <dd>範圍最大的一項（五個表面）；需要先議定量級分階表（什麼算「大」）並與 RTP/經濟設計共用；誠實近失的政策線建議寫入 <code>docs/decisions.md</code>（演出真實 two-match：可；製造假近失：永不）。</dd>
+    <dt>Confidence</dt><dd>88%</dd>
+    <dt>Complexity</dt><dd>Medium–High</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 720 200" width="100%" style="max-width:720px">
+    <text x="30" y="28" font-size="12" fill="#6f675c" font-weight="700">量級 →</text>
+    <rect x="90" y="14" width="140" height="22" rx="11" fill="#f2efe9"/><text x="160" y="29" font-size="11" text-anchor="middle" fill="#6f675c">小額：輕響</text>
+    <rect x="250" y="14" width="140" height="22" rx="11" fill="#faf3dd"/><text x="320" y="29" font-size="11" text-anchor="middle" fill="#7a5a0e">中額：count-up + 爆裂</text>
+    <rect x="410" y="14" width="180" height="22" rx="11" fill="#fbeee4"/><text x="500" y="29" font-size="11" text-anchor="middle" fill="#8a3d12">大獎：靜默一拍 → finale 齊發</text>
+    <line x1="30" y1="52" x2="690" y2="52" stroke="#e5e0d8"/>
+    <text x="30" y="82" font-size="12" fill="#26221c" font-weight="700">Toast 飄字</text>
+    <text x="30" y="108" font-size="12" fill="#26221c" font-weight="700">輪盤</text>
+    <text x="30" y="134" font-size="12" fill="#26221c" font-weight="700">寶箱</text>
+    <text x="30" y="160" font-size="12" fill="#26221c" font-weight="700">Slot</text>
+    <g font-size="10.5" fill="#6f675c">
+      <text x="160" y="82" text-anchor="middle">+X 輕彈</text><text x="320" y="82" text-anchor="middle">滾動數字</text><text x="500" y="82" text-anchor="middle">世界空間數字柱</text>
+      <text x="160" y="108" text-anchor="middle">現行爆裂</text><text x="320" y="108" text-anchor="middle">雙重齊發</text><text x="500" y="108" text-anchor="middle">煙火 finale（x9 專屬）</text>
+      <text x="160" y="134" text-anchor="middle">common 快開</text><text x="320" y="134" text-anchor="middle">rare/epic 建立</text><text x="500" y="134" text-anchor="middle">legendary cinematic</text>
+      <text x="160" y="160" text-anchor="middle">正常停軸</text><text x="320" y="160" text-anchor="middle">—</text><text x="500" y="160" text-anchor="middle">two-match：第三軸拖延+心跳</text>
+    </g>
+    <text x="360" y="190" font-size="11" text-anchor="middle" fill="#991616" font-weight="600">不變式：演出強度永遠追蹤真實結果 — 絕不放大損失、絕不製造假近失</text>
+  </svg>
+  <figcaption>同一張「量級 → 演出」對照表覆蓋四個獎勵表面（示意，分階門檻待定）</figcaption>
+  </figure>
+</article>
+
+<!-- ══════════ IDEA 4 ══════════ -->
+<article class="idea" id="i4">
+  <div class="idea-head"><span class="idchip">#4</span><h3>子彈時間（Interpolation Time Magic）— 插值時鐘的時間魔法</h3></div>
+  <div class="chips"><span class="chip axis">impact-cascade</span><span class="chip conf">信心 70%</span><span class="chip cx">複雜度 Medium</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>客戶端渲染的是 <code>targetTime = serverTime - interpolationDelay</code>（<code>Interpolator.ts:119</code>）— 這個時間點是<b>客戶端自己選的數字</b>，背後是一段已緩衝的狀態歷史。把它變成演出工具：<b>hit-stop</b>（爆炸/超級推擊命中瞬間鎖定 targetTime 80–120ms，全世界凍結一拍再緩衝追回）、<b>大瀑布慢動作</b>（插值畫面出現 ≥N 幣 despawn 時渲染時鐘降到 ~0.4x 三四百毫秒，幣以慢動作翻過懸崖，bloom/色差同步尖峰，再以 ~1.15x 追回）、進階版<b>瀑布回放</b>（保留最近 2–3 秒 15Hz delta，超大連鎖結束後以 0.3x 重演一次）。不碰物理、不碰協定 — 純播放速率操作。</dd>
+    <dt>Axis</dt><dd>impact-cascade</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>Interpolator.ts:117-119</code>（驗證者確認）— 渲染時間是緩衝狀態上的自由變數；dossier 痛點「No hit-stop/freeze frame: No frame pause on major impacts」。<span class="tag">external:</span> Vlambeer 經典 — hit-stop 0.1–0.2s 是最重的打擊感工具、保留給巔峰時刻；體育轉播不會全速重播關鍵球。<span class="tag">reasoned:</span> 伺服器權威多人遊戲通常做不了 hit-stop，但本作的插值緩衝架構讓它變成純客戶端可行 — 這是別的推幣機 clone 抄不走的差異化。</dd>
+    <dt>Rationale</dt>
+    <dd>連鎖瀑布是 spec 明言的「核心多巴胺時刻」，目前 2 幣和 40 幣視覺完全等價。時間膨脹是唯一能讓大瀑布「感覺」數量級不同、又零池化/洩漏風險的手段（改的是數字，不是新資源）。觸發本身以插值畫面為準，D-004 由構造保證。</dd>
+    <dt>Downsides</dt>
+    <dd>開放問題：自適應 100–500ms 緩衝能吸收多少膨脹才不出現追趕僞影 — 需要 30 分鐘白板 + 原型驗證；多人共視下 100ms 凍結「有力」還是「像 lag」是主觀判斷，建議 A/B 開關；回放版需保留 delta 歷史（記憶體小但需設計）。</dd>
+    <dt>Confidence</dt><dd>70%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 720 170" width="100%" style="max-width:720px">
+    <line x1="50" y1="60" x2="690" y2="60" stroke="#c9c2b6" stroke-width="2"/>
+    <text x="50" y="44" font-size="11" fill="#6f675c">伺服器時間（穩定前進）</text>
+    <line x1="50" y1="120" x2="200" y2="120" stroke="#0f766e" stroke-width="3"/>
+    <path d="M 200 120 C 260 120 280 128 330 132" stroke="#b3541e" stroke-width="3" fill="none"/>
+    <path d="M 330 132 C 420 138 480 112 560 120" stroke="#a07714" stroke-width="3" fill="none"/>
+    <line x1="560" y1="120" x2="690" y2="120" stroke="#0f766e" stroke-width="3"/>
+    <text x="50" y="146" font-size="11" fill="#0b5d57">targetTime（正常 1.0x）</text>
+    <text x="292" y="158" font-size="11" fill="#8a3d12">慢動作 0.4x（幣翻過懸崖）</text>
+    <text x="472" y="98" font-size="11" fill="#7a5a0e">追回 1.15x</text>
+    <line x1="200" y1="52" x2="200" y2="128" stroke="#e5e0d8" stroke-dasharray="4 3"/>
+    <text x="200" y="36" font-size="10.5" text-anchor="middle" fill="#6f675c">大瀑布出現在插值畫面</text>
+    <line x1="330" y1="60" x2="330" y2="140" stroke="#e5e0d8" stroke-dasharray="4 3"/>
+    <text x="352" y="76" font-size="10" fill="#6f675c">落後量擴大 ↑</text>
+  </svg>
+  <figcaption>渲染時鐘暫時減速再追回 — 緩衝吸收落差，物理與伺服器毫髮無傷（示意）</figcaption>
+  </figure>
+</article>
+
+<!-- ══════════ IDEA 5 ══════════ -->
+<article class="idea" id="i5">
+  <div class="idea-head"><span class="idchip">#5</span><h3>音階瀑布（Cascade Pitch Ladder）— 聽得見的 combo</h3></div>
+  <div class="chips"><span class="chip axis">audio</span><span class="chip conf">信心 92%</span><span class="chip cx">複雜度 Low</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>despawn 音效管線已支援逐次 <code>playbackRate</code>（<code>SoundManager.ts:124</code>）— 目前餵的是 ±10% 隨機值。combo 窗口內改餵「combo 序號索引的上行五聲音階」：每一波連鎖高一個音，combo 重置時回到根音 — 12 幣瀑布從「一聲悶響」變成一段上行琶音。配套把 200ms 節流（<code>THROTTLE_MS</code>）在連鎖中放寬為 ~70ms 間距的 round-robin 音源池，讓密集瀑布疊出層次而非被丟棄。順手修姊妹問題：程序化能力音每次施放參數完全相同（shock 固定 80→40Hz，<code>SoundManager.ts:168-169</code>），而 shock 是全遊戲最高頻能力（30 次/分）— 把取樣音已驗證的隨機化模式套上去。</dd>
+    <dt>Axis</dt><dd>audio</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>SoundManager.ts:124</code> <code>src.playbackRate.value = 1 + (Math.random()*2-1) * pitchRange</code>（管線已在，只是餵噪音不餵意義）；<code>:139,149</code> 節流確認；<code>:168-169</code> 固定頻率確認。<span class="tag">external:</span> Peggle「歡樂頌」與彈珠台上行 callout — 街機設計最強的音訊獎勵模式；UBC 賭場研究：贏後慶祝音顯著延長場次。</dd>
+    <dt>Rationale</dt>
+    <dd>全清單「每行代碼手感增量」最高的一項：~30 行改動、觸碰的是全遊戲最常播放的聲音。audio 軸目前是制度空白，這是建立音訊慣例的最低風險起點，且與 #2 的 audio bus 完全相容。</dd>
+    <dt>Downsides</dt>
+    <dd>音階選擇與重置規則是品味決策（團隊試聽）；放寬節流需通過洩漏測試紀律（音源池上限）；避免長 combo 音高爬過刺耳區（封頂或八度折返）。</dd>
+    <dt>Confidence</dt><dd>92%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+
+<!-- ══════════ IDEA 6 ══════════ -->
+<article class="idea" id="i6">
+  <div class="idea-head"><span class="idchip">#6</span><h3>大獎警報（Big-Win Siren）— 把私有的贏廣播成全室劇場</h3></div>
+  <div class="chips"><span class="chip axis">multiplayer-spectacle</span><span class="chip conf">信心 85%</span><span class="chip cx">複雜度 Low–Medium</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>目前 <code>reward_notify</code> 只送給得主本人（relay.go 走 <code>hub.SendToUser()</code>），而 <code>key_coin_draw</code>、<code>ability</code>、<code>heat_update</code> 都走 <code>hub.Broadcast()</code> 全室廣播 — 遊戲裡最值得圍觀的時刻是唯一沒人看得到的時刻。新增門檻觸發的輕量廣播事件 <code>{username, amount(分桶), …}</code>：全室播放警報 stinger、牆面以得主的排名色脈動（現成的 rank-color 系統 + 閒置的牆面脈動升級鉤子）、跑馬燈橫幅。fan-out 管線（NATS → relay → hub.Broadcast）已存在且已被三種訊息驗證。</dd>
+    <dt>Axis</dt><dd>multiplayer-spectacle</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> 驗證者確認不對稱：<code>relay.go:84</code> <code>reward_notify → hub.SendToUser()</code> vs <code>:187,203</code> <code>key_coin_draw → hub.Broadcast()</code>；<code>types.ts:325-331</code> <code>RewardMessage</code> 單一 user_id。<span class="tag">external:</span> 2025 留存數據 — 廣播大獎（跑馬燈 + 鏡頭快照）是回訪驅動器，社交功能帶動 D30 26–31%（Monopoly GO）；賭場 jackpot 警報存在的目的就是把贏「賣」給整層樓。<span class="tag">reasoned:</span> heat-share 零和分配讓每筆大獎本來就部分屬於所有投入者（spec 468-492「cooperative competition」）— 廣播不是發明奇觀，是把經濟已經產生、協定卻藏住的奇觀曝光。</dd>
+    <dt>Rationale</dt>
+    <dd>heat 系統把投入變成競爭，卻把贏藏起來 — 廣播補上迴路的最後一段：羨慕與奇觀正是多人支柱缺失的 juice。跨層小改動（一種新訊息型別 + 客戶端呈現），基礎設施零新增。</dd>
+    <dt>Downsides</dt>
+    <dd>對鏈上經濟廣播真實金額是信任敏感的 UX 決策 — 門檻與金額分桶（顯示區間而非精確值）需明確簽核；需防洗版節流（同一玩家短時間多次大獎合併）。</dd>
+    <dt>Confidence</dt><dd>85%</dd>
+    <dt>Complexity</dt><dd>Low–Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 720 150" width="100%" style="max-width:720px">
+    <text x="180" y="26" font-size="12" text-anchor="middle" fill="#6f675c" font-weight="700">現況：私訊</text>
+    <rect x="60" y="44" width="110" height="36" rx="8" fill="#f2efe9"/><text x="115" y="67" font-size="11.5" text-anchor="middle" fill="#26221c">reward_notify</text>
+    <rect x="240" y="44" width="90" height="36" rx="18" fill="#e4f4f2"/><text x="285" y="67" font-size="11.5" text-anchor="middle" fill="#0b5d57">得主本人</text>
+    <path d="M 170 62 L 236 62" stroke="#a89f90" stroke-width="2" marker-end="url(#ar5)"/>
+    <text x="180" y="122" font-size="10.5" text-anchor="middle" fill="#991616">其他 N 位玩家：什麼都沒看到</text>
+    <text x="540" y="26" font-size="12" text-anchor="middle" fill="#6f675c" font-weight="700">提案：門檻觸發全室廣播</text>
+    <rect x="400" y="44" width="110" height="36" rx="8" fill="#fbeee4"/><text x="455" y="67" font-size="11.5" text-anchor="middle" fill="#8a3d12">big_win 事件</text>
+    <rect x="580" y="18" width="110" height="30" rx="15" fill="#e4f4f2"/><text x="635" y="38" font-size="11" text-anchor="middle" fill="#0b5d57">警報 stinger</text>
+    <rect x="580" y="58" width="110" height="30" rx="15" fill="#e4f4f2"/><text x="635" y="78" font-size="11" text-anchor="middle" fill="#0b5d57">排名色牆面脈動</text>
+    <rect x="580" y="98" width="110" height="30" rx="15" fill="#e4f4f2"/><text x="635" y="118" font-size="11" text-anchor="middle" fill="#0b5d57">跑馬燈橫幅</text>
+    <path d="M 510 56 Q 545 40 576 33" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar6)"/>
+    <path d="M 510 64 L 576 72" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar6)"/>
+    <path d="M 510 72 Q 545 100 576 110" stroke="#0f766e" stroke-width="2" fill="none" marker-end="url(#ar6)"/>
+    <defs>
+      <marker id="ar5" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#a89f90"/></marker>
+      <marker id="ar6" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#0f766e"/></marker>
+    </defs>
+  </svg>
+  <figcaption>從單播到全室奇觀 — 沿用 key_coin_draw 已驗證的廣播路徑（示意）</figcaption>
+  </figure>
+</article>
+
+<!-- ══════════ IDEA 7 ══════════ -->
+<article class="idea" id="i7">
+  <div class="idea-head"><span class="idchip">#7</span><h3>壓力計狂熱列車（Board Pressure Hype Train）— 讓隱藏的振幅機制現身</h3></div>
+  <div class="chips"><span class="chip axis">multiplayer-spectacle</span><span class="chip conf">信心 75%</span><span class="chip cx">複雜度 Medium</span></div>
+  <dl>
+    <dt>Description</dt>
+    <dd>遊戲裡藏著一台<b>機制上為真的 hype train</b>：台面幣數從 250 爬到 400 時，推桿振幅從 0.08m smoothstep 到 0.24m（<code>PUSHER_CONFIG</code>）— 所有人的投幣真的讓機器擺得多 3 倍猛，而遊戲從未告訴任何人。把它渲染成全室共享的「台面壓力計」：以客戶端 <code>knownCoins.size</code> 餵值、有升級門檻（Lv1/2/3）、投幣者貢獻閃光（spawn 已帶 <code>owner_id</code>）、滿壓時進入全室 fever 狀態（牆面燈光 + BGM 疊層，接 #2 的中樞訊號）。Twitch hype train 的完整結構 — 差別在這裡的高潮獎勵是物理真實的：滿壓 = 更大的瀑布。</dd>
+    <dt>Axis</dt><dd>multiplayer-spectacle</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>types.ts:441-444</code> <code>AMPLITUDE: 0.08 / AMPLITUDE_MAX: 0.24 / AMPLITUDE_COIN_MIN: 250 / AMPLITUDE_COIN_MAX: 400</code>（驗證者逐字確認）；spawn 訊息帶 owner_id；spec「你要最大的瀑布（需要所有人投入）」。<span class="tag">external:</span> Twitch hype train — 結構同構罕見地完整成立：共同貢獻計量、升級門檻、超時衰減、共享高潮；此處高潮還是物理真實而非純裝飾。</dd>
+    <dt>Rationale</dt>
+    <dd>這是遊戲「最大的未說出口的故事」：一個已在運作的合作機制完全隱形。計量表把 spec 的 cooperative-competition 循環<b>教</b>給玩家，並製造「別走，我們到 Lv3 了」的續留鉤子（社交功能 D30 論點）。不碰伺服器物理 — 只是把既有伺服器真相從插值畫面視覺化（D-004 安全）。</dd>
+    <dt>Downsides</dt>
+    <dd>UI 元件需遵守既有回饋（用元件庫 + 參考圖，避免手刻醜 HUD）；knownCoins.size 與伺服器實際幣數在高流量時有插值誤差（計量表用平滑濾波即可）；fever 狀態的視聽升級依賴 #2 先行或至少共同設計。</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 720 180" width="100%" style="max-width:720px">
+    <line x1="70" y1="140" x2="650" y2="140" stroke="#c9c2b6" stroke-width="2"/>
+    <line x1="70" y1="140" x2="70" y2="30" stroke="#c9c2b6" stroke-width="2"/>
+    <path d="M 70 128 L 250 128 C 380 128 420 52 560 44 L 650 44" stroke="#b3541e" stroke-width="3" fill="none"/>
+    <text x="60" y="132" font-size="10" text-anchor="end" fill="#6f675c">0.08m</text>
+    <text x="60" y="48" font-size="10" text-anchor="end" fill="#6f675c">0.24m</text>
+    <text x="250" y="158" font-size="10.5" text-anchor="middle" fill="#6f675c">250 幣</text>
+    <text x="560" y="158" font-size="10.5" text-anchor="middle" fill="#6f675c">400 幣</text>
+    <text x="360" y="174" font-size="11" text-anchor="middle" fill="#6f675c">台面幣數 →</text>
+    <text x="30" y="20" font-size="11" fill="#6f675c">推桿振幅（伺服器已實作，玩家看不見）</text>
+    <line x1="330" y1="140" x2="330" y2="96" stroke="#e5e0d8" stroke-dasharray="4 3"/>
+    <line x1="450" y1="140" x2="450" y2="62" stroke="#e5e0d8" stroke-dasharray="4 3"/>
+    <text x="330" y="88" font-size="10.5" text-anchor="middle" fill="#7a5a0e" font-weight="700">Lv2</text>
+    <text x="450" y="54" font-size="10.5" text-anchor="middle" fill="#8a3d12" font-weight="700">Lv3</text>
+    <text x="606" y="32" font-size="10.5" text-anchor="middle" fill="#991616" font-weight="700">MAX PRESSURE · fever</text>
+  </svg>
+  <figcaption>已存在的振幅斜坡（types.ts:441-444）— 提案只是把這條曲線做成全室看得見的計量表（示意）</figcaption>
+  </figure>
+</article>
+
+<div class="callout gold">
+  <div class="eyebrow">建議落地順序</div>
+  <p style="margin:.4em 0 0">速贏先行：<b>#5 音階瀑布</b>（~30 行）與 <b>#2 的第一消費者「combo 牆面接管」</b>可立即動工建立信心；接著以 <b>#2 興奮度中樞</b>立骨架（含第一條 audio ADR），再上 <b>#1 邊緣劇場</b>（最大意圖落差）與 <b>#3 揭示語彙</b>；<b>#4</b> 先做 30 分鐘緩衝吸收原型再決定；<b>#6/#7</b> 需跨層與經濟簽核，適合排入下一個規劃循環。所有新特效遵守：池化 + dispose 紀律 + count-baseline 洩漏測試 + GPU smoke-screenshot 驗證儀式。</p>
+</div>
+
+<h2 id="rejection">Rejection Summary</h2>
+<table>
+  <thead><tr><th style="width:34px">#</th><th style="width:260px">構想</th><th>拒絕理由</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>結果可讀化 despawn + 櫃機填充計量表</td><td>依據被驗證推翻：slot/wheel 填充計量表其實已上線（<code>slot_counter</code>/<code>wheel_counter</code> 已接到 UI，App.tsx:234-247）；引用的 <code>classifyCoin</code> 是離線 RTP 模擬器死碼、無 right_wall 分支；正式路徑的 DespawnZone 從未上線傳輸 → 需協定變更，前提錯誤。</td></tr>
+    <tr><td>2</td><td>全室每日里程碑 → 共享幣雨</td><td>依據部分失實：spec.md:722 是推薦/入金里程碑，並無每日/streak 內容；且觸碰 RTP 屬經濟設計題非 juice — 「共享 streak」的外部缺口留給未來經濟 brainstorm。</td></tr>
+    <tr><td>3</td><td>機器呼吸 — 連續推桿音景 + 0.6Hz 相位鎖定</td><td>依據成立但與更強構想重疊：節奏漸強已併入 #1；連續音景屬 #2 audio bus 落地後的拋光層。</td></tr>
+    <tr><td>4</td><td>推桿相位廣播（協定加 2 個數字）</td><td>成立的賦能器而非獨立構想 — 併入 #1 作為選配強化（插值 pusherZ 已可讀，僅預測未來相位時才需要）。</td></tr>
+    <tr><td>5</td><td>瞬發能力施放預示（Shock/Lightning charge tell）</td><td>成立但被排擠：小型設計完整性修補，價值低於七個存活者 — 進 backlog。</td></tr>
+    <tr><td>6</td><td>程序化音效音高隨機化</td><td>併入 #5 作為姊妹修補。</td></tr>
+    <tr><td>7</td><td>池化世界空間飄字</td><td>併入 #3 — 同一套量級語彙的場內呈現管道。</td></tr>
+    <tr><td>8</td><td>能力奇觀統一調度表（table-driven dispatcher）</td><td>成立的重構但 juice 收益間接 — 建議下次觸碰能力特效時順手做。</td></tr>
+    <tr><td>9</td><td>假「保底計量表」顯示</td><td>生成階段即淘汰：違反「不製造假希望」倫理線。</td></tr>
+    <tr><td>10</td><td>Kenney UI 點擊音接線</td><td>生成階段即淘汰：listicle 等級，不值會議討論。</td></tr>
+    <tr><td>11</td><td>Room Theater 綜合案（#6+#7+每日里程碑）</td><td>第三腿（每日里程碑）依據失實 — #6、#7 已獨立存活，綜合案解散。</td></tr>
+  </tbody>
+</table>
+<p style="font-size:.88rem;color:var(--muted)">軸線覆蓋：anticipation 1 / impact-cascade 2 / reward-reveal 1 / audio 1 / multiplayer 2 — 五軸皆有存活者，無刻意留白。</p>
+
+<footer class="composition-signal">Composed 2026-07-02 by ce-ideate（repo-grounded · 5 框架 agents · 44 原始構想 · fresh-context 對抗性驗證）from user prompt「let's talk about how to juice this game」</footer>
+</div>
+</body>
+</html>

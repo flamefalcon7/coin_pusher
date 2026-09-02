@@ -3,7 +3,9 @@ title: Unified Wallet for Coin Insert (play-first, cash fallback)
 type: feat
 status: completed
 date: 2026-04-12
-origin: docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md
+origin: docs/archive/brainstorms/2026-04-12-unified-wallet-insert-requirements.md
+reviewed: 2026-09-02
+outcome: "Shipped, merged 44dab22; deployed to prod 2026-07-23."
 ---
 
 # Unified Wallet for Coin Insert (play-first, cash fallback)
@@ -14,7 +16,7 @@ origin: docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md
 
 ## Problem Frame
 
-目前 `ProcessGameInsert` 只從 `balance_play` 扣款；用戶贏到的 `balance_cash` 只能提現。這造成四個問題：留存（贏了只能走）、方便性（play coin 用完中斷）、經濟循環斷裂、用戶抱怨「贏的錢不能投」。（詳見 origin：docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md）
+目前 `ProcessGameInsert` 只從 `balance_play` 扣款；用戶贏到的 `balance_cash` 只能提現。這造成四個問題：留存（贏了只能走）、方便性（play coin 用完中斷）、經濟循環斷裂、用戶抱怨「贏的錢不能投」。（詳見 origin：docs/archive/brainstorms/2026-04-12-unified-wallet-insert-requirements.md）
 
 ## Requirements Trace
 
@@ -355,14 +357,14 @@ origin: docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md
 
 ## Documentation / Operational Notes
 
-- `docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md` 為 origin，無需更新
+- `docs/archive/brainstorms/2026-04-12-unified-wallet-insert-requirements.md` 為 origin，無需更新
 - `docs/security-audit.md` 提到的 refund ledger 不變性仍然成立（事實上更細緻：每種幣各一筆）
 - 無 feature flag；變更為一次性上線（前後端必須同時部署，因應 payload shape 變更）
 - 建議部署時序：backend 先（兼容舊前端? 不，因為 `balance_play`/`balance_cash` 是新欄位） → 前後端同步 release 為佳
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md](../brainstorms/2026-04-12-unified-wallet-insert-requirements.md)
+- **Origin document:** [docs/archive/brainstorms/2026-04-12-unified-wallet-insert-requirements.md](../brainstorms/2026-04-12-unified-wallet-insert-requirements.md)
 - Related code:
   - `backend/business/core/accounting/accounting.go`
   - `backend/business/core/game/game.go`

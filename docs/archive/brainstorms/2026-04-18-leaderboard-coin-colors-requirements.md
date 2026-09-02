@@ -1,6 +1,9 @@
 ---
 date: 2026-04-18
 topic: leaderboard-coin-colors
+status: superseded
+reviewed: 2026-09-02
+outcome: "Became docs/plans/2026-04-18-001, shipped."
 ---
 
 # Leaderboard Coin Colors

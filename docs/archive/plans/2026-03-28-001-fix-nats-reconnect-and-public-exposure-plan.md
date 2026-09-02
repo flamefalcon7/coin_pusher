@@ -1,8 +1,10 @@
 ---
 title: "fix: NATS reconnection failure and public port exposure"
 type: fix
-status: active
+status: completed
 date: 2026-03-28
+reviewed: 2026-09-02
+outcome: "Shipped in e844b46: infinite reconnect + NATS bound to VPC IP."
 ---
 
 # fix: NATS reconnection failure and public port exposure

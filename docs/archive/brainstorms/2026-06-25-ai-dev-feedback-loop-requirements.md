@@ -1,3 +1,10 @@
+---
+date: 2026-06-25
+status: superseded
+reviewed: 2026-09-02
+outcome: "Became docs/plans/2026-06-25-001, shipped."
+---
+
 # AI-Assisted Dev Feedback Loop — Requirements / Handoff Brief
 
 **Date:** 2026-06-25

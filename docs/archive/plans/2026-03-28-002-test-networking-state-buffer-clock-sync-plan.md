@@ -1,8 +1,10 @@
 ---
 title: "test: Unit tests for StateBuffer and ClockSync"
 type: test
-status: active
+status: completed
 date: 2026-03-28
+reviewed: 2026-09-02
+outcome: "Shipped in 85cd2c8: StateBuffer + ClockSync unit tests."
 ---
 
 # test: Unit tests for StateBuffer and ClockSync

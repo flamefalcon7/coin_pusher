@@ -1,9 +1,11 @@
 ---
 title: "feat: Agent perception tooling — debugDump, collider wireframes, tuning HUD"
 type: feat
-status: active
+status: completed
 date: 2026-07-07
 origin: docs/solutions/workflow/claude-code-session-retro-2026-07.md
+reviewed: 2026-09-02
+outcome: "Shipped across 76c7da4..aff46ad, merged 4827a49."
 ---
 
 # feat: Agent perception tooling — debugDump, collider wireframes, tuning HUD

@@ -15,7 +15,7 @@ Services Machine                          Game Machine
 └──────────────────────────────────┘
 ```
 
-- **Prometheus** scrapes 4 targets every 15s, retains 30 days
+- **Prometheus** scrapes 4 targets every 15s, retains 15 days or 512MB, whichever first
 - **Grafana** at `https://<domain>/grafana/` behind nginx basic auth
 - **Telegram** alerts via Grafana unified alerting
 
@@ -59,7 +59,7 @@ Services Machine                          Game Machine
 
 | Name | Type | URL | Notes |
 |------|------|-----|-------|
-| Prometheus | prometheus | `http://prometheus:9090` | Default; metrics scrape (15s, 30d retention) |
+| Prometheus | prometheus | `http://prometheus:9090` | Default; metrics scrape (15s, 15d/512MB retention) |
 | Postgres | postgres (grafana-postgresql-datasource) | `postgres:5432` | Read-only `grafana_ro` role; used by Economy RTP dashboard. Password set via `GRAFANA_DB_PASSWORD` env var; role created by `schema.sql` migration. |
 
 ## Alert Tiers
@@ -107,7 +107,7 @@ Services Machine                          Game Machine
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GAME_VPC_IP` | Yes | Game server VPC IP for Prometheus scraping |
+| `GAME_VPC_IP` | No (unused) | Game scrape target is hardcoded to `10.104.0.2:9100` in `deploy/prometheus/prometheus.yml` |
 | `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token for alert notifications |
 | `TELEGRAM_CHAT_ID` | Yes | Telegram chat ID for alert notifications |
 | `GF_ADMIN_USER` | No | Grafana admin username (default: `admin`) |
@@ -129,8 +129,8 @@ Services Machine                          Game Machine
 ### Game
 - `coinpusher_game_tick_duration_seconds` — total tick latency
 - `coinpusher_game_tick_phase_seconds{phase}` — per-phase (physics, despawn, serialize, etc.)
-- `coinpusher_game_coins_active` / `coinpusher_game_coins_sleeping` — coin counts
-- `coinpusher_game_coins_despawned_total{zone}` — despawn by zone (front/side/back)
+- `coinpusher_coins_active` / `coinpusher_coins_sleeping` — coin counts
+- `coinpusher_coins_despawned_total` — despawn by zone (front/side/back)
 
 ### Blockchain
 - `coinpusher_indexer_block_lag` — blocks behind chain tip
@@ -211,5 +211,5 @@ Rationale: bot accounts (`accounts.role='bot'`) are server-controlled NPC
 players funded by the house. Their inserts and rewards land in the same
 `accounting_logs` table as real players but must not influence alert signals,
 house-liability estimates, or RTP tuning decisions. See the play-bot plan
-(`docs/plans/2026-04-16-001-feat-play-bot-plan.md`, Unit 7) for the full
+(`docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md`, Unit 7) for the full
 design.

@@ -2,9 +2,11 @@
 title: "feat: AI-assisted dev feedback loop (eyes + self-verification harnesses)"
 type: feat
 date: 2026-06-25
-status: ready
+status: completed
 depth: deep
-origin: docs/brainstorms/2026-06-25-ai-dev-feedback-loop-requirements.md
+origin: docs/archive/brainstorms/2026-06-25-ai-dev-feedback-loop-requirements.md
+reviewed: 2026-09-02
+outcome: "Shipped across ae89be4..13d1457, merged f4a9cc1. KTD-4 Babylon docs MCP deliberately not wired (ca03422)."
 ---
 
 # feat: AI-Assisted Dev Feedback Loop
@@ -509,7 +511,7 @@ plan → implement → `ce code review`.
 
 ## Sources & Research
 
-- Origin brief: `docs/brainstorms/2026-06-25-ai-dev-feedback-loop-requirements.md`
+- Origin brief: `docs/archive/brainstorms/2026-06-25-ai-dev-feedback-loop-requirements.md`
 - Verified files: `game/server/src/simulation/SimLoop.ts`, `Statistics.ts`, `run.ts`,
   `game/server/src/physics/PhysicsWorld.ts`, `Coin.ts`,
   `game/client/src/scene/CoinMeshManager.ts`, `VFXManager.ts`, `net/debugConfig.ts`,

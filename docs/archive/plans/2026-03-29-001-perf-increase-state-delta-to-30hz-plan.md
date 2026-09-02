@@ -1,8 +1,10 @@
 ---
 title: "perf: Increase state_delta frequency from 15Hz to 30Hz"
 type: perf
-status: active
+status: abandoned
 date: 2026-03-29
+reviewed: 2026-09-02
+outcome: "Implemented in 4bdc56e, reverted same day (966bdbe, 40e02eb). State delta stays at 15Hz."
 ---
 
 # perf: Increase state_delta frequency from 15Hz to 30Hz

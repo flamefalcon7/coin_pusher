@@ -1,8 +1,10 @@
 ---
 title: "fix: Multi-provider RPC fallback for indexer/executor + Telegram alerts"
 type: fix
-status: active
+status: completed
 date: 2026-04-24
+reviewed: 2026-09-02
+outcome: "Shipped in 0b354d5, 0c65f87, 78ecdce, b24a296. The promised docs/solutions rpc-fallback write-up was never written."
 ---
 
 # Multi-provider RPC fallback for indexer/executor + Telegram alerts

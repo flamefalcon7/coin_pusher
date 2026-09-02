@@ -1,11 +1,13 @@
 ---
 title: Play Bot — 伺服器控制的 NPC 玩家（中文版）
 type: feat
-status: active
+status: completed
 date: 2026-04-16
-origin: docs/brainstorms/2026-04-16-play-bot-requirements.md
-mirrors: docs/plans/2026-04-16-001-feat-play-bot-plan.md
+origin: docs/archive/brainstorms/2026-04-16-play-bot-requirements.md
+mirrors: docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md
 deepened: 2026-04-16
+reviewed: 2026-09-02
+outcome: "Chinese summary of the English plan, frozen at plan time. See the English file."
 ---
 
 # Play Bot — 伺服器控制的 NPC 玩家
@@ -294,7 +296,7 @@ for each user i:
    - 彙總 stats 必須回報 SQL + 原始結果
 4. 自然語言 → CLI 指令對照表
 5. 安全守則（daily cap、kill switch 語意、意外 kill 後如何復原）
-6. 找東西的地方：`backend/business/core/bot/`、`docs/brainstorms/2026-04-16-play-bot-requirements.md`、`docs/plans/2026-04-16-001-feat-play-bot-plan.md`
+6. 找東西的地方：`backend/business/core/bot/`、`docs/archive/brainstorms/2026-04-16-play-bot-requirements.md`、`docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md`
 
 **測試**（手動）：agent 收到「暫停 bot 第 3 隻」→ 能正確 `list` → 挑 3rd id → `pause`；收「過去 24 小時 bot 表現」→ `stats --since 24h`；收「全部關掉」→ 要求確認才執行 `kill-switch on`。
 
@@ -339,7 +341,7 @@ for each user i:
 
 ## 資料來源
 
-- **Origin 文件**：[docs/brainstorms/2026-04-16-play-bot-requirements.md](../brainstorms/2026-04-16-play-bot-requirements.md)
+- **Origin 文件**：[docs/archive/brainstorms/2026-04-16-play-bot-requirements.md](../brainstorms/2026-04-16-play-bot-requirements.md)
 - **相關程式碼**：
   - `backend/business/core/accounting/accounting.go`（ProcessGameInsert + OutboxWriter 契約）
   - `backend/business/core/game/game.go:98-115`（ProcessBatchInsert — 權威投幣入口）

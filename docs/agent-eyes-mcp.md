@@ -3,7 +3,7 @@
 The AI agent gets **eyes on the running client** via MCP servers declared in the
 repo-root `.mcp.json`. Any Claude Code session opened in this repo inherits them.
 This closes the "codes blind" feedback gap (see
-`docs/plans/2026-06-25-001-feat-ai-dev-feedback-loop-plan.md`, WS1, and ADR
+`docs/archive/plans/2026-06-25-001-feat-ai-dev-feedback-loop-plan.md`, WS1, and ADR
 **D-002** in `docs/decisions.md`).
 
 ## What's committed

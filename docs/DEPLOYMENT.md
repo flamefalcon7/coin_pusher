@@ -371,10 +371,10 @@ All Go backend env vars use the `BACKEND_` prefix (parsed by `conf` library). Do
 | `DB_USER` | `BACKEND_DB_USER` | `postgres` | PostgreSQL username. |
 | `DB_NAME` | `BACKEND_DB_NAME` | `coinpusher` | PostgreSQL database name. |
 | `CORS_ORIGINS` | `BACKEND_WEB_CORS_ORIGINS` | `*` | Allowed CORS origins, e.g. `https://<your-domain>`. **Must not be `*` or empty in production** (rejected at startup). |
-| `ALCHEMY_RPC_URL` | `BACKEND_EXECUTOR_RPC_URL`, `BACKEND_INDEXER_RPC_URL` | `https://mainnet.base.org` | Base chain RPC for both executor and indexer. Use a paid provider (Alchemy/QuickNode) in production. |
+| `ALCHEMY_RPC_URL`, `ANKR_RPC_URL`, `BASE_PUBLIC_RPC_URL` | `BACKEND_EXECUTOR_RPCURLS`, `BACKEND_INDEXER_RPCURLS` (comma-separated, sequential failover) | `https://mainnet.base.org` | Base chain RPC providers for executor and indexer. Use a paid primary (Alchemy/QuickNode) in production. |
 | `EXECUTOR_USDC_CONTRACT` | `BACKEND_EXECUTOR_USDC_CONTRACT` | `0x8335...2913` | USDC contract address on Base. |
 | `INDEXER_USDC_CONTRACT` | `BACKEND_INDEXER_USDC_CONTRACT` | `0x8335...2913` | USDC contract address on Base. |
-| `INDEXER_POLL_INTERVAL` | `BACKEND_INDEXER_POLL_INTERVAL` | `10s` | How often the indexer polls for new blocks. |
+| `INDEXER_POLL_INTERVAL` | `BACKEND_INDEXER_POLL_INTERVAL` | `2s` | How often the indexer polls for new blocks. |
 
 #### Services Machine — Sensitive Files (not in `.env`)
 

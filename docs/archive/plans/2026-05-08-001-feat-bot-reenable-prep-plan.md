@@ -3,6 +3,8 @@ title: "feat: Pre-bot-reenable hardening — Scenario E + RTP monitoring + ramp 
 type: feat
 status: completed
 date: 2026-05-08
+reviewed: 2026-09-02
+outcome: "Shipped in cdc4b4d, 4de533e, 3aafc4a. The runbook itself has not been executed yet."
 ---
 
 # Pre-bot-reenable hardening — Scenario E + RTP monitoring + ramp runbook
@@ -291,7 +293,7 @@ The bot kill-switch is the only thing currently preventing both classes from man
 
 ## Sources & References
 
-- **Origin:** combo plan's Risks table at `docs/plans/2026-04-26-001-feat-heat-combo-bc-alpha-coindecay-plan.md` (the three flagged follow-ups).
+- **Origin:** combo plan's Risks table at `docs/archive/plans/2026-04-26-001-feat-heat-combo-bc-alpha-coindecay-plan.md` (the three flagged follow-ups).
 - **Combo deploy commit:** `1e0da1c` (heat defaults flip), deployed 2026-05-08.
 - **Floor-disable commit:** `30f8505` (Phase 1 of the multi-step heat hardening).
 - **Existing monitoring stack:** `docs/monitoring.md`, `deploy/grafana/`, `deploy/prometheus/`.

@@ -1,10 +1,12 @@
 ---
 title: Play Bot — Server-Controlled NPC Players
 type: feat
-status: active
+status: completed
 date: 2026-04-16
-origin: docs/brainstorms/2026-04-16-play-bot-requirements.md
+origin: docs/archive/brainstorms/2026-04-16-play-bot-requirements.md
 deepened: 2026-04-16
+reviewed: 2026-09-02
+outcome: "Shipped across 15a1a17..6e0a886; ops follow-up in 2026-05-08 bot-reenable plan."
 ---
 
 # Play Bot — Server-Controlled NPC Players
@@ -520,7 +522,7 @@ The `SKILL.md` should include:
    - MUST report SQL query + result when aggregating stats, not just the summary
 4. **Natural-language → command mapping table** (the meat of the skill)
 5. **Safety rails**: daily cap, kill-switch semantics, how to recover from accidental kill-switch
-6. **Where to find things**: `backend/business/core/bot/` for code, `docs/brainstorms/2026-04-16-play-bot-requirements.md` for product intent, `docs/plans/2026-04-16-001-feat-play-bot-plan.md` for implementation details
+6. **Where to find things**: `backend/business/core/bot/` for code, `docs/archive/brainstorms/2026-04-16-play-bot-requirements.md` for product intent, `docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md` for implementation details
 
 **Patterns to follow:**
 - Existing `.agents/skills/*/SKILL.md` files (scan the repo — there are 15+ skills like `architecture-designer`, `senior-backend`, `devops-engineer` to mirror)
@@ -597,7 +599,7 @@ During `document-review` (2026-04-16), the product-lens reviewer surfaced three 
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-04-16-play-bot-requirements.md](../brainstorms/2026-04-16-play-bot-requirements.md)
+- **Origin document:** [docs/archive/brainstorms/2026-04-16-play-bot-requirements.md](../brainstorms/2026-04-16-play-bot-requirements.md)
 - **Related code:**
   - `backend/business/core/accounting/accounting.go` (ProcessGameInsert + OutboxWriter contract)
   - `backend/business/web/ws/handler.go:694-705` (canonical OutboxWriter pattern)

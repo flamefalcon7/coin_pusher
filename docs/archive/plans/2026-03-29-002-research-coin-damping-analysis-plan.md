@@ -1,8 +1,10 @@
 ---
 title: "Research: Coin Damping Analysis"
 type: research
-status: active
+status: completed
 date: 2026-03-29
+reviewed: 2026-09-02
+outcome: "Recommendation applied in 4d520a0 (damping 4.0/5.0 -> 3.0/4.0). Debug sliders never added."
 ---
 
 # Research: Coin Damping Analysis

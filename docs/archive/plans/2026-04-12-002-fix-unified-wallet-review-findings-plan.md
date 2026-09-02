@@ -3,7 +3,9 @@ title: Fix Unified Wallet Review Findings (P1 + P2, conf > 0.6)
 type: fix
 status: completed
 date: 2026-04-12
-origin: docs/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md
+origin: docs/archive/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md
+reviewed: 2026-09-02
+outcome: "Shipped, merged b935e84."
 ---
 
 # Fix Unified Wallet Review Findings (P1 + P2, conf > 0.6)
@@ -325,7 +327,7 @@ None needed — all patterns are local.
 - **End-to-end HTTP test:** mirror `TestBatchInsert_CountExceedsMax`'s `httptest` + `errHandler(log, grp.BatchInsert)` shape. Drive a real request through the handler; assert the JSON body contains `balance_play`, `balance_cash`, `play_debited`, `cash_debited`. Remove or deprecate the existing struct-stub `TestBatchInsert_ResponseShape`. A NATS stub is required — use a no-op `nats.Conn` substitute or make the test path skip the publish by feeding a gameCore that returns success (follow whatever pattern the `CountExceedsMax` test uses, or add the minimum plumbing).
 - **`QueryAllByReference`:** add to the `Storer` interface; implement in `ledgerdb` using `sqlx.SelectContext` (not `GetContext`) to return all rows matching `(action_type, reference_id)`. Current callers continue to use the singular `QueryByReference`. No behavior change to existing idempotency flow; this is purely additive.
 - **`PROTOCOL_VERSION`:** bump to 2 in `game/shared/src/types.ts`. Add a brief inline comment noting: v2 adds `balance_cash`, `play_debited`, `cash_debited` to `batch_insert_ack`; removes `balance`.
-- **`docs/spec.md` update:** rewrite the "Economy / Balance Model" section (around lines 309-349 per the agent-native reviewer's citation). Describe: single wallet total, withdrawable sub-balance, play-first draw, what feeds each half. Keep it short and factual; link (by path, not URL) to `docs/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md` for implementation details.
+- **`docs/spec.md` update:** rewrite the "Economy / Balance Model" section (around lines 309-349 per the agent-native reviewer's citation). Describe: single wallet total, withdrawable sub-balance, play-first draw, what feeds each half. Keep it short and factual; link (by path, not URL) to `docs/archive/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md` for implementation details.
 
 **Patterns to follow:**
 - `TestBatchInsert_CountExceedsMax` in `gamegrp_test.go` for the `httptest` harness
@@ -376,8 +378,8 @@ None needed — all patterns are local.
 ## Sources & References
 
 - **Originating review:** Conversation review pass on `feat/unified-wallet-insert` (see findings #1–#14 in the chat transcript preceding this plan)
-- **Upstream feature plan:** `docs/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md`
-- **Upstream feature requirements:** `docs/brainstorms/2026-04-12-unified-wallet-insert-requirements.md`
+- **Upstream feature plan:** `docs/archive/plans/2026-04-12-001-feat-unified-wallet-insert-plan.md`
+- **Upstream feature requirements:** `docs/archive/brainstorms/2026-04-12-unified-wallet-insert-requirements.md`
 - **Institutional learning precedents:** `docs/security-audit.md:100-108` (P0-8 deposit idempotency), `docs/security-audit.md:291-296` (P1-14 NATS-failure refund), `docs/backend-optimization.md:42-68` (Priority 2b single-tx)
 - Related code:
   - `backend/business/core/accounting/accounting.go` — `ProcessDeposit`, `ProcessGameInsertRefund`
