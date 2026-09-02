@@ -53,3 +53,15 @@ jobs:
         run: |
           out=$(go run golang.org/x/tools/cmd/deadcode@v0.41.0 -test -tags integration ./...)
           if [ -n "$out" ]; then echo "$out"; echo "::error::unreachable Go code found; delete it or wire it up"; exit 1; fi
+
+  prom-rules:
+    name: Alert PromQL tests (promtool)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # rules/alerts.yml mirrors the Grafana-provisioned rules so their PromQL can be
+      # unit-tested; Prometheus itself never loads it (Grafana unified alerting is live).
+      # Same image as production (docker-compose.services.yml).
+      - run: |
+          docker run --rm -v "$PWD/deploy/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.51.0 check rules /p/rules/alerts.yml
+          docker run --rm -v "$PWD/deploy/prometheus:/p:ro" -w /p --entrypoint promtool prom/prometheus:v2.51.0 test rules /p/tests/alerts_test.yml

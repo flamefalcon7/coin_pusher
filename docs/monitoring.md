@@ -15,7 +15,7 @@ Services Machine                          Game Machine
 └──────────────────────────────────┘
 ```
 
-- **Prometheus** scrapes 4 targets every 15s, retains 15 days or 512MB, whichever first
+- **Prometheus** scrapes 4 targets every 15s, retains 15 days or 512MB, whichever first. It loads **no alert rules**: alerting is Grafana unified alerting (`deploy/grafana/provisioning/alerting/`). `deploy/prometheus/rules/alerts.yml` is a hand-kept mirror of those rules so `promtool test rules` can unit-test the PromQL in CI (`prom-rules` job); keep it in sync when adding Grafana rules
 - **Grafana** at `https://<domain>/grafana/` behind nginx basic auth
 - **Telegram** alerts via Grafana unified alerting
 

@@ -99,8 +99,10 @@ retention + metric names, `DEPLOYMENT.md` RPC env names, `security-audit.md` sta
   `/v1/sponsor/*`, `/v1/admin/*`. File trees omit `simulation/`, `metrics.ts`, `TickScheduler.ts`,
   `core/{bot,outbox,sponsor}`. "Insert coins | SPACE" hotkey does not exist (Arrow keys only).
 - `docs/monitoring.md`: alert tables list 14 of 53 provisioned rules; workers list lacks `rtp_monitor`,
-  `rtp_anomaly`; env table lacks `GRAFANA_DB_PASSWORD`, `GRAFANA_DOMAIN`; `deploy/prometheus/{rules,tests}/`
-  unmentioned.
+  `rtp_anomaly`; env table lacks `GRAFANA_DB_PASSWORD`, `GRAFANA_DOMAIN`.
+- `deploy/prometheus/rules/alerts.yml` (promtool mirror, now tested in CI) has 45 rules; Grafana has 53.
+  The 8 added after 2026-04-14 (RPC-fallback and RTP-monitoring rules) have no PromQL unit test. Add them
+  to the mirror + `tests/alerts_test.yml`.
 - `docs/DEPLOYMENT.md`: dev compose has 6 services not 7; setup.sh has 10 steps (fail2ban); nginx is
   1.30-alpine; NATS binds `10.104.0.3:4222`, postgres `127.0.0.1:5432`; game exposes `:9100` metrics;
   prometheus/grafana rows missing from the service table; `.env.example` lacks `WALLET_SEED`/`GAME_API_KEY`;
