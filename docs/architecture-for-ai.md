@@ -28,8 +28,8 @@ Multiplayer online arcade coin pusher game with server-authoritative 3D physics,
 | Shared | TypeScript protocol types & config |
 | Backend | Go 1.22+, chi router, Zap logger, PostgreSQL |
 | Messaging | NATS pub/sub, Protobuf + MessagePack |
-| Auth | JWT (SUI wallet signature login) |
-| Blockchain | Multi-chain USDC (SUI, Base, Solana) |
+| Auth | JWT (EVM wallet signature login via MetaMask / WalletConnect) |
+| Blockchain | USDC on Base (EVM). No other chain is wired |
 
 ---
 
@@ -63,8 +63,6 @@ coin_pusher/
 │   │   │   ├── Leaderboard.tsx       # Real-time heat share rankings
 │   │   │   ├── MegaspeakerPanel.tsx  # Collapsible chat
 │   │   │   ├── InventoryBar.tsx      # Key coins, scrolls, charges
-│   │   │   ├── HeatMeter.tsx         # Personal heat gauge
-│   │   │   ├── RewardToast.tsx       # Transient reward notifications
 │   │   │   ├── TutorialOverlay.tsx   # First-time guide
 │   │   │   └── IdleOverlay.tsx       # 25min warning, 30min disconnect
 │   │   ├── pages/
@@ -277,8 +275,8 @@ Non-admin players: rotation and zoom are locked after initial setup.
 | Exit Zone | Trigger |
 |-----------|---------|
 | Front edge | Reward distribution (via heat share) |
-| Left wall (10 coins) | Slot machine spin |
-| Right wall (10 coins) | Jackpot wheel spin + key coin drops |
+| Left wall (50 coins) | Slot machine spin |
+| Right wall (50 coins) | Jackpot wheel spin + key coin drops |
 
 ### Slot Machine
 - 3 reels, symbols: bitcoin/ethereum/solana
@@ -286,12 +284,12 @@ Non-admin players: rotation and zoom are locked after initial setup.
 
 ### Jackpot Wheel
 - 6 segments: [3, 3, 3, 6, 6, 9] key coins
-- Expected: 5 key coins per 10-coin trigger
+- Expected: 5 key coins per 50-coin trigger
 
 ### Heat System (Reward Distribution)
 - Exponential decay: 180s half-life
-- Diminishing returns: α=0.7 (power law)
-- Minimum floor: 5% per active player
+- Diminishing returns: α=0.95 (power law; `heat.go` default)
+- Minimum floor: disabled in prod (0); activity decay with coinHalfLife=30 instead
 - Updated: 1Hz broadcast to all clients
 
 ---
@@ -319,10 +317,10 @@ Game Server → [NATS] → Go Backend → [WS broadcast] → All Clients
 
 ### Interpolation
 - Buffer: Circular buffer of state snapshots
-- Delay: `110ms + (RTT × 1.5)`, clamped [100–500ms]
+- Delay: `max(110ms, RTT × 1.5, smoothed jitter + 120ms margin)`, clamped [100–500ms]
 - Extrapolation: Up to 150ms beyond last known state
 - Sleeping coins: Maintain last position until updated
-- RTT sampling: Ping every 5s, median of last 5 samples
+- RTT sampling: Ping every 3s, median of last 12 samples
 
 ### Connection
 - Auto-reconnect: Exponential backoff (1s → 15s max)

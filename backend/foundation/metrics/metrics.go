@@ -254,7 +254,7 @@ var (
 
 // Bot scheduler metrics — observability for the play-bot Scheduler goroutine
 // (see backend/business/core/bot/scheduler.go and
-// docs/plans/2026-04-16-001-feat-play-bot-plan.md, Unit 5).
+// docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md, Unit 5).
 //
 // All counters are house-flow safety signals: BotInsertFailureTotal /
 // BotInsertPanicTotal sustained increments indicate the scheduler is failing

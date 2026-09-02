@@ -1,9 +1,11 @@
 ---
 title: "feat: Color-code top-5 leaderboard players' coin highlights"
 type: feat
-status: active
+status: completed
 date: 2026-04-18
-origin: docs/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md
+origin: docs/archive/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md
+reviewed: 2026-09-02
+outcome: "Shipped in a71d63f + 02e8737, merged 6b6248c."
 ---
 
 # Color-Code Top-5 Leaderboard Players' Coin Highlights
@@ -14,7 +16,7 @@ Top-5 heat leaderboard players' newly dropped coins will render with rank-colore
 
 ## Problem Frame
 
-Players see a heat leaderboard but can't connect those names to activity on the board. All coins look identical regardless of who dropped them. This makes competition feel abstract. Rank-colored coin highlights create direct visual feedback of competitive behavior. (see origin: `docs/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md`)
+Players see a heat leaderboard but can't connect those names to activity on the board. All coins look identical regardless of who dropped them. This makes competition feel abstract. Rank-colored coin highlights create direct visual feedback of competitive behavior. (see origin: `docs/archive/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md`)
 
 ## Requirements Trace
 
@@ -269,7 +271,7 @@ CoinMeshManager:
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md](docs/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md)
+- **Origin document:** [docs/archive/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md](docs/archive/brainstorms/2026-04-18-leaderboard-coin-colors-requirements.md)
 - Sponsor coin pattern: `game/client/src/scene/CoinMeshManager.ts:55-57, 573-669`
 - Current highlight system: `game/client/src/scene/CoinMeshManager.ts:65-74, 197-845`
 - Heat update flow: `game/client/src/App.tsx:304-322`

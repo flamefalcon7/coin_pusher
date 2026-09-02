@@ -263,9 +263,9 @@ Paste the output. Summarize: "Bot inserts: X play coins. Bot rewards: Y cash. Ne
 
 | What | Path |
 |---|---|
-| English plan | `docs/plans/2026-04-16-001-feat-play-bot-plan.md` |
-| Chinese plan | `docs/plans/2026-04-16-001-feat-play-bot-plan-zh.md` |
-| Product requirements | `docs/brainstorms/2026-04-16-play-bot-requirements.md` |
+| English plan | `docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md` |
+| Chinese plan | `docs/archive/plans/2026-04-16-001-feat-play-bot-plan-zh.md` |
+| Product requirements | `docs/archive/brainstorms/2026-04-16-play-bot-requirements.md` |
 | Bot core (config, model, refill) | `backend/business/core/bot/` |
 | Scheduler goroutine | `backend/business/core/bot/scheduler.go` |
 | Admin CLI source | `backend/app/tooling/admin/bot.go` |

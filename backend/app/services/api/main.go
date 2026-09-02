@@ -360,7 +360,7 @@ func run() error {
 	// pattern: ctx + WaitGroup, cancel before db.Close.
 	//
 	// See backend/business/core/bot/scheduler.go and
-	// docs/plans/2026-04-16-001-feat-play-bot-plan.md (Unit 5).
+	// docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md (Unit 5).
 	botScheduler := bot.NewScheduler(bot.SchedulerDeps{
 		BotCore:       botCore,
 		GameCore:      gameCore,

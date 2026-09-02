@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-02.** Rev B proof-of-concept scene spec. Nearly every number here (slot count, platform size, pusher amplitude, coin radius, friction, wall height, camera) no longer matches `game/shared/src/types.ts`, which is the source of truth. Kept for history only.
+
 Scene.md
 
 # Scene Spec: Coin Pusher (Rev B)

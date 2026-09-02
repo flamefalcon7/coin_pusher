@@ -3,6 +3,8 @@ title: "feat: Sponsor Management UI"
 type: feat
 status: completed
 date: 2026-03-30
+reviewed: 2026-09-02
+outcome: "Shipped in 108bc25. Pages exist but are commented out of App.tsx since 6d95ff7 (hidden until deposit gate)."
 ---
 
 # feat: Sponsor Management UI

@@ -9,7 +9,7 @@ import { isDebugEnabled } from "../net/debugConfig";
  * Runtime debug API exposed on `window.__coinpusher_debug` so the AI agent
  * (via Chrome DevTools MCP) can read ground-truth numbers and inject actions
  * instead of asking a human to eyeball the frame. See WS5 / self-verification
- * skill and the agent-perception plan (docs/plans/2026-07-07-001).
+ * skill and the agent-perception plan (docs/archive/plans/2026-07-07-001).
  *
  * Only installed when `?debug=1` — never present in a normal session.
  */

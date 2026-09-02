@@ -18,7 +18,7 @@ import (
 // session length) are intentionally Go-level constants in the scheduler — not
 // DB rows — so they can't be tuned out of a tested range without a deploy.
 //
-// See docs/plans/2026-04-16-001-feat-play-bot-plan.md (decision D9).
+// See docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md (decision D9).
 const (
 	ConfigKeyKillSwitch      = "kill_switch"
 	ConfigKeyRefillAmount    = "refill_amount"

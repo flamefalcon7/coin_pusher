@@ -68,3 +68,6 @@ backend/heatsim
 # ssl
 backend/zarf/keys/
 .claude/settings.local.json
+
+# Local screenshot scratch from agent perception tooling
+.screenshots/

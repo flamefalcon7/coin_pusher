@@ -113,7 +113,7 @@ func New(opts ...Option) *HeatEngine {
 // without sleeping. Production code should use New().
 //
 // Defaults are the "B+C combo" calibrated by heatsim against PROD bot
-// envelopes (see docs/plans/2026-04-26-001-feat-heat-combo-bc-alpha-coindecay-plan.md):
+// envelopes (see docs/archive/plans/2026-04-26-001-feat-heat-combo-bc-alpha-coindecay-plan.md):
 //   - alpha=0.95: near-linear share-by-eff so 1-coin heartbeats can't
 //     extract a disproportionate share via decayed^α boosting tiny inputs.
 //   - coinHalfLife=30: every 30 coins from OTHERS halves a player's heat,

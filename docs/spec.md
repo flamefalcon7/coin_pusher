@@ -673,7 +673,7 @@ Players need a blockchain address to deposit USDC. The onboarding flow:
 **Phase 1**: Base chain only (EVM, low fees, Coinbase ecosystem)
 
 **Future expansion**: Support additional chains:
-- **SUI** — Move-based, existing SDK wrapper in `foundation/blockchain/sui/`
+- ~~**SUI**~~ — dropped; backend now targets Base (EVM) via `foundation/ethereum/` + `foundation/ethrpc/`
 - **Solana** — high throughput, large crypto-gaming audience
 - Additional EVM chains as needed
 

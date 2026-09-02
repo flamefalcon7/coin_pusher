@@ -2,7 +2,15 @@
 
 **Date**: 2026-02-28
 **Scope**: Full codebase — Go backend, TypeScript game server, TypeScript client, shared protocol
-**Codebase**: ~28K lines across 120+ source files
+**Codebase**: ~28K lines across 120+ source files (at audit time; ~44K non-test lines as of 2026-09)
+
+> **Status update 2026-09-02.** This report is a point-in-time snapshot from 2026-02-28. Findings verified
+> against the code since then:
+> - **Fixed**: P1-1 (slot/wheel now use `node:crypto` `randomInt`, ADR D-005), P1-4 (`subtle.ConstantTimeCompare`
+>   in `mid/auth.go`), P1-5, P1-6 (`http.MaxBytesReader` 64KiB), P1-7 (`ws.MaxBatchCount = 100`),
+>   P1-10 (`QueryByIDForUpdate` in withdrawals), P1-13 (`RETURNING balance_*`), P1-19 (generic readiness body).
+> - **Still open**: P1-15 (user creation not transactional), P1-18 (CORS wildcard fallback in `main.go`).
+> - Line numbers below have drifted; grep the identifier instead of trusting the `file:line`.
 
 ---
 

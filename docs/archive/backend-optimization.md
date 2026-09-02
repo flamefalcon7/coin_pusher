@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-02.** Optimization plan from early 2026. Priorities 1 and 2 are done (`Connection.CanBatchInsert`, single-tx `ProcessGameInsert`); priority 3 premise changed (`GetShareForUser` was rewritten allocation-free); priorities 4 and 5 were never built and NATS delivery moved to the transactional outbox (`business/core/outbox`). Kept for history only.
+
 # Backend Optimization Plan
 
 ## Context

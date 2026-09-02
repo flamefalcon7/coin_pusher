@@ -2,27 +2,38 @@
 
 ## Tech Stack
 
-- Game Server: TypeScript, Rapier 3D physics (WASM), WebSocket + MessagePack
-- Client: TypeScript, BabylonJS, Vite
-- Shared: TypeScript protocol types and config
-- Backend: Go 1.22+, PostgreSQL, chi router, Zap logger (Ardan Labs layout)
+- Game Server: TypeScript, Rapier 3D physics (WASM), WebSocket + MessagePack, NATS JetStream to backend
+- Client: TypeScript, BabylonJS, React 18, Vite
+- Shared: TypeScript protocol types and config; protobuf via buf (`game/shared/src/gen/`)
+- Backend: Go 1.24, PostgreSQL, chi router, Zap logger, NATS (Ardan Labs layout)
+- Chain: Base (EVM). USDC deposits via HD-derived addresses; no SUI code remains
 - Monorepo: pnpm workspace (TS) + Go module (backend)
 
 ## Project Structure
 
-- `game/server/src/` - Game server (physics, game loop, WebSocket)
-- `game/client/src/` - Game client (rendering, interpolation, UI)
-- `game/shared/src/` - Shared TypeScript protocol types and config
-- `backend/` - Go backend service (Ardan Labs layout)
-  - `app/services/api/` - Main API server entry point & HTTP handlers
-  - `app/tooling/admin/` - CLI for DB migration/seeding
-  - `app/tooling/indexer/` - SUI chain event listener
-  - `business/core/user/` - User domain (auth, login, balance)
-  - `business/core/accounting/` - Ledger domain (deposit, withdraw, game events)
-  - `business/web/` - Web framework (auth, middleware, response helpers)
-  - `foundation/` - Reusable libs (database, logger, keystore, SUI SDK wrapper)
-  - `zarf/` - Config & deploy (Docker, K8s)
-- `docker-compose*.yml` - Deployment configs
+- `game/server/src/` - Game server
+  - `game/` - GameLoop, TickScheduler, CoinManager, DropScheduler, StackSpawner, SponsorManager, GameState
+  - `physics/` - Rapier world + scene builder
+  - `simulation/` - Headless SimLoop, RNG, economy/RTP simulator (`run.ts` CLI via Makefile)
+  - `nats/` - NATSClient (commands in, events out)
+- `game/client/src/` - Game client
+  - `scene/` - BabylonJS rendering, VFX, debug tooling
+  - `net/` - WebSocket, state buffer, interpolation, REST clients
+  - `ui/`, `pages/` - React UI and routed pages
+  - `editor/` - In-browser scene editor
+- `game/shared/src/` - Shared protocol types, config, generated protobuf
+- `backend/` - Go backend (Ardan Labs layout)
+  - `app/services/api/` - API server entry point + HTTP handlers
+  - `app/tooling/admin/` - CLI: DB migration, seeding, bot subcommands
+  - `app/tooling/indexer/` - Polls Base chain for USDC deposits
+  - `app/tooling/executor/` - Processes approved withdrawals, sweeps deposit addresses
+  - `app/tooling/heatsim/` - Monte-Carlo simulator for the heat engine
+  - `business/core/` - Domains: user, accounting (ledger), deposit, inventory, progress, sponsor, bot, heat, game, outbox (transactional outbox → NATS). Each domain owns its `stores/`
+  - `business/web/` - auth, middleware (`mid/`), v1 response helpers, `ws/` hub relaying game state
+  - `foundation/` - database, logger, keystore (JWT RSA), metrics, nats, ethereum (ERC-20), ethrpc (multi-provider RPC failover), wallet (BIP-32 HD)
+- `deploy/` - nginx, prometheus, grafana, fail2ban configs + droplet setup scripts
+- `docker-compose.{dev,prod,game,services}.yml` - Deployment configs
+- `docs/` - see sections below. `docs/archive/` holds shipped or abandoned plans; historical only, never a source of current truth
 
 ## Definition of Done (verification gate)
 

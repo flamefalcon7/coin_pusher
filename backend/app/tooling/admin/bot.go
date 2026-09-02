@@ -13,7 +13,7 @@
 // Mirrors the dispatcher shape in dlq.go: plain stdlib, no cobra, errors
 // returned with context for main.go to log+exit.
 //
-// See docs/plans/2026-04-16-001-feat-play-bot-plan.md (Unit 6).
+// See docs/archive/plans/2026-04-16-001-feat-play-bot-plan.md (Unit 6).
 package main
 
 import (

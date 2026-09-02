@@ -6,9 +6,9 @@ This runbook flips `bot_config.kill_switch` from `on` back to `off` and ramps th
 
 - `30f8505` — disabled the guaranteed floor (closed the original heartbeat exploit class).
 - `1e0da1c` — flipped α=0.95 + activity-driven decay (closed the residual leak class).
-- `557cd6b` — added per-user RTP monitoring + P1 alert (this runbook gates on it).
+- `4de533e` — added per-user RTP monitoring + P1 alert (this runbook gates on it).
 
-> **Plan:** [`docs/plans/2026-05-08-001-feat-bot-reenable-prep-plan.md`](../plans/2026-05-08-001-feat-bot-reenable-prep-plan.md).
+> **Plan:** [`docs/archive/plans/2026-05-08-001-feat-bot-reenable-prep-plan.md`](../archive/plans/2026-05-08-001-feat-bot-reenable-prep-plan.md).
 
 ---
 
@@ -195,7 +195,7 @@ The new (24h) alert covers a different attack surface than the existing (1h) ale
 
 ## See Also
 
-- Plan: [`docs/plans/2026-05-08-001-feat-bot-reenable-prep-plan.md`](../plans/2026-05-08-001-feat-bot-reenable-prep-plan.md)
+- Plan: [`docs/archive/plans/2026-05-08-001-feat-bot-reenable-prep-plan.md`](../archive/plans/2026-05-08-001-feat-bot-reenable-prep-plan.md)
 - Heat formula history: [`docs/heat-system.md`](../heat-system.md)
 - Monitoring overview: [`docs/monitoring.md`](../monitoring.md)
 - Deployment procedures: [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md)

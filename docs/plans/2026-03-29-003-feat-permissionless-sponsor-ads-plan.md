@@ -1,9 +1,11 @@
 ---
 title: "feat: Permissionless Sponsor Ads"
 type: feat
-status: active
+status: partial
 date: 2026-03-29
-origin: docs/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md
+origin: docs/archive/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md
+reviewed: 2026-09-02
+outcome: "Core shipped (dfa368a, billboard fix a16b3dc). Quota/config/bonus publishing never wired: sponsor.NewPublisher and ConnectWithJetStream have no callers. UI hidden until deposit gate (6d95ff7)."
 ---
 
 # feat: Permissionless Sponsor Ads
@@ -32,7 +34,7 @@ origin: docs/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md
 
 Add a permissionless sponsorship system where any token with liquidity on a supported chain can sponsor the coin pusher game. Sponsors deposit tokens into a reward pool, upload ad creatives, and receive in-game exposure through branded coins, bonus drop events, and 3D ad placements. Players earn sponsor tokens by pushing sponsor coins off the front edge, distributed via the existing heat-based system.
 
-(see origin: `docs/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md`)
+(see origin: `docs/archive/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md`)
 
 ## Problem Statement
 
@@ -552,7 +554,7 @@ Player inserts coins → Go backend debits balance + adds heat → NATS → game
 
 ### Origin
 
-- **Origin document:** [docs/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md](docs/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md)
+- **Origin document:** [docs/archive/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md](docs/archive/brainstorms/2026-03-29-permissionless-sponsor-ads-requirements.md)
 - Key decisions carried forward: permissionless over curated (R1), custom implementation over ad SDK, toon-shader integration for all sponsor visuals (R14), dual appearance model — mixed coins + bonus drops (R4-R10), 3-5 sponsor capacity (R17), no mobile-specific ad adaptation (R16)
 
 ### Internal References

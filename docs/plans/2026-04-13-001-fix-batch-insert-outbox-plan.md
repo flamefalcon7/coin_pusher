@@ -1,9 +1,11 @@
 ---
 title: "fix: Eliminate batch-insert coin-loss via Postgres outbox"
 type: fix
-status: active
+status: partial
 date: 2026-04-13
 deepened: 2026-04-13
+reviewed: 2026-09-02
+outcome: "Units 1-7 shipped (9367e64..78ae50f). Unit 8 cleanup pending: RefundBatchInsert/ProcessGameInsertRefund and BACKEND_OUTBOX_ENABLED flag still in code; no outbox Grafana panel."
 ---
 
 # fix: Eliminate batch-insert coin-loss via Postgres outbox
@@ -65,7 +67,7 @@ This is not 2PC — Postgres is the single source of truth; NATS publish is now 
 
 ### Institutional Learnings
 
-- `docs/plans/2026-04-12-002-fix-unified-wallet-review-findings-plan.md` — prior round of review on this exact refund code path. Documents why parse-errors on `result.PlayDebited`/`CashDebited` now fail loudly (so the outbox removal preserves observability on that path until handler is simplified).
+- `docs/archive/plans/2026-04-12-002-fix-unified-wallet-review-findings-plan.md` — prior round of review on this exact refund code path. Documents why parse-errors on `result.PlayDebited`/`CashDebited` now fail loudly (so the outbox removal preserves observability on that path until handler is simplified).
 - Existing convention: `accounting_logs.reference_id` is the idempotency key; uniqueness is enforced. Outbox `reference_id` must use the **same** value as the accounting log so the game server's downstream dedup (if any) and log-outbox cross-lookup both work.
 - Project memory — "Never split serialization boundaries across agents": the outbox payload encoding (msgpack for `BatchInsertPayload`) must be owned by one place, ideally a single helper in `business/web/ws/` reused by both writer (accounting tx path) and reader (drainer).
 
@@ -508,5 +510,5 @@ Key invariants to preserve while reviewing each implementation unit:
 ## Sources & References
 
 - Affected files today: `backend/business/core/accounting/accounting.go`, `backend/business/core/game/game.go`, `backend/business/web/ws/handler.go`, `backend/app/services/api/handlers/v1/gamegrp/gamegrp.go`, `backend/foundation/metrics/metrics.go`, `backend/zarf/docker/database/schema.sql`, `deploy/prometheus/rules/alerts.yml`, `deploy/grafana/provisioning/alerting/alerts.yml`.
-- Related prior plan: `docs/plans/2026-04-12-002-fix-unified-wallet-review-findings-plan.md` — documents the current refund path's observability hardening, which this plan makes obsolete (Unit 6 removes that code; Unit 8 deletes it).
+- Related prior plan: `docs/archive/plans/2026-04-12-002-fix-unified-wallet-review-findings-plan.md` — documents the current refund path's observability hardening, which this plan makes obsolete (Unit 6 removes that code; Unit 8 deletes it).
 - Related metric: `coinpusher_batch_insert_refund_failures_total` in `backend/foundation/metrics/metrics.go:138`; corresponding P0 alert at `deploy/prometheus/rules/alerts.yml:60` and `deploy/grafana/provisioning/alerting/alerts.yml:155`.

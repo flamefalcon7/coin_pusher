@@ -1,6 +1,9 @@
 ---
 date: 2026-03-29
 topic: permissionless-sponsor-ads
+status: superseded
+reviewed: 2026-09-02
+outcome: "Became docs/plans/2026-03-29-003 (partial) and 2026-03-30-001 (completed)."
 ---
 
 # Permissionless Sponsor Ads

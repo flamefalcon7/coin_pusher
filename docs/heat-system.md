@@ -78,10 +78,11 @@ lambda  = ln(2) / halfLife
 | Parameter | Value | Location | Effect |
 |-----------|-------|----------|--------|
 | `HALF_LIFE` | 180s | `heat.go`, `shared/types.ts` | How fast heat decays. Lower = more recency bias |
-| `ALPHA` | 0.7 | `heat.go`, `shared/types.ts` | Diminishing returns. Lower = whales get less edge |
-| `GUARANTEED_MIN` | 0.05 | `heat.go`, `shared/types.ts` | Floor share per active player. At 20+ players, reverts to even split |
-| `DROP_INTERVAL_TICKS` | 2 | `shared/types.ts` | Ticks between coin drops. At 30Hz = ~15 drops/sec |
-| `MAX_QUEUE` | 100 | `shared/types.ts` | Max coins queued per player |
+| `ALPHA` | 0.95 | `heat.go` (`defaultAlpha`) | Diminishing returns. Lower = whales get less edge. `shared/types.ts` still carries 0.7 but nothing reads it |
+| `GUARANTEED_MIN` | 0 (prod) | `heat.go` | Floor is disabled in production (`guaranteed = 0`); opt-in via `WithGuaranteed`. The floor math below is historical |
+| `COIN_HALF_LIFE` | 30 coins | `heat.go` (`WithCoinHalfLife`) | Activity-driven decay: heat also decays per coin inserted table-wide, not only per wall-clock time |
+| `DROP_INTERVAL_TICKS` | 4 | `shared/types.ts` | Ticks between coin drops. At 30Hz = ~7.5 drops/sec per slot |
+| `SLOT_CAP` | 500 | `shared/types.ts` | Max coins queued per slot |
 | `FRONT_Z_THRESHOLD` | 0.55 | `SLOT_MACHINE_CONFIG.Z_MAX_THRESHOLD` | z > this = front edge (player reward) |
 | `REWARD_FLUSH_INTERVAL` | 10s | `main.go` | How often accumulated rewards are written to DB |
 | `BROADCAST_INTERVAL` | 1s | `main.go` | How often heat shares are broadcast to clients |
@@ -94,7 +95,7 @@ Coins are classified when they leave the play area:
 |------|-----------|---------|
 | `front` | `z > 0.55` | Distributed to players via heat shares |
 | `left_wall` | `x < -0.5 && z < 0.55` | House profit + slot machine counter |
-| `right_wall` | `x > 0.5 && z < 0.55` | House profit |
+| `right_wall` | `x > 0.5 && z < 0.55` | House profit + jackpot wheel counter |
 | `other` | Everything else | House profit |
 
 ## NATS Topics
@@ -115,4 +116,4 @@ Coins are classified when they leave the play area:
 - **Ephemeral heat** — in-memory only, no DB persistence. Half-life is 3 min so state is inherently short-lived
 - **Batch reward flush** — accumulate fractional rewards, write to DB every 10s to reduce writes
 - **Coin highlighting** — client shows own coins in cyan for 2s via separate thin-instance mesh, then reverts to theme color
-- **Bots excluded from 5% floor** — `PlayerHeat.IsBot` flag (set via `AddHeatForBot`) zeros the guaranteed-floor contribution for server-controlled NPC accounts, preventing them from absorbing reward share with near-zero investment. Flag is last-write-wins across `AddHeat` / `AddHeatForBot` calls, so a mis-flagged real player recovers on their next legitimate insert.
+- **Bots excluded from the guaranteed floor** (moot in prod, where the floor is 0) — `PlayerHeat.IsBot` flag (set via `AddHeatForBot`) zeros the guaranteed-floor contribution for server-controlled NPC accounts, preventing them from absorbing reward share with near-zero investment. Flag is last-write-wins across `AddHeat` / `AddHeatForBot` calls, so a mis-flagged real player recovers on their next legitimate insert.

@@ -1,3 +1,10 @@
+---
+date: 2026-04-16
+status: superseded
+reviewed: 2026-09-02
+outcome: "Became docs/plans/2026-04-16-001, shipped."
+---
+
 # Play Bot — Requirements
 
 **Date:** 2026-04-16
