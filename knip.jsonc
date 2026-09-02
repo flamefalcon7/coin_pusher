@@ -1,0 +1,43 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  // Dead-code gate. `pnpm knip` locally, also runs in CI.
+  // Unused *files* and *dependencies* fail the build. Unused exports/types
+  // only warn: much of the protocol surface is exported on purpose.
+  "rules": {
+    "exports": "warn",
+    "types": "warn",
+    "enumMembers": "warn",
+    "classMembers": "warn",
+    "duplicates": "warn"
+  },
+  "workspaces": {
+    ".": {
+      // Root holds only workspace config and the buf binary; no source.
+      "entry": [],
+      "project": []
+    },
+    "game/client": {
+      "entry": ["scripts/*.mjs"],
+      "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
+      // Sponsor management UI is parked, not dead: App.tsx has the imports
+      // commented out "hidden until deposit gate". Wire it up or delete it,
+      // then drop these ignores.
+      "ignore": [
+        "src/pages/AdminSponsorsPage.tsx",
+        "src/pages/SponsorPage.tsx",
+        "src/ui/CampaignCard.tsx",
+        "src/ui/SponsorBalances.tsx"
+      ]
+    },
+    "game/server": {
+      // run.ts is the simulation CLI invoked from the Makefile.
+      "entry": ["src/simulation/run.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "game/shared": {
+      "project": ["src/**/*.ts"],
+      // protoc-gen-es is a buf plugin binary (buf.gen.yaml), invisible to knip.
+      "ignoreDependencies": ["@bufbuild/protoc-gen-es"]
+    }
+  }
+}

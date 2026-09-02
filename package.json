@@ -7,7 +7,8 @@
     "dev": "pnpm -r --parallel dev",
     "dev:shared": "pnpm --filter @coin-pusher/shared dev",
     "build": "pnpm -r build",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "knip": "knip"
   },
   "keywords": [
     "coin-pusher",
@@ -18,8 +19,9 @@
   "license": "MIT",
   "packageManager": "pnpm@9.12.3",
   "dependencies": {
-    "@bufbuild/buf": "^1.65.0",
-    "@bufbuild/protobuf": "^2.11.0",
-    "@bufbuild/protoc-gen-es": "^2.11.0"
+    "@bufbuild/buf": "^1.65.0"
+  },
+  "devDependencies": {
+    "knip": "5"
   }
 }
