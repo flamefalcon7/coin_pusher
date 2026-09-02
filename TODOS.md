@@ -114,10 +114,9 @@ retention + metric names, `DEPLOYMENT.md` RPC env names, `security-audit.md` sta
 
 ## Code — dead or dormant values found in the same audit
 
-- `backend/business/core/sponsor/publisher.go` `NewPublisher` and `backend/foundation/nats/jetstream.go`
-  `ConnectWithJetStream` have zero callers (sponsor quota/config/bonus publishing never wired). Either
-  wire them per the sponsor plan or delete. A Go dead-code gate (`golang.org/x/tools/cmd/deadcode`) in CI
-  would catch the next one; knip only covers TypeScript.
+- ~~Go dead code (sponsor publisher, JetStream connect, unused Core wrappers)~~ — removed 2026-09-02;
+  `deadcode` now runs in CI (`go-tests` job).
+- `gofmt -l` flags 17 backend files (pre-existing). Reformat in one commit, then add `gofmt -l` to CI.
 - `game/shared/src/types.ts` `HEAT_CONFIG.ALPHA: 0.7` is unread; `heat.go` uses 0.95.
 - `game/shared/src/types.ts` `PLATFORM.TILT_ANGLE: 2` is unread (the rising-platform plan that assumed it was dropped).
 - `game/client/src/pages/{AdminSponsorsPage,SponsorPage}.tsx`, `ui/{CampaignCard,SponsorBalances}.tsx`:

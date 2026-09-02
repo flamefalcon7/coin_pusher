@@ -46,3 +46,10 @@ jobs:
       # Integration tests self-skip when OUTBOX_TEST_PG_DSN etc. are unset,
       # so this runs unit tests only — no services required.
       - run: go test ./...
+
+      # Dead-code gate (mirror of knip for TS). Tests and the integration tag count as roots.
+      # Pinned to the x/tools version in the module cache; bump deliberately.
+      - name: deadcode
+        run: |
+          out=$(go run golang.org/x/tools/cmd/deadcode@v0.41.0 -test -tags integration ./...)
+          if [ -n "$out" ]; then echo "$out"; echo "::error::unreachable Go code found; delete it or wire it up"; exit 1; fi

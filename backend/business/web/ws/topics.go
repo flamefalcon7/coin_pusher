@@ -29,9 +29,6 @@ func TopicWheelSpin(room string) string            { return "game." + room + ".w
 func TopicWheelCounter(room string) string         { return "game." + room + ".wheel_counter" }
 func TopicKeyCoinFrontDespawn(room string) string  { return "game." + room + ".evt.key_coin_front_despawn" }
 func TopicKeyCoinDraw(room string) string          { return "game." + room + ".key_coin_draw" }
-func TopicInventoryUpdate(room string) string      { return "game." + room + ".inventory_update" }
 func TopicRewardNotify(room string) string         { return "game." + room + ".reward_notify" }
 func TopicSponsorConfig(room string) string        { return "game." + room + ".sponsor_config" }
-func TopicSponsorQuota(room string) string         { return "game." + room + ".cmd.sponsor_quota" }
-func TopicSponsorQuotaConsumed(room string) string { return "game." + room + ".evt.sponsor_quota_consumed" }
 func TopicSponsorBonusDrop(room string) string     { return "game." + room + ".cmd.sponsor_bonus" }

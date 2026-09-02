@@ -138,11 +138,6 @@ func (c *Core) UpdateProgress(ctx context.Context, progressID uuid.UUID, up Upda
 	return p, nil
 }
 
-// QueryProgressByID retrieves a single progress definition.
-func (c *Core) QueryProgressByID(ctx context.Context, progressID uuid.UUID) (Progress, error) {
-	return c.storer.QueryProgressByID(ctx, progressID)
-}
-
 // QueryAllProgress retrieves all progress definitions.
 func (c *Core) QueryAllProgress(ctx context.Context) ([]Progress, error) {
 	return c.storer.QueryAllProgress(ctx)
