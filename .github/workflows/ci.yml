@@ -24,6 +24,9 @@ jobs:
 
       - run: pnpm -r test
 
+      # Dead-code gate: unused files/dependencies fail, unused exports only warn (knip.jsonc)
+      - run: pnpm knip
+
   go-tests:
     name: Go tests (backend)
     runs-on: ubuntu-latest
