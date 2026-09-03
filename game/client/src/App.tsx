@@ -200,6 +200,12 @@ function Game({ token, account, address, onAuthFailure, onRequestLogin }: GamePr
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("position");
 
+  // The scene is built once; keep its admin camera in sync with logins that
+  // happen mid-session (passcode admin login from spectator mode).
+  useEffect(() => {
+    sceneManagerRef.current?.setAdmin(account?.role === "admin");
+  }, [account?.role]);
+
   useEffect(() => {
     if (!canvasRef.current) return;
 

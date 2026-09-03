@@ -117,6 +117,7 @@ services:
       - BACKEND_DB_NAME=coinpusher
       - BACKEND_DB_DISABLE_TLS=true
       - BACKEND_AUTH_DEV_MODE=true
+      - BACKEND_AUTH_ADMIN_PASSCODE=${ADMIN_PASSCODE:-}
       - BACKEND_GAME_API_KEY=dev-secret
       - BACKEND_NATS_URL=nats://nats:4222
       - IDLE_TEST=${IDLE_TEST:-0}

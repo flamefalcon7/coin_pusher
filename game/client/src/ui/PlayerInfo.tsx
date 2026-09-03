@@ -44,7 +44,7 @@ function truncAddr(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-export function PlayerInfo({ balancePlay, balanceCash, displayName, address, role: _role, onLogout }: PlayerInfoProps) {
+export function PlayerInfo({ balancePlay, balanceCash, displayName, address, role, onLogout }: PlayerInfoProps) {
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -88,7 +88,7 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, rol
       {isMobile && (
         <button className="player-info-collapse-btn" onClick={() => setCollapsed(true)}>▴</button>
       )}
-      <div className="player-info-name">{displayName ?? truncAddr(address)}</div>
+      <div className="player-info-name">{displayName ?? (address ? truncAddr(address) : role === "admin" ? "Admin" : "")}</div>
       <div className="player-info-balances">
         <span className="player-info-balance">
           <span className="player-info-label">Balance <InfoTip text={WALLET_INFO_TEXT} position="bottom" /></span> {fmtTotal(balancePlay, balanceCash)}
@@ -101,7 +101,10 @@ export function PlayerInfo({ balancePlay, balanceCash, displayName, address, rol
         <Link to="/profile" className="player-info-action-btn player-info-profile">Profile</Link>
         <Link to="/progress" className="player-info-action-btn player-info-missions">Missions</Link>
         <Link to="/deposit" className="player-info-action-btn player-info-deposit">Deposit</Link>
-        <Link to="/withdraw" className="player-info-action-btn player-info-withdraw">Withdraw</Link>
+        {/* Withdrawals are wallet-signed; a wallet-less (passcode admin) session can't use them. */}
+        {address && (
+          <Link to="/withdraw" className="player-info-action-btn player-info-withdraw">Withdraw</Link>
+        )}
         {/* Sponsor UI disabled until deposit gate is implemented */}
         <button className="player-info-logout" onClick={onLogout}>
           Logout

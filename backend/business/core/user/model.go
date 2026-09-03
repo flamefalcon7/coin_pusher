@@ -85,7 +85,14 @@ const (
 	ProviderTypeEmail  = "email"
 	ProviderTypeGoogle = "google"
 	ProviderTypeBot    = "bot"
+	// ProviderTypePasscode is the shared-secret admin login (POST
+	// /v1/auth/admin/login). Exactly one account uses it (provider_uid =
+	// PasscodeAdminUID); it is force-promoted to RoleAdmin on every login.
+	ProviderTypePasscode = "passcode"
 )
+
+// PasscodeAdminUID is the provider_uid of the single passcode-admin account.
+const PasscodeAdminUID = "admin"
 
 // UpdateBalance describes an atomic balance change.
 type UpdateBalance struct {

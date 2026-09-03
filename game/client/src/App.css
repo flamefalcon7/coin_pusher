@@ -536,6 +536,32 @@
   opacity: 0.5;
 }
 
+/* Admin passcode entry — deliberately quiet; operators know it's there. */
+.wallet-login-admin-toggle {
+  margin-top: 14px;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: rgba(245, 230, 184, 0.35);
+  font-family: 'Baloo 2', cursive, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wallet-login-admin-toggle:hover {
+  color: rgba(245, 230, 184, 0.7);
+}
+
+.wallet-login-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(245, 230, 184, 0.12);
+}
+
 /* ── Spectator Mode ──────────────────────────────────────────────────── */
 
 .spectator-banner {

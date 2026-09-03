@@ -93,6 +93,10 @@ type config struct {
 		ActiveKID  string `conf:"default:default"`
 		Issuer     string `conf:"default:coin-pusher"`
 		DevMode    bool   `conf:"default:false"`
+		// AdminPasscode enables POST /v1/auth/admin/login: anyone presenting
+		// this secret is logged in as the passcode-admin account with
+		// role=admin. Empty (default) leaves the route unregistered.
+		AdminPasscode string `conf:"mask"`
 	}
 	Game struct {
 		APIKey string `conf:"default:dev-secret,mask"`
@@ -146,6 +150,10 @@ func run() error {
 
 	if cfg.Game.APIKey == "dev-secret" && !cfg.Auth.DevMode {
 		return fmt.Errorf("BACKEND_GAME_APIKEY must be set in production (not default)")
+	}
+
+	if pc := cfg.Auth.AdminPasscode; pc != "" && len(pc) < 4 {
+		return fmt.Errorf("BACKEND_AUTH_ADMIN_PASSCODE must be at least 4 characters")
 	}
 
 	// -------------------------------------------------------------------------
@@ -393,7 +401,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 	// Routes
-	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, sponsorCore, nc, wsHandler, cfg.Outbox.Enabled)
+	apiMux := buildAPIMux(log, db, a, cfg.Game.APIKey, cfg.Web.CORSOrigins, cfg.Auth.DevMode, cfg.Auth.AdminPasscode, userCore, acctCore, gameCore, heatEngine, inventoryCore, depositCore, progressCore, sponsorCore, nc, wsHandler, cfg.Outbox.Enabled)
 
 	// -------------------------------------------------------------------------
 	// Debug server
@@ -1204,6 +1212,7 @@ func buildAPIMux(
 	gameAPIKey string,
 	corsOrigins string,
 	devMode bool,
+	adminPasscode string,
 	userCore *user.Core,
 	acctCore *accounting.Core,
 	gameCore *game.Core,
@@ -1246,7 +1255,7 @@ func buildAPIMux(
 	mux.Get("/ws", wsHandler.ServeHTTP)
 
 	// V1 routes.
-	userGrp := usergrp.New(userCore, a)
+	userGrp := usergrp.New(userCore, a).WithAdminPasscode(adminPasscode)
 	// Same gate the WS handler enforces — both transports must refuse inserts
 	// together when the game server's heartbeat goes stale (D-006).
 	gameGrp := gamegrp.New(gameCore, heatEngine, nc, outboxEnabled, wsHandler.Liveness())
@@ -1257,6 +1266,10 @@ func buildAPIMux(
 	mux.Post("/v1/auth/wallet/login", mid.Errors(log, userGrp.WalletLogin))
 	if devMode {
 		mux.Post("/v1/auth/login", mid.Errors(log, userGrp.Login))
+	}
+	if adminPasscode != "" {
+		log.Infow("admin passcode login enabled", "route", "/v1/auth/admin/login")
+		mux.Post("/v1/auth/admin/login", mid.Errors(log, userGrp.AdminLogin))
 	}
 
 	// JWT-protected

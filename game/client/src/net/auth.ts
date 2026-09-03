@@ -91,6 +91,31 @@ async function walletLogin(
 }
 
 /**
+ * Admin passcode login (POST /v1/auth/admin/login). Exchanges the operator's
+ * shared passcode for an admin JWT — no wallet involved, so the saved address
+ * stays empty. The route only exists when the backend has a passcode configured.
+ */
+export async function adminLogin(apiBase: string, passcode: string): Promise<AuthResult> {
+  const res = await fetch(`${apiBase}/v1/auth/admin/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ passcode }),
+  });
+  if (res.status === 401) throw new Error("Wrong passcode");
+  if (res.status === 404) throw new Error("Admin login is not enabled on this server");
+  if (res.status === 429) throw new Error("Too many attempts — try again later");
+  if (!res.ok) throw new Error(`Admin login failed: ${res.status}`);
+
+  const result: AuthResult = await res.json();
+  saveAuth(result.token, result.account);
+  // Replacing a wallet session: drop its address and release the wallet
+  // connection, same as clearAuth does.
+  sessionStorage.removeItem(ADDRESS_KEY);
+  disconnectWalletConnect().catch(() => {});
+  return result;
+}
+
+/**
  * Full wallet login flow using a pre-connected wallet:
  * 1. Use provided address + sign function from wallet provider
  * 2. fetchNonce → get server nonce + message

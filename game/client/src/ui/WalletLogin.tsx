@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { connectAndSign, type AuthResult } from "../net/auth";
+import { adminLogin, connectAndSign, type AuthResult } from "../net/auth";
 import {
   connectInjected,
   connectWalletConnect,
@@ -21,6 +21,10 @@ export function WalletLogin({ apiBase, onSuccess, onClose }: WalletLoginProps) {
   const [activeMethod, setActiveMethod] = useState<WalletMethod | null>(null);
   const [error, setError] = useState<string>("");
   const [referralCode, setReferralCode] = useState("");
+  const [adminMode, setAdminMode] = useState(false);
+  const [passcode, setPasscode] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminError, setAdminError] = useState("");
 
   const handleConnect = async (method: WalletMethod) => {
     setState("connecting");
@@ -43,7 +47,23 @@ export function WalletLogin({ apiBase, onSuccess, onClose }: WalletLoginProps) {
     }
   };
 
-  const busy = state === "connecting" || state === "signing";
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passcode) return;
+    setAdminBusy(true);
+    setAdminError("");
+    try {
+      onSuccess(await adminLogin(apiBase, passcode));
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  // One login in flight at a time — wallet and passcode both write the same
+  // sessionStorage keys, so they must not race.
+  const busy = state === "connecting" || state === "signing" || adminBusy;
   const hasInjected = isInjectedWalletAvailable();
   const hasWC = isWalletConnectAvailable();
 
@@ -102,6 +122,34 @@ export function WalletLogin({ apiBase, onSuccess, onClose }: WalletLoginProps) {
               Retry
             </button>
           </div>
+        )}
+
+        {adminMode ? (
+          <form className="wallet-login-admin" onSubmit={handleAdminLogin}>
+            <input
+              className="wallet-login-referral"
+              type="password"
+              placeholder="Admin passcode"
+              autoComplete="current-password"
+              autoFocus
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              disabled={busy}
+            />
+            <button className="wallet-login-btn" type="submit" disabled={busy || !passcode}>
+              {adminBusy ? "Signing in..." : "Sign in as admin"}
+            </button>
+            {adminError && <p className="wallet-login-error">{adminError}</p>}
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="wallet-login-admin-toggle"
+            onClick={() => setAdminMode(true)}
+            disabled={busy}
+          >
+            Admin
+          </button>
         )}
       </div>
     </div>

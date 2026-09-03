@@ -430,6 +430,58 @@ through, so a sixth ability cannot be added without inheriting it.
 
 ---
 
+## D-007: Shared-passcode admin login as a wallet-free operator channel
+**Status**: Accepted
+**Date**: 2026-09-03 · **Component**: backend auth · client login
+
+### Context — admin controls need a wallet the operator's phone doesn't have
+Admin-only actions (clear platform, fill/spawn stacks, scene editor) are gated on
+`role=admin` in the JWT, and the only way to get a JWT was a wallet signature. On a
+phone with an empty wallet the operator could not reach any of them. We needed a
+second door that is trivial to use and does not touch the wallet login path.
+
+### Decision — `POST /v1/auth/admin/login` exchanges a shared passcode for an admin JWT on one fixed account
+- Passcode comes from `BACKEND_AUTH_ADMIN_PASSCODE` (compose: `${ADMIN_PASSCODE:-}`); empty
+  leaves the route unregistered, non-empty must be ≥ 4 chars.
+- Login always resolves to the single account `auth_providers(passcode, "admin")`, created on
+  first use and force-promoted to `role=admin` on every login. Existing wallet-admin accounts
+  are untouched.
+- Compare is constant-time; a process-wide throttle rejects every attempt (right or wrong)
+  with 429 once 3 failures land inside 10 minutes.
+- Client: a quiet "Admin" toggle on the login card reveals a passcode form; on success it
+  reuses the normal `onSuccess` path so all existing `role === "admin"` UI lights up.
+
+### Rationale
+- Simplest thing that works on a phone: one input, no wallet, no extra deploy surface.
+- A dedicated account keeps the audit trail clean (every passcode login is visibly that
+  account) and means the secret never grants access to a real wallet's balance.
+- Short passcodes were requested for phone typing; the 3-strike lockout is what makes
+  that acceptable — brute force is bounded by the window, not by key length.
+
+### Alternatives Considered
+- Promote the user's existing wallet account on passcode entry — rejected: ties a shared
+  secret to a funded account and to whichever wallet happens to be connected.
+- Dev-mode-only `/v1/auth/login` with provider spoofing — rejected: dev mode is off in prod.
+- Per-IP lockout in the app instead of global — rejected: nginx already does per-IP
+  (`limit_req` on the route, keyed by the Cloudflare-aware `$real_client_ip`); the app-level
+  global lockout is the backstop that holds even if the proxy is misconfigured.
+
+### Consequences
+- ✅ Any device can reach admin tools with one short secret.
+- ⚠️ The secret is root-equivalent for game state; rotate by changing the env and restarting.
+  Revocation is the passcode, not the account: `admin set-role` demotion is undone on the next
+  passcode login by design, and tokens already issued live out their 24h unless the JWT
+  signing key is rotated too.
+- ⚠️ A hostile client can lock the operator out for 10 minutes by burning 3 guesses; nginx
+  caps the route per-IP (`auth_login` zone) so that costs more than one loop.
+- 🔮 If more admins appear, replace the single account with per-operator passcodes or TOTP.
+
+### Related
+- `backend/app/services/api/handlers/v1/usergrp/usergrp.go` (`AdminLogin`) ·
+  `game/client/src/ui/WalletLogin.tsx` · `game/client/src/net/auth.ts` (`adminLogin`)
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown

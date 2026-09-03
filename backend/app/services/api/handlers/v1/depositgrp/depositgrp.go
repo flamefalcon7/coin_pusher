@@ -191,6 +191,14 @@ func (g *Group) RequestWithdrawal(ctx context.Context, w http.ResponseWriter, r 
 		return v1.NewRequestError(err, http.StatusBadRequest)
 	}
 
+	// 0. Withdrawals are wallet-signed, so an account with no linked wallet
+	// (e.g. the passcode admin, D-007) can never satisfy step 5. Refuse up
+	// front, before the nonce is burned, with a message that says why.
+	walletAddr, err := g.user.QueryWalletAddress(ctx, accountID)
+	if err != nil || walletAddr == "" {
+		return v1.NewRequestError(fmt.Errorf("withdrawals require a linked wallet"), http.StatusForbidden)
+	}
+
 	// 1. Consume nonce (prevents replay).
 	if _, err := g.user.ConsumeNonce(ctx, req.Nonce); err != nil {
 		return v1.NewRequestError(fmt.Errorf("invalid or expired nonce"), http.StatusUnauthorized)
@@ -212,13 +220,7 @@ func (g *Group) RequestWithdrawal(ctx context.Context, w http.ResponseWriter, r 
 		return v1.NewRequestError(fmt.Errorf("invalid signature"), http.StatusUnauthorized)
 	}
 
-	// 4. Look up the wallet address bound to this account.
-	walletAddr, err := g.user.QueryWalletAddress(ctx, accountID)
-	if err != nil {
-		return v1.NewRequestError(fmt.Errorf("no wallet linked to account"), http.StatusUnauthorized)
-	}
-
-	// 5. Compare recovered address with bound wallet address.
+	// 4. Compare recovered address with the bound wallet address (step 0).
 	if !strings.EqualFold(recoveredAddr, walletAddr) {
 		return v1.NewRequestError(fmt.Errorf("signature does not match wallet"), http.StatusUnauthorized)
 	}

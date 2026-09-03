@@ -147,6 +147,25 @@ export const WithdrawPage: React.FC<WithdrawPageProps> = ({ token, apiUrl, balan
     }
   };
 
+  // Withdrawals must be signed by the linked wallet. A session with no wallet
+  // address (passcode admin login) has nothing to sign with, and the server
+  // refuses such accounts anyway — say so instead of showing a dead form.
+  if (!getSavedAddress()) {
+    return (
+      <div className="withdraw-page">
+        <div className="withdraw-header">
+          <Link to="/" className="withdraw-back-link">&larr; Back to Game</Link>
+          <h1 className="withdraw-title">Withdraw USDC</h1>
+        </div>
+        <div className="withdraw-card">
+          <p className="withdraw-msg withdraw-msg-error">
+            Withdrawals require a connected wallet. This session was signed in without one.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="withdraw-page">
       <div className="withdraw-header">

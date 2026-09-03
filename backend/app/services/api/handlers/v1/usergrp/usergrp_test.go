@@ -32,6 +32,7 @@ type mockStorer struct {
 	createNonceFn         func(ctx context.Context, nonce, address string, expiresAt time.Time) error
 	consumeNonceFn        func(ctx context.Context, nonce string) (user.NonceRecord, error)
 	purgeExpiredNoncesFn  func(ctx context.Context) (int64, error)
+	setRoleFn             func(ctx context.Context, accountID uuid.UUID, role string) error
 }
 
 func (m *mockStorer) Create(ctx context.Context, acct user.Account) error {
@@ -98,6 +99,9 @@ func (m *mockStorer) PurgeExpiredNonces(ctx context.Context) (int64, error) {
 }
 
 func (m *mockStorer) SetRole(ctx context.Context, accountID uuid.UUID, role string) error {
+	if m.setRoleFn != nil {
+		return m.setRoleFn(ctx, accountID, role)
+	}
 	return nil
 }
 func (m *mockStorer) QueryByReferralCode(_ context.Context, _ string) (user.Account, error) {
@@ -172,6 +176,19 @@ func TestLogin(t *testing.T) {
 			storer: &mockStorer{
 				queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
 					t.Errorf("storer must not be called for bot provider; got (%s, %s)", pt, uid)
+					return user.Account{}, nil
+				},
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			// The passcode-admin identity is a well-known constant pair; the
+			// generic login must not hand out its (possibly admin) token.
+			name: "rejects provider_type=passcode",
+			body: `{"provider_type":"passcode","provider_uid":"admin"}`,
+			storer: &mockStorer{
+				queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+					t.Errorf("storer must not be called for passcode provider; got (%s, %s)", pt, uid)
 					return user.Account{}, nil
 				},
 			},
@@ -414,4 +431,178 @@ func TestWalletLogin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Admin passcode login
+// ---------------------------------------------------------------------------
+
+func TestAdminLogin(t *testing.T) {
+	t.Parallel()
+
+	devAuth := auth.NewDevAuth("test-issuer")
+	log := zap.NewNop().Sugar()
+	const passcode = "correct-horse-battery"
+
+	post := func(grp *Group, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/v1/auth/admin/login", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		errHandler(log, grp.AdminLogin).ServeHTTP(w, r)
+		return w
+	}
+
+	t.Run("disabled when no passcode configured", func(t *testing.T) {
+		t.Parallel()
+		grp := New(user.NewCore(&mockStorer{}), devAuth)
+		if w := post(grp, `{"passcode":""}`); w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", w.Code)
+		}
+	})
+
+	t.Run("wrong passcode never touches the storer", func(t *testing.T) {
+		t.Parallel()
+		storer := &mockStorer{
+			queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+				t.Errorf("storer must not be called on a bad passcode; got (%s, %s)", pt, uid)
+				return user.Account{}, nil
+			},
+		}
+		grp := New(user.NewCore(storer), devAuth).WithAdminPasscode(passcode)
+		if w := post(grp, `{"passcode":"nope"}`); w.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", w.Code)
+		}
+	})
+
+	t.Run("creates the passcode account and promotes it to admin", func(t *testing.T) {
+		t.Parallel()
+		var created user.Account
+		var promotedTo string
+		storer := &mockStorer{
+			queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+				if pt != user.ProviderTypePasscode || uid != user.PasscodeAdminUID {
+					t.Errorf("lookup = (%s, %s), want (%s, %s)", pt, uid, user.ProviderTypePasscode, user.PasscodeAdminUID)
+				}
+				return user.Account{}, v1.NewRequestError(v1.ErrNotFound, 404)
+			},
+			createFn: func(ctx context.Context, acct user.Account) error {
+				created = acct
+				return nil
+			},
+		}
+		storer.setRoleFn = func(ctx context.Context, id uuid.UUID, role string) error {
+			if id != created.ID {
+				t.Errorf("SetRole on %s, want the created account %s", id, created.ID)
+			}
+			promotedTo = role
+			return nil
+		}
+		grp := New(user.NewCore(storer), devAuth).WithAdminPasscode(passcode)
+
+		w := post(grp, `{"passcode":"`+passcode+`"}`)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+		}
+		if promotedTo != user.RoleAdmin {
+			t.Errorf("promoted to %q, want %q", promotedTo, user.RoleAdmin)
+		}
+		var resp loginResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
+		if resp.Token == "" {
+			t.Error("token should not be empty")
+		}
+		if resp.Account.Role != user.RoleAdmin {
+			t.Errorf("account.Role = %q, want admin", resp.Account.Role)
+		}
+		claims, err := devAuth.ValidateToken(resp.Token)
+		if err != nil {
+			t.Fatalf("validating token: %v", err)
+		}
+		if claims.Role != user.RoleAdmin {
+			t.Errorf("claims.Role = %q, want admin", claims.Role)
+		}
+	})
+
+	t.Run("existing admin account is not re-promoted", func(t *testing.T) {
+		t.Parallel()
+		existing := user.Account{ID: uuid.New(), Role: user.RoleAdmin}
+		storer := &mockStorer{
+			queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+				return existing, nil
+			},
+		}
+		storer.setRoleFn = func(ctx context.Context, id uuid.UUID, role string) error {
+			t.Errorf("SetRole must not be called for an account already admin")
+			return nil
+		}
+		grp := New(user.NewCore(storer), devAuth).WithAdminPasscode(passcode)
+		if w := post(grp, `{"passcode":"`+passcode+`"}`); w.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("throttles after repeated failures, even for the right passcode", func(t *testing.T) {
+		t.Parallel()
+		storer := &mockStorer{
+			queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+				return user.Account{ID: uuid.New(), Role: user.RoleAdmin}, nil
+			},
+		}
+		grp := New(user.NewCore(storer), devAuth).WithAdminPasscode(passcode)
+		for i := 0; i < adminLoginMaxFails; i++ {
+			if w := post(grp, `{"passcode":"wrong"}`); w.Code != http.StatusUnauthorized {
+				t.Fatalf("attempt %d: status = %d, want 401", i, w.Code)
+			}
+		}
+		if w := post(grp, `{"passcode":"`+passcode+`"}`); w.Code != http.StatusTooManyRequests {
+			t.Errorf("status after lockout = %d, want 429", w.Code)
+		}
+	})
+
+	t.Run("a correct passcode clears earlier failures", func(t *testing.T) {
+		t.Parallel()
+		storer := &mockStorer{
+			queryByProviderFn: func(ctx context.Context, pt, uid string) (user.Account, error) {
+				return user.Account{ID: uuid.New(), Role: user.RoleAdmin}, nil
+			},
+		}
+		grp := New(user.NewCore(storer), devAuth).WithAdminPasscode(passcode)
+		for i := 0; i < adminLoginMaxFails-1; i++ {
+			post(grp, `{"passcode":"wrong"}`)
+		}
+		if w := post(grp, `{"passcode":"`+passcode+`"}`); w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+		// Counter reset: a full budget of fresh failures is allowed again
+		// before the lockout re-engages.
+		for i := 0; i < adminLoginMaxFails-1; i++ {
+			if w := post(grp, `{"passcode":"wrong"}`); w.Code != http.StatusUnauthorized {
+				t.Fatalf("post-reset attempt %d: status = %d, want 401", i, w.Code)
+			}
+		}
+		if w := post(grp, `{"passcode":"`+passcode+`"}`); w.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200 (counter should have been reset)", w.Code)
+		}
+	})
+
+	t.Run("concurrent wrong guesses cannot exceed the budget", func(t *testing.T) {
+		t.Parallel()
+		grp := New(user.NewCore(&mockStorer{}), devAuth).WithAdminPasscode(passcode)
+		const n = 50
+		codes := make(chan int, n)
+		for i := 0; i < n; i++ {
+			go func() { codes <- post(grp, `{"passcode":"wrong"}`).Code }()
+		}
+		var unauthorized int
+		for i := 0; i < n; i++ {
+			if <-codes == http.StatusUnauthorized {
+				unauthorized++
+			}
+		}
+		if unauthorized != adminLoginMaxFails {
+			t.Errorf("%d requests reached the compare, want exactly %d", unauthorized, adminLoginMaxFails)
+		}
+	})
 }

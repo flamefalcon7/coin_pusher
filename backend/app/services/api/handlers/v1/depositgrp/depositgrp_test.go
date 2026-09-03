@@ -423,3 +423,37 @@ func matchRequestError(err error, target **v1.RequestError) bool {
 	}
 	return false
 }
+
+// A session with no linked wallet (the passcode admin, D-007) must be refused
+// before the nonce is consumed, with a 403 that says why.
+func TestRequestWithdrawal_NoLinkedWallet(t *testing.T) {
+	t.Parallel()
+
+	userStorer := &mockUserStorer{
+		consumeNonceFn: func(_ context.Context, n string) (user.NonceRecord, error) {
+			t.Errorf("nonce must not be consumed for a wallet-less account")
+			return user.NonceRecord{Nonce: n}, nil
+		},
+		queryWalletAddressFn: func(_ context.Context, _ uuid.UUID) (string, error) {
+			return "", v1.NewRequestError(v1.ErrNotFound, 404)
+		},
+	}
+	userCore := user.NewCore(userStorer)
+	depositCore := deposit.NewCore(nil, &mockDepositStorer{}, nil, nil, userCore, nil, nil, nil)
+	grp := New(depositCore, userCore)
+
+	body := `{"to_address":"0x1234567890abcdef1234567890abcdef12345678","amount":"25.5","nonce":"n","signature":"0xsig"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/withdraw", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := mid.SetClaims(req.Context(), mid.Claims{AccountID: uuid.New().String(), Role: "admin"})
+	rec := httptest.NewRecorder()
+
+	err := grp.RequestWithdrawal(ctx, rec, req.WithContext(ctx))
+	var reqErr *v1.RequestError
+	if !matchRequestError(err, &reqErr) {
+		t.Fatalf("want a RequestError, got %v", err)
+	}
+	if reqErr.Status != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 (%v)", reqErr.Status, err)
+	}
+}

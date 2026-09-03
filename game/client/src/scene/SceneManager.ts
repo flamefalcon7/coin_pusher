@@ -37,6 +37,7 @@ const TOON_MAT_NAMES = [
 export class SceneManager {
   private engine: Engine;
   private scene: Scene;
+  private cameraSetup: CameraSetup;
   private staticMeshes: StaticMeshes;
   private pusherMesh: PusherMesh;
   private coinManager: CoinMeshManager;
@@ -70,6 +71,11 @@ export class SceneManager {
   private activeTimers: ReturnType<typeof setInterval>[] = [];
   private resizeHandler = () => this.engine.resize();
 
+  /** Grant or revoke the free admin camera without rebuilding the scene. */
+  setAdmin(isAdmin: boolean): void {
+    this.cameraSetup.setAdmin(isAdmin);
+  }
+
   constructor(canvas: HTMLCanvasElement, isAdmin = false) {
     console.log("Initializing BabylonJS scene...");
 
@@ -84,6 +90,7 @@ export class SceneManager {
     this.scene.clearColor = new Color4(0.02, 0.02, 0.06, 1.0);
 
     const cameraSetup = new CameraSetup(this.scene, canvas, isAdmin);
+    this.cameraSetup = cameraSetup;
     new Lighting(this.scene);
     this.staticMeshes = new StaticMeshes(this.scene);
     this.pusherMesh = new PusherMesh(this.scene);

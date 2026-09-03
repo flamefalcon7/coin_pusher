@@ -33,13 +33,7 @@ export class CameraSetup {
 
     this.camera.panningSensibility = 0;
 
-    // Lock camera rotation for non-admin players (radius lock handled in adjustRadiusForAspect)
-    if (!isAdmin) {
-      this.camera.lowerAlphaLimit = this.camera.alpha;
-      this.camera.upperAlphaLimit = this.camera.alpha;
-      this.camera.lowerBetaLimit = this.camera.beta;
-      this.camera.upperBetaLimit = this.camera.beta;
-    }
+    this.applyRotationLock();
 
     // Adjust radius for narrow (portrait) screens
     this.engine = scene.getEngine();
@@ -47,6 +41,35 @@ export class CameraSetup {
     this.resizeObserver = this.engine.onResizeObservable.add(() => this.adjustRadiusForAspect(this.engine));
 
     console.log("Camera initialized");
+  }
+
+  /**
+   * Switch the free-camera privilege at runtime (admin login mid-session).
+   * The scene is built once at mount, so the constructor flag alone would
+   * leave a freshly signed-in admin with a locked camera until reload.
+   */
+  setAdmin(isAdmin: boolean): void {
+    if (this.isAdmin === isAdmin) return;
+    this.isAdmin = isAdmin;
+    this.applyRotationLock();
+    this.adjustRadiusForAspect(this.engine);
+  }
+
+  // Lock camera rotation for non-admin players (radius lock handled in adjustRadiusForAspect)
+  private applyRotationLock(): void {
+    if (this.isAdmin) {
+      this.camera.lowerAlphaLimit = null;
+      this.camera.upperAlphaLimit = null;
+      this.camera.lowerBetaLimit = 0.01;
+      this.camera.upperBetaLimit = Math.PI - 0.01;
+      this.camera.lowerRadiusLimit = MIN_RADIUS;
+      this.camera.upperRadiusLimit = MAX_RADIUS;
+      return;
+    }
+    this.camera.lowerAlphaLimit = this.camera.alpha;
+    this.camera.upperAlphaLimit = this.camera.alpha;
+    this.camera.lowerBetaLimit = this.camera.beta;
+    this.camera.upperBetaLimit = this.camera.beta;
   }
 
   private adjustRadiusForAspect(engine: Engine): void {
