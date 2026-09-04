@@ -3,6 +3,8 @@ import { createAppKit } from "@reown/appkit";
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 import { base } from "@reown/appkit/networks";
 import { BrowserProvider } from "ethers";
+import UniversalProvider from "@walletconnect/universal-provider";
+import { isMobileBrowser, waitForPageFocus } from "./walletFocus";
 
 // --- Configuration ---
 // Set VITE_WC_PROJECT_ID in your .env or environment.
@@ -11,24 +13,38 @@ const PROJECT_ID = import.meta.env.VITE_WC_PROJECT_ID as string | undefined;
 
 let appKit: ReturnType<typeof createAppKit> | null = null;
 
-function getAppKit() {
+/** How long to wait for the page to regain focus before sending a sign request anyway. */
+const SIGN_FOCUS_TIMEOUT_MS = 60_000;
+
+async function getAppKit() {
   if (appKit) return appKit;
   if (!PROJECT_ID) {
     throw new Error(
       "WalletConnect project ID not configured. Set VITE_WC_PROJECT_ID in your environment."
     );
   }
+  const metadata = {
+    name: "Coin Pusher",
+    description: "Coin Pusher Game",
+    url: window.location.origin,
+    icons: [],
+  };
+  // AppKit 1.8 copies only name/description/url/icons into the WalletConnect
+  // provider it creates, so `redirect` has to go through our own provider.
+  // `redirect` tells a mobile wallet where to send the user back after it
+  // approves a session or signs; without it the wallet stays in front and the
+  // player has to switch back to the browser by hand.
+  const universalProvider = await UniversalProvider.init({
+    projectId: PROJECT_ID,
+    metadata: { ...metadata, redirect: { universal: window.location.origin } },
+  });
   const ethersAdapter = new EthersAdapter();
   appKit = createAppKit({
     adapters: [ethersAdapter],
     networks: [base],
     projectId: PROJECT_ID,
-    metadata: {
-      name: "Coin Pusher",
-      description: "Coin Pusher Game",
-      url: window.location.origin,
-      icons: [],
-    },
+    universalProvider,
+    metadata,
     features: {
       analytics: false,
     },
@@ -80,7 +96,7 @@ export async function connectWalletConnect(): Promise<{
   address: string;
   sign: (message: string) => Promise<string>;
 }> {
-  const kit = getAppKit();
+  const kit = await getAppKit();
 
   // Subscribe BEFORE opening to avoid missing state changes
   const connected = await new Promise<boolean>((resolve) => {
@@ -119,6 +135,15 @@ export async function connectWalletConnect(): Promise<{
   return {
     address,
     sign: async (message: string) => {
+      // Mobile: the wallet app is usually still in front when the session
+      // approval lands here. WalletConnect only deep-links the sign request
+      // back into the wallet if this page has focus, so wait for the player
+      // to return before sending (see walletFocus.ts). The timeout is a
+      // safety net: the request still goes out, it just won't auto-open the
+      // wallet.
+      if (isMobileBrowser()) {
+        await waitForPageFocus({ timeoutMs: SIGN_FOCUS_TIMEOUT_MS });
+      }
       return await signer.signMessage(message);
     },
   };
