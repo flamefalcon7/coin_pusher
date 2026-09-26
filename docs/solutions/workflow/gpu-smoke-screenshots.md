@@ -36,7 +36,8 @@ local** ritual the agent runs via the Chrome DevTools MCP (see
 
 For each ability touched (or all, before a VFX release):
 
-1. Launch the client: `pnpm --filter @coin-pusher/client dev`.
+1. Launch the client: `pnpm --filter @coin-pusher/client dev`. If `MAINTENANCE_MODE` in
+   `game/client/src/main.tsx` is `true`, set it to `false` locally first (don't commit it).
 2. Open the dev URL **with the HUD enabled**: append `?debug=1` so
    `window.__coinpusher_debug` is exposed.
 3. Trigger the ability (admin controls / debug trigger). Abilities to cover:

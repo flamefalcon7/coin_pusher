@@ -19,7 +19,7 @@ related_components:
   - nats
 tags: [nats, zombie-connection, reconnect, ping-timeout, duplicate-delivery, idempotency, reference_id, dedup, at-least-once, economy, rtp, fanout, misdiagnosis]
 related_commits:
-  - "(pending) fix(backend): legacy batch_insert publishes carry reference_id so game-server dedup can suppress duplicate deliveries"
+  - "c19daa7 fix(backend): legacy batch_insert publishes carry reference_id so game-server dedup can suppress duplicate deliveries"
 status: fix_deployed_verified_prod
 ---
 
@@ -101,7 +101,7 @@ resubscribe (single `subscribeBatchInsert` call site; single node process).
 
 ## Fix
 
-### Code (done, local, tests green — NOT yet deployed)
+### Code (deployed 2026-07-23, verified in prod)
 
 `reference_id` now ships on **every** batch_insert publish path, so
 game-server `RefIDDedup` suppresses NATS-level duplicates regardless of route:

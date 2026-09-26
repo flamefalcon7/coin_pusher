@@ -38,7 +38,9 @@ re-run the verification ritual below.
 ## Verification ritual (manual)
 
 1. `claude mcp list` (or `/mcp` in-session) shows `chrome-devtools` connected.
-2. Start the client: `pnpm --filter @coin-pusher/client dev`.
+2. Start the client: `pnpm --filter @coin-pusher/client dev`. If `MAINTENANCE_MODE` in
+   `game/client/src/main.tsx` is `true`, set it to `false` locally first (don't commit it),
+   or you will only see the maintenance page.
 3. Open the dev URL in the MCP browser, capture a screenshot — confirm a
    non-empty render.
 4. **Read the console — assert zero errors/warnings on a clean boot.**

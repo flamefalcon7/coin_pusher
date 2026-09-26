@@ -7,11 +7,11 @@ to `game/shared/src/types.ts` config AND to this file AND to a landmark test.
 ## Handedness & engines
 
 - **Both engines are right-handed.** Babylon is configured with
-  `scene.useRightHandedSystem = true` (`game/client/src/scene/SceneManager.ts:74`)
+  `scene.useRightHandedSystem = true` (`game/client/src/scene/SceneManager.ts`)
   to match Rapier's native right-handed system. There is **no coordinate
   conversion layer anywhere** — positions/quaternions pass through verbatim.
 - MUST NOT create a scene/engine without `useRightHandedSystem = true`.
-  (Watch-item: `SceneManager.test.ts:96` mocks it as `false`; the real scene is `true`.)
+  (Watch-item: `scene/__tests__/SceneManager.test.ts` mocks it as `false`; the real scene is `true`.)
 
 ## Units & axes
 
@@ -42,7 +42,7 @@ to `game/shared/src/types.ts` config AND to this file AND to a landmark test.
 | Pins | 5 rows on back wall, 90° X-rotated cylinders | r=0.01, spacing 0.2/0.18 |
 
 Known dead config: `PLATFORM.TILT_ANGLE = 2` is **not applied** in physics or
-rendering (confirmed in `docs/plans/2026-04-20-001-...-plan.md` R1). Don't
+rendering (confirmed in `docs/archive/plans/2026-04-20-001-feat-stacked-coins-rising-platform-plan.md` R1). Don't
 build on it.
 
 ## Rules

@@ -240,6 +240,8 @@ You should see `Connected to NATS at nats://<SERVICES_PRIVATE_IP>:4222`.
 
 ### Step 6: Set up CI/CD (GitHub Actions)
 
+> **Current state:** these secrets were never configured, so both deploy workflows fail on every run (`missing server host`). Every production deploy so far has been manual — see "Manual deploy" below.
+
 Two separate workflows auto-deploy when you push changes to `main`:
 
 - **`deploy-services.yml`** — triggers on `backend/**` or `game/shared/**` changes, deploys to services machine
@@ -262,7 +264,7 @@ The services workflow runs migrations before restarting the backend. The game wo
 
 Frontend deploys are automatic — Cloudflare Pages rebuilds on every push to `main`.
 
-> **Breaking NATS changes:** If a commit changes the NATS message format and affects both backend and game server, both workflows trigger simultaneously. For breaking protocol changes, deploy the **receiver side first** (the side that needs to understand the new format). Use `workflow_dispatch` to manually control deploy order if needed.
+> **Breaking NATS changes:** If a commit changes the NATS message format and affects both backend and game server, deploy the **receiver side first** (the side that needs to understand the new format).
 
 ---
 
@@ -309,6 +311,8 @@ docker compose -f docker-compose.game.yml up -d game
 ```
 
 ### Manual deploy (without CI/CD)
+
+Order matters because of the game-server liveness gate (ADR D-006): on a rolling update deploy the **services machine first**, then the game machine. On a cold start (both down) start the **game machine first**, or the backend refuses every insert until the game server appears.
 
 ```bash
 # Services machine
@@ -391,6 +395,8 @@ All Go backend env vars use the `BACKEND_` prefix (parsed by `conf` library). Do
 | `NATS_URL` | `NATS_URL` | NATS connection URL via VPC, e.g. `nats://10.x.x.x:4222`. Not sensitive (VPC-internal). |
 
 #### GitHub Actions Secrets
+
+Not configured (see Step 6).
 
 | Secret | Sensitive? | Description |
 |--------|-----------|-------------|

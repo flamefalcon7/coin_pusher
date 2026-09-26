@@ -1,6 +1,8 @@
 # Bot Re-Enable Runbook
 
-**Status:** procedure ready, **not yet executed**.
+**Status:** executed (bots were running through September 2026); all services stopped at the 2026-09-25 shutdown.
+
+> ⚠️ Alert delivery: the Telegram contact point has never delivered (placeholder token). Gate 6 cannot pass, and the hard signals below will not reach you — watch Grafana → Alerting directly during any ramp.
 
 This runbook flips `bot_config.kill_switch` from `on` back to `off` and ramps the bot population back to the PROD baseline. Bots have been disabled since 2026-04-25 (kill_switch flipped after the c1505470 incident). Three formula changes have shipped since:
 
@@ -131,8 +133,8 @@ ssh -i .csp/digitalOcean -o IdentitiesOnly=yes root@146.190.104.138
 docker exec coin_pusher-backend-1 /bin/admin bot kill-switch on
 
 # Verify
-docker exec coin_pusher-backend-1 /bin/admin bot list \
-  | grep -c '^.*paused\|kill_switch=on' || echo "Check bot status manually"
+docker exec coin_pusher-backend-1 /bin/admin bot config show | grep kill_switch
+# Expected: kill_switch  on
 
 # Snapshot the offending user(s) for post-mortem.
 docker exec coin_pusher-postgres-1 psql -U postgres -d coinpusher -c "

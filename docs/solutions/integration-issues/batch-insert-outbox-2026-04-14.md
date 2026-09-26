@@ -16,7 +16,7 @@ related_components:
 tags: [outbox, nats, postgres, at-least-once, coin-loss, transactional-outbox, ce-review]
 related_plan: docs/plans/2026-04-13-001-fix-batch-insert-outbox-plan.md
 pr_branch: feat/batch-insert-outbox
-status: merged-pending-deploy
+status: deployed
 ---
 
 # Transactional Outbox for `batch_insert` — Eliminating the P0 Coin-Loss Class

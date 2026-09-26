@@ -66,11 +66,11 @@ coin_pusher/
 │   │   │   ├── TutorialOverlay.tsx   # First-time guide
 │   │   │   └── IdleOverlay.tsx       # 25min warning, 30min disconnect
 │   │   ├── pages/
-│   │   │   ├── DepositPage.tsx       # USDC deposit (multi-chain)
+│   │   │   ├── DepositPage.tsx       # USDC deposit (Base only)
 │   │   │   ├── WithdrawPage.tsx      # Cash out rewards
 │   │   │   ├── ChestPage.tsx         # Open chests (3D animation)
 │   │   │   ├── ProfilePage.tsx       # User info, stats
-│   │   │   └── ProgressPage.tsx      # Milestones
+│   │   │   └── ProgressPage.tsx      # Promotions (admin-defined, claimable)
 │   │   └── editor/
 │   │       ├── EditorManager.ts      # Admin physics tuning
 │   │       └── EditorPanel.tsx       # Place/move/scale primitives
@@ -102,19 +102,23 @@ coin_pusher/
 │   │       ├── usergrp/      # Auth login, profile
 │   │       ├── gamegrp/      # Game events (insert, rewards)
 │   │       ├── inventorygrp/ # Scroll/chest management
-│   │       ├── depositgrp/   # Deposit API
-│   │       └── progressgrp/  # Progress API
+│   │       ├── depositgrp/   # Deposit + withdrawal API
+│   │       ├── progressgrp/  # Promotions API
+│   │       └── sponsorgrp/   # Sponsor campaigns
 │   ├── business/core/
 │   │   ├── user/             # Auth, JWT, profile
 │   │   ├── accounting/       # Ledger (deposit, withdraw, reward)
 │   │   ├── inventory/        # Scrolls, key coins, chests
 │   │   ├── heat/             # Heat calculation (reward distribution)
 │   │   ├── game/             # Game orchestration
-│   │   ├── deposit/          # Deposit history
-│   │   └── progress/         # Milestones
+│   │   ├── deposit/          # Deposits, withdrawals, referral payout
+│   │   ├── progress/         # Promotions + claims
+│   │   ├── bot/              # Play-bot scheduler
+│   │   ├── sponsor/          # Sponsor campaigns, quota, rewards
+│   │   └── outbox/           # Transactional outbox → NATS
 │   ├── business/web/
 │   │   └── ws/               # WebSocket relay hub
-│   ├── foundation/           # Reusable libs (database, logger, NATS, SUI SDK)
+│   ├── foundation/           # Reusable libs (database, logger, NATS, ethereum/ethrpc, wallet, keystore, metrics)
 │   └── zarf/                 # Docker, K8s configs
 │
 └── docs/
@@ -162,7 +166,7 @@ Side view:
     │  ┌──────┐ Pusher
     │  │      │ (oscillates back/forth)
     │  └──────┘
-    │          ╲  2° forward tilt
+    │          ╲  (flat: TILT_ANGLE is not applied)
     │           ╲
     ═════════════╲ Front lip
                   ↓ Coins fall here
@@ -173,7 +177,7 @@ Side view:
 |-----------|-------|
 | Platform width | 1.2m |
 | Platform depth | 1.3m |
-| Platform tilt | 2° forward |
+| Platform tilt | none (config value 2° is not applied) |
 | Back wall height | 2m |
 | Pin rows | 5 (staggered: 5/6/5/6/5) |
 | Pin radius | 0.01m |
@@ -365,11 +369,11 @@ Desktop Layout:
 | Idle overlay | Full screen | 25min warning |
 
 ### Pages (Full-screen overlays)
-- **Deposit** — Chain selector + USDC amount
-- **Withdraw** — Chain selector + amount (from balance_cash)
+- **Deposit** — the player's Base address + USDC instructions
+- **Withdraw** — amount (from balance_cash), Base only
 - **Chest** — 3D chest opening animation + reward reveal
 - **Profile** — Username, stats, referral code
-- **Progress** — Milestones, lifetime deposits
+- **Progress** — promotions and claims
 
 ---
 
@@ -390,7 +394,7 @@ Desktop Layout:
 
 - **Aesthetic**: Toon/cel-shading (custom ToonMaterial)
 - **Theme**: "Psychedelic Pop" (configurable)
-- **Coordinate system**: BabylonJS left-handed, Y-up
+- **Coordinate system**: right-handed, Y-up, +Z toward the player (`scene.useRightHandedSystem = true`, matching Rapier; see `.agents/skills/babylon-rapier-lifecycle/references/spatial-contract.md`)
 - **Coin rendering**: Pooled meshes, batched updates per frame
 - **VFX**: BabylonJS ParticleSystem (shock flashes, tornado vortex, explosion bursts, lightning strikes)
 - **Slot/Wheel**: Animated reel spin with symbol reveal
@@ -401,15 +405,21 @@ Desktop Layout:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | /v1/auth/login | Wallet login (address + signature) |
+| GET | /v1/auth/nonce | Nonce for wallet sign-in |
+| POST | /v1/auth/wallet/login · /v1/auth/login | Wallet sign-in (address + signature) |
+| POST | /v1/auth/admin/login | Shared-passcode admin login (D-007) |
 | GET | /v1/user/profile | Fetch user profile (JWT required) |
-| POST | /v1/game/batch_insert | Queue coin insertion |
-| POST | /v1/game/ability | Execute ability |
+| GET / PUT | /v1/user/referral · /v1/user/referral-code · /v1/user/display-name | Referral info; deposit-gated custom code and name |
+| — | WS op `batch_insert` | Queue coin insertion (no HTTP route since 020889f) |
+| — | WS ops `shock` / `tornado` / … | Execute ability (consumes a scroll) |
+| POST | /v1/game/event | Game-server event ingest |
 | GET | /v1/inventory | Fetch scrolls/key coins |
 | POST | /v1/chest/open | Open chest → random reward |
-| POST | /v1/deposit | Create deposit request |
-| POST | /v1/withdraw | Create withdrawal request |
-| GET | /v1/progress | User milestones |
+| GET | /v1/deposit/address · /v1/deposits | The player's Base deposit address; deposit history |
+| GET / POST | /v1/withdraw/nonce · /v1/withdraw · /v1/withdrawals | Withdrawal request and history |
+| GET / POST | /v1/progress · /v1/progress/{id}/claim | Promotions and claims |
+
+Full list, including sponsor and admin routes: `backend/app/services/api/main.go`.
 
 ---
 
@@ -420,7 +430,7 @@ Desktop Layout:
 1. Client sends batch_insert {slot: 2, count: 50}
 2. Backend validates balance, deducts coins
 3. NATS → Game Server: DropScheduler enqueues 50 coins
-4. Each tick: 1 coin spawned per slot (round-robin)
+4. Every 4 ticks: 1 coin spawned per slot (round-robin across users)
 5. Coin falls through pins, lands on platform
 6. Pusher oscillates, pushes coins forward
 7. Coin falls off front edge → despawn event
