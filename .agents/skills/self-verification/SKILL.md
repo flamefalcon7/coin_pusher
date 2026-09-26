@@ -70,7 +70,7 @@ real `PhysicsWorld`/`SceneBuilder`/`Pusher`/`Coin` in a plain for-loop.
   assertion is wired in `simulation/__tests__/economy.test.ts`; keep at least one
   so payout regressions fail fast.
 
-> The game server **now has a `vitest` runner**: `pnpm --filter @coin-pusher/game test`
+> Game server tests run under `vitest`: `pnpm --filter @coin-pusher/game test`
 > (`game/server/vitest.config.ts`, which includes a `.js`→`.ts` resolve plugin for
 > NodeNext specifiers and a 30s timeout for Rapier WASM + sim trials). See ADR **D-003**.
 
@@ -96,7 +96,10 @@ Make them reproducible:
 When you genuinely need to see the rendered frame, use the **Chrome DevTools MCP**
 (configured in `.mcp.json`) instead of asking the human:
 
-1. Start the client: `pnpm --filter @coin-pusher/client dev`.
+1. Start the client: `pnpm --filter @coin-pusher/client dev` (with the local stack up, e.g. `make up_local`).
+   While `MAINTENANCE_MODE` in `game/client/src/main.tsx` is `true` (product shut down), every
+   route renders the maintenance page. Set it to `false` locally for the check and don't commit
+   that change: a push to main auto-deploys the client via Cloudflare Pages.
 2. Navigate to the dev URL, trigger the behaviour (e.g. fire each ability).
 3. **Read the console** — assert zero errors/warnings on the path you touched.
 4. **Capture a screenshot** — confirm a non-empty render / expected element present.

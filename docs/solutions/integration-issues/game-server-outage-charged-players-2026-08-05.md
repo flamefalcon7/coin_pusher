@@ -124,9 +124,9 @@ Three defects surfaced only when the breaker tests drove the real sequence:
   server is down means *nobody can insert coins*. That is the intended behaviour, but it makes
   game-server-first the required deploy order, and it means an API brought up standalone (local
   dev, a smoke test box) cannot take inserts at all.
-- Still open, deliberately not fixed here: HTTP `batch-insert` never enforced `maxActiveCoins` or
-  the per-slot cap, so it can overfill the table while the game server is *healthy*. Recorded in
-  D-006's consequences.
+- Not fixed here: the HTTP `batch-insert` handler never enforced `maxActiveCoins` or the per-slot
+  cap. It has had no route since 020889f (2026-03-07), so the gap is unreachable unless someone
+  re-routes it. Recorded in D-006's consequences.
 
 ## Traps for next time
 

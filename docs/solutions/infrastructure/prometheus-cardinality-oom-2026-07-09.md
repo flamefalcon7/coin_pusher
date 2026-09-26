@@ -17,9 +17,9 @@ related_components:
   - chi_router
 tags: [prometheus, oom, cardinality, tsdb, chi, metrics, 404, scanner-traffic, memcg, oomkilled-flag, mutation-testing]
 related_commits:
-  - "(pending) fix(metrics): collapse unmatched routes to a single path label"
+  - "49198b1 fix(metrics): collapse unmatched routes to a single path label"
 supersedes_watch_item: "prometheus-oom-dns-outage-2026-06-07.md — 'if it crash-loops on the cap, raise to ~1100m'"
-status: fix_verified_local_pending_deploy
+status: deployed
 ---
 
 # Prometheus OOM from unbounded `path` label cardinality (2026-07-09)
@@ -184,9 +184,8 @@ have pulled in `godebug`).
 
 ## Watch items / follow-ups
 
-- **Deploy required** — this is a code fix; the running backend still leaks labels until
-  rebuilt. Recall `/opt/coin_pusher` git has **diverged from origin/main** (see the 06-07
-  doc); reconcile deliberately, do not naive `git pull`.
+- **Deployed 2026-07-23** (49198b1, part of the 2ebed8f rollout, after both droplets were
+  reset to origin/main).
 - **Defense in depth (not yet done):** add `metric_relabel_configs` in `prometheus.yml` to drop
   high-cardinality `path` values at scrape time, so a future regression can't OOM Prometheus
   even if it reaches the exposition endpoint.

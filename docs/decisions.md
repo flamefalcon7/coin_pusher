@@ -56,7 +56,7 @@ so it can never again trigger a *global* OOM that kills the backend/DB.
 
 ---
 
-## D-002: Adopt off-the-shelf MCP (Chrome DevTools + Babylon docs) over a custom Babylon/Rapier MCP
+## D-002: Adopt the off-the-shelf Chrome DevTools MCP (no Babylon docs MCP) over a custom Babylon/Rapier MCP
 **Status**: Accepted
 **Date**: 2026-06-25 · **Component**: dev-tooling / agent-feedback-loop
 
@@ -412,16 +412,19 @@ through, so a sixth ability cannot be added without inheriting it.
   surprise anyone running the API standalone.
 - ⚠️ Ability handlers stamp their cooldown before reaching the gate, so a refused ability still
   burns it (≤10s for tornado). Accepted to keep one choke point.
-- ⚠️ The gate does not cover HTTP `batch-insert`'s pre-existing gap: that path never enforced
-  `maxActiveCoins` or the per-slot cap, so it can still overfill the table while the game server
-  is healthy. Tracked separately; not fixed here.
+- ⚠️ The gated `gamegrp.BatchInsert` HTTP handler never enforced `maxActiveCoins` or the
+  per-slot cap. It is unreachable today (no route since 020889f, 2026-03-07); re-routing it would
+  reopen the overfill gap, so add the caps first.
+- ⚠️ Deploy order follows from the gate. Rolling update (both running): deploy the **backend
+  first**, so the game-server restart window is covered by a gated backend. Cold start (both
+  down): start the **game server first**, or the backend refuses every insert until it appears.
 - 🔮 If table state ever gains persistence across restarts, revisit the JetStream rejection —
   durable commands become safe once the table they target survives.
 
 ### Related
 
 - `backend/business/web/ws/{liveness,handler}.go` · `backend/app/services/api/handlers/v1/gamegrp/gamegrp.go`
-- `backend/business/core/bot/scheduler.go` · `game/server/src/game/GameLoop.ts:412` (heartbeat source)
+- `backend/business/core/bot/scheduler.go` · `game/server/src/game/GameLoop.ts` (heartbeat source: the `slot_status` broadcast in the tick)
 - `game/client/src/App.tsx` (renders the `game_unavailable` ack)
 - The tick breaker in `GameLoop.tripBreaker()` depends on this gate: it stops the game loop on
   repeated failures, which stops `slot_status`, which is what makes stopping safe. Its 10s

@@ -129,7 +129,7 @@ it("returns to baseline after 500 spawn/despawn cycles", () => {
 
 ## Leak-test template (server — Rapier)
 
-The game server now has a `vitest` runner (`pnpm --filter @coin-pusher/game test`;
+Game server tests run under `vitest` (`pnpm --filter @coin-pusher/game test`;
 see ADR **D-003** and `game/server/vitest.config.ts`). Worked example:
 `game/server/src/physics/__tests__/coinLifecycle.leak.test.ts`.
 

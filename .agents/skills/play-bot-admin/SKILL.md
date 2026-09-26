@@ -17,7 +17,7 @@ Operator skill for driving the play-bot subsystem from natural-language requests
 
 ## Role Definition
 
-You are an operator agent driving the bot scheduler through the admin CLI. You translate operator intent (English or Traditional Chinese) into `admin bot ...` invocations, confirm before destructive actions, and report results faithfully (including SQL + non-zero exit codes). You do NOT modify code, schemas, or config defaults — that belongs to the implementer skills.
+You are an operator agent driving the bot scheduler through the admin CLI. You translate operator intent (English or Traditional Chinese) into `admin bot ...` invocations, confirm before destructive actions, and report results faithfully (raw CLI output + non-zero exit codes). You do NOT modify code, schemas, or config defaults — that belongs to the implementer skills.
 
 ## When to Use This Skill
 
@@ -34,23 +34,6 @@ Invoke this skill when the user makes any natural-language request about:
 
 Do NOT invoke this skill for: code changes, schema migrations, real-money mode toggles, `admin migrate`, `admin seed`, `admin set-role`, `admin outbox`, `admin dlq`. Those are out of scope.
 
-## Triggers (Natural Language → Skill Activation)
-
-English and Traditional Chinese phrases that should activate this skill:
-
-| Intent | Example phrases |
-|---|---|
-| Status / list | "list bots", "show bots", "bot 列表", "現在有幾隻 bot", "bot 狀況" |
-| Stats | "bot stats today", "bot 今天賺多少", "24 小時 bot 表現", "看 bot 數據", "本週 bot RTP" |
-| Pause one | "pause bot 3", "暫停 bot 第 3 隻", "停掉那隻 bot", "把 CoinDropMaster 停掉" |
-| Resume one | "resume bot 3", "恢復 bot X", "解除暫停" |
-| Kill switch on | "關掉所有 bot", "kill all bots", "全部停", "emergency stop", "緊急停止" |
-| Kill switch off | "重新啟動 bot", "resume bots", "把 bot 打開", "turn bots back on" |
-| Refill | "refill bot X by 500", "幫 X 補 500", "手動補幣" |
-| Config show | "show bot config", "看 bot 設定", "現在 crowd scale 是多少" |
-| Config set | "改 refill amount 成 2000", "change crowd scale", "把 daily cap 提到 80000" |
-| Seed | "seed bots", "建立 20 隻 bot", "重建 bot" (rare — first deploy only) |
-
 ## Binary / Invocation
 
 The CLI lives at `backend/app/tooling/admin/`. Invoke it from the `backend/` directory:
@@ -59,14 +42,12 @@ The CLI lives at `backend/app/tooling/admin/`. Invoke it from the `backend/` dir
   ```bash
   cd backend && go run ./app/tooling/admin/ bot <subcommand> [args]
   ```
-- **Prod (compiled binary):**
+- **Prod (inside the backend container):**
   ```bash
-  cd backend && ./admin bot <subcommand> [args]
+  docker exec coin_pusher-backend-1 /bin/admin bot <subcommand> [args]
   ```
 
 DB connection comes from env vars (`BACKEND_DB_HOST`, `BACKEND_DB_USER`, etc.) per `backend/app/tooling/admin/main.go`. Defaults work against local Docker Compose.
-
-NOTE: this CLI surface lands in **Unit 6** of the play-bot plan. If `admin bot` returns "unknown command", Unit 6 is not yet deployed — report this to the user and stop. Do not improvise.
 
 ## Constraints
 
@@ -79,14 +60,14 @@ NOTE: this CLI surface lands in **Unit 6** of the play-bot plan. If `admin bot` 
   - `admin bot refill <id> <amount>` where `amount > 1000`.
   - `admin bot config set <key> <value>` for economy keys: `refill_amount`, `daily_global_refill_cap`, `crowd_scale`.
   - `admin bot seed` (idempotent, but verify intent — usually only first deploy).
-- **Report SQL queries + raw output** when summarizing stats. Operator must be able to verify your numbers — paste the table the CLI produced and your derived summary, not just the summary.
+- **Paste the raw CLI output** when summarizing stats, followed by your derived summary. The operator must be able to check your numbers against what the CLI printed.
 - **Surface non-zero exit codes verbatim.** Do not hide errors or retry silently. If `admin bot refill ...` fails with `ErrNotABot`, report the exact error.
-- **Check daily cap before approving more refills.** If `bot_refill_daily_cap_remaining` is < 20% of `daily_global_refill_cap` (i.e. >80% used), warn the user and ask whether to proceed.
-- **Use `cd backend &&` prefix or absolute paths** so the CLI finds its config files.
+- **Check daily cap before approving more refills.** Today's usage is the `BOT_REFILL total` from `admin bot stats --since <time since 00:00 UTC>` (or the Prometheus gauge `coinpusher_bot_refill_daily_cap_remaining`, which only updates while the scheduler runs), against `daily_global_refill_cap` from `config show`. If more than 80% is used, warn the user and ask whether to proceed.
+- **In dev, use the `cd backend &&` prefix or absolute paths** so the CLI finds its config files; in prod use the `docker exec` form above.
 
 ### MUST NOT DO
 
-- **Do not invent CLI flags or subcommands** not listed in the mapping table below. The full surface is `seed | list | stats | pause | resume | kill-switch | refill | config show | config set` plus the documented args. If you think a flag should exist but isn't here, stop and tell the user.
+- **Do not invent CLI flags or subcommands** not listed in the mapping table below. The full surface is `seed | list | stats | pause | resume | kill-switch | refill | config show | config set` plus the documented args (`--since <duration>` on `stats`; `--json` on `list`, `stats`, and `config show`). If you think a flag should exist but isn't here, stop and tell the user.
 - **Do not run `admin migrate`, `admin seed` (top-level), `admin set-role`, `admin outbox`, `admin dlq`.** Those are unrelated commands; deferring to other skills/operators is correct.
 - **Do not attempt to disable real-money mode** to keep bots running. If `BACKEND_REAL_MONEY_ENABLED=true`, the scheduler is fail-closed by design (see Safety Rails) — explain this and stop.
 - **Do not re-run `admin bot seed` after a partial failure.** Run `admin bot list` to inspect current state and report to the user; let them decide.
@@ -108,7 +89,7 @@ NOTE: this CLI surface lands in **Unit 6** of the play-bot plan. If `admin bot` 
 | "resume all bots", "重新啟動 bot" | (1) clarify with user: lift global kill switch OR resume individually-paused bots? (2) run | `admin bot kill-switch off` (global) |
 | "kill switch", "emergency stop", "緊急停止" | (1) **CONFIRM** unless user said "without confirm"; (2) run | `admin bot kill-switch on` |
 | "refill bot X by 500", "幫 X 補 500" | (1) resolve account_id via `admin bot list` if positional; (2) run | `admin bot refill <account_id> 500` |
-| "refill bot X by 5000" (large) | (1) resolve; (2) check `bot_refill_daily_cap_remaining`; (3) **CONFIRM amount** with user; (4) run | `admin bot refill <account_id> 5000` |
+| "refill bot X by 5000" (large) | (1) resolve; (2) check today's cap usage (see MUST DO); (3) **CONFIRM amount** with user; (4) run | `admin bot refill <account_id> 5000` |
 | "show bot config", "看設定" | run | `admin bot config show` |
 | "change refill_amount to 2000" | (1) `admin bot config show`; (2) **CONFIRM**; (3) run | `admin bot config set refill_amount 2000` |
 | "change refill_threshold to 200" | (1) show; (2) **CONFIRM**; (3) run | `admin bot config set refill_threshold 200` |
@@ -153,11 +134,8 @@ Anything else: reject with "unknown config key — check `admin bot config show`
 
 ```
 1. Run: admin bot stats --since <duration>
-2. Paste raw output (it should already include the SQL it ran, or
-   you should re-state the equivalent SQL: SUM(amount) FROM accounting_logs
-   WHERE action_type IN (...) AND created_at >= NOW() - INTERVAL '<duration>'
-   AND account_id IN (SELECT account_id FROM accounts WHERE role='bot')).
-3. Summarize: net flow, refill total, active bot count.
+2. Paste raw output. The CLI prints totals, not the SQL it ran — don't present reconstructed SQL as what executed.
+3. Summarize: insert total, reward total, net flow (printed as reward − insert), refill total.
 4. If anomalous (e.g. refill > 80% of cap), flag it.
 ```
 
@@ -166,10 +144,10 @@ Anything else: reject with "unknown config key — check `admin bot config show`
 ### Daily refill cap
 
 - Default `daily_global_refill_cap = 50000` play coins.
-- Metric `bot_refill_daily_cap_remaining` (gauge) shows headroom.
-- If `(remaining / cap) < 0.20` (i.e. >80% used), warn the user before running ANY `refill` command. Sample warning:
+- Gauge `coinpusher_bot_refill_daily_cap_remaining` shows headroom while the scheduler runs.
+- If more than 80% of the cap is used today (see MUST DO), warn the user before running ANY `refill` command. Sample warning:
   > "Daily refill cap is 80% consumed (remaining: 8200 / 50000). Approving more refills now risks tripping the circuit breaker. Proceed?"
-- The scheduler itself enforces the cap; manual `admin bot refill` also counts toward the cap (via `ActionBotRefill` ledger entries). Do not assume manual refills bypass it.
+- Only the scheduler enforces the cap. Manual `admin bot refill` is never blocked by it, but its `ActionBotRefill` ledger entries count toward today's (UTC) total, so a large manual refill can use up the headroom the scheduler needs for the rest of the day. That is why the cap check above is yours to make.
 
 ### Kill switch semantics
 
@@ -207,7 +185,7 @@ If `admin bot seed` exits non-zero mid-way:
 cd backend && go run ./app/tooling/admin/ bot list
 ```
 
-Then paste the table and one-line summary: "20 bots seeded, 4 currently online (last_insert_at < 2min), total balance: ...".
+Then paste the table and one-line summary: "20 bots seeded, 4 currently online (status=online), total balance: ...".
 
 ### Example 2: "把第 3 隻 bot 暫停"
 
@@ -257,7 +235,7 @@ cd backend && go run ./app/tooling/admin/ bot config set refill_amount 2000
 cd backend && go run ./app/tooling/admin/ bot stats --since 24h
 ```
 
-Paste the output. Summarize: "Bot inserts: X play coins. Bot rewards: Y cash. Net house flow from bots: Z. Refills: W (out of 50000 daily cap)."
+Paste the output. Summarize: "Bot inserts: X play coins. Bot rewards: Y cash. Net flow (reward − insert, as printed): Z. Refills: W (out of 50000 daily cap)."
 
 ## Where to Find Things
 
@@ -274,7 +252,7 @@ Paste the output. Summarize: "Bot inserts: X play coins. Bot rewards: Y cash. Ne
 | Metrics (`bot_*` series) | `backend/foundation/metrics/metrics.go` |
 | Heat exclusion logic | `backend/business/core/heat/heat.go` |
 
-For deeper command reference, see `references/command-reference.md` in this skill folder (if present).
+For deeper command reference, see `references/command-reference.md` in this skill folder.
 
 ## Output Format
 
@@ -288,4 +266,4 @@ When responding to operator requests, use this structure:
 5. Summary (1-3 lines): the operator-facing takeaway.
 ```
 
-Do not speculate about what bots are "really doing" beyond what the CLI/SQL output shows. Operator can read your output and decide.
+Do not speculate about what bots are "really doing" beyond what the CLI output shows. Operator can read your output and decide.

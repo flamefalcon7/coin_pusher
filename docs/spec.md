@@ -4,7 +4,7 @@
 
 ### 1.1 What is this game?
 
-A multiplayer online coin pusher — the arcade machine where you drop coins onto a moving platform, hoping to push other coins off the edge for rewards. This version runs in the browser with server-authoritative 3D physics, real-time multiplayer, and a crypto-based economy (USDC deposit/withdraw via multi-chain).
+A multiplayer online coin pusher — the arcade machine where you drop coins onto a moving platform, hoping to push other coins off the edge for rewards. This version runs in the browser with server-authoritative 3D physics, real-time multiplayer, and a crypto-based economy (USDC deposit/withdraw on Base).
 
 ### 1.2 Core Experience Pillars
 
@@ -22,7 +22,7 @@ These aren't independent — the physical cascade creates the payout event, whic
 ### 1.3 Player Session Flow
 
 ```
-Deposit USDC (multi-chain) → Receive chips (in-game balance)
+Deposit USDC (Base) → Receive chips (in-game balance)
     → Insert coins (spend chips)
     → Watch physics play out on shared platform
     → Coins fall off edges → Earn rewards (chips)
@@ -31,7 +31,7 @@ Deposit USDC (multi-chain) → Receive chips (in-game balance)
 
 **House edge**: Long-term RTP < 100%. The platform takes a cut on net payouts. Players can win in the short term through skill and luck, but the math favors the house over time.
 
-> Status: Ethereum wallet login implemented. Three-currency balance model exists (BalanceUSDC, BalancePlay, BalanceCash). Deposit indexer and withdrawal API not yet implemented — currently free-play with unlimited coins.
+> Status: Ethereum wallet login implemented. Three-currency balance model exists (BalanceUSDC, BalancePlay, BalanceCash). USDC deposits on Base are indexed (`backend/app/tooling/indexer/`), and withdrawals go through the API plus `backend/app/tooling/executor/`.
 
 ### 1.4 The Core Cycle (Second-by-Second)
 
@@ -76,7 +76,7 @@ Coins spawn at the top of the back wall, fall through a pin field, and land on t
 
 **Pin field**: 5 rows of staggered pins on the back wall. Each pin collision applies a small random lateral impulse — this is what turns a predictable drop into a chaotic scatter. The pin layout is aligned with slot positions so each slot has a distinct but overlapping distribution of landing zones.
 
-**Platform tilt**: 2° forward tilt. Coins naturally want to roll toward the front edge, but friction (0.7) keeps them in place until the pusher shoves them. This creates tension — coins are always "almost" falling.
+**Platform tilt**: none in practice. `PLATFORM.TILT_ANGLE` (2°) exists in config but is not applied in physics or rendering, so the platform is flat. Friction keeps coins in place until the pusher shoves them. This creates tension — coins are always "almost" falling.
 
 **Front lip**: A small wedge (0.035m) at the front edge. Coins don't just slide off — they need enough momentum to clear the lip. This makes near-edge coins more valuable (one more push might send them over) and creates the "will it fall?" anticipation.
 
@@ -90,29 +90,30 @@ When coins fall off the front edge, they're not credited to whoever "pushed" the
 - Insert coins → gain heat
 - Heat decays exponentially (half-life: 180 seconds)
 - Your share = your effective heat / total effective heat
-- Effective heat = raw_heat ^ 0.7 (diminishing returns)
-- Every player gets at least 5% guaranteed floor
+- Effective heat = raw_heat ^ 0.95 (near-linear; calibrated with `heatsim` so 1-coin heartbeats can't farm share)
+- Heat also decays with activity (coin half-life 30)
+- No guaranteed floor in production (`guaranteed = 0`); the mechanism still exists behind `WithGuaranteed`
 
 **Why this design?**
 
 | Rule | Prevents | Enables |
 |---|---|---|
 | Exponential decay (180s) | AFK leeching — stop investing, your share drops to zero in ~15 min | Active play rewarded |
-| Diminishing returns (α=0.7) | Whale domination — spending 10× more doesn't give 10× the share | Smaller players stay competitive |
-| 5% guaranteed floor | New player gets nothing on first join | Immediate reward feedback, encourages continued play |
+| Near-linear returns (α=0.95) | Heartbeat farming — tiny inserts to hold a share | Share tracks real investment |
+| No guaranteed floor | Multi-account floor farming (see 4.6) | — |
 
 ### 1.9 Side Exits & Slot Machine
 
 Coins can also exit through openings in the left and right side walls.
 
-**Left wall exits** feed a slot machine counter. Every 10 coins that exit through the left wall trigger a slot spin with 3 reels (BTC/ETH/SOL symbols).
+**Left wall exits** feed a slot machine counter. Every 50 coins that exit through the left wall trigger a slot spin with 3 reels (BTC/ETH/SOL symbols).
 
 - **Jackpot** (all 3 match): 3 winning combos out of 27 total = **1/9 probability** → 100 bonus coins rain onto the platform
 - **No match**: Spin animation plays, no bonus
 
 **Design intent**: Side exits are the "bonus game within the game." Players can strategically target left slots to feed the slot machine, but it comes at the cost of fewer front-edge cascades. The 1/9 jackpot rate with 100-coin payout creates high-variance excitement — most spins give nothing, but a jackpot floods the board and benefits everyone.
 
-**Right wall exits** feed a jackpot wheel. Every 10 coins that exit through the right wall trigger a wheel spin with 8 segments (rewards: [1, 1, 1, 2, 1, 1, 1, 3] key coins). The wheel spins and drops **key coins** onto the platform — visually distinct, 33% larger coins that follow normal physics. When key coins fall off the front edge, they're awarded to a random active player via lucky draw and added to that player's inventory.
+**Right wall exits** feed a jackpot wheel. Every 50 coins that exit through the right wall trigger a wheel spin with 6 segments (rewards: [3, 3, 3, 6, 6, 9] key coins). The wheel spins and drops **key coins** onto the platform — visually distinct, 33% larger coins that follow normal physics. When key coins fall off the front edge, they're awarded to a random active player via lucky draw and added to that player's inventory.
 
 > Slot machine numbers (1/9, 100 coins) and wheel segment rewards are placeholder values, not yet tuned for target RTP.
 
@@ -273,11 +274,15 @@ Every ability requires a **scroll charge** to activate. Scrolls are ability-spec
 
 | Scroll | Weight | Probability |
 |---|---|---|
-| Shock | 30 | 30% |
-| Tornado | 20 | 20% |
-| Explosion | 20 | 20% |
-| Lightning | 20 | 20% |
-| Super Push | 10 | 10% |
+| Shock | 30 | 20% |
+| Tornado | 20 | ~13.3% |
+| Explosion | 20 | ~13.3% |
+| Lightning | 20 | ~13.3% |
+| Super Push | 10 | ~6.7% |
+| Megaspeaker | 30 | 20% |
+| Play coins | 20 | ~13.3% |
+
+(Total weight 150; source of truth: `backend/business/core/inventory/model.go` `ScrollWeights`.)
 
 **Design intent**: This changes abilities from "free cooldown buttons" to a **resource earned through play**. Strategic implications:
 
@@ -306,7 +311,7 @@ Right wall exit → wheel drops key coins onto platform
 Real money (USDC)          In-game economy                    Real money (USDC)
 ─────────────────     ────────────────────────────────     ─────────────────────
                       ┌─────────┐
-Deposit (multi-chain) │ Deposit │ ← spent inserting coins (not withdrawable;
+Deposit (Base)        │ Deposit │ ← spent inserting coins (not withdrawable;
         ──────────────│ Chips   │    consumed first during play-first draw)
                       └────┬────┘
                            │ insert coins
@@ -355,7 +360,7 @@ Deposit (multi-chain) │ Deposit │ ← spent inserting coins (not withdrawabl
 **Ledger integrity.** Every insert writes one ledger entry per currency actually debited (one `GAME_INSERT` row for PLAY + one for CASH when split), all sharing the same `reference_id` so the split is auditable. Refunds mirror the split exactly and are idempotent by deterministic `<insert-ref>:refund` key.
 
 **Retry contract (for automated clients):**
-- `POST /v1/game/batch-insert` (and the WS `batch_insert` op) is **not** idempotent on its own — each call generates a fresh `reference_id` server-side. Clients must not auto-retry a 2xx-but-network-failed insert, because the server may have both debited and successfully published the insert to the physics layer. A retry would double-debit.
+- The WS `batch_insert` op (the only insert path; the HTTP route was removed in 020889f) is **not** idempotent on its own — each call generates a fresh `reference_id` server-side. Clients must not auto-retry a 2xx-but-network-failed insert, because the server may have both debited and successfully published the insert to the physics layer. A retry would double-debit.
 - When the server returns a 5xx **specifically from NATS publish failure**, the server self-heals by issuing the refund before returning the error. Callers can treat the 5xx as "insert did not happen, funds are not consumed" for this specific failure mode.
 - **Refund is idempotent.** `ProcessGameInsertRefund` is keyed on the deterministic `<insert-ref>:refund` correlation ID and guarded by a `QueryByReference` check inside the tx (same pattern as deposit idempotency, `docs/security-audit.md` P0-8). A replay silently returns the current post-refund balances with no additional ledger writes. This means any retry loop *internal to the server* (not a client retry) is safe.
 
@@ -430,21 +435,21 @@ Net platform revenue = total deposits - total withdrawals
 
 The slot machine is a **secondary reward loop** that recycles coins back onto the platform:
 
-- **Input**: 10 coins exit through left wall (these are already "house revenue")
+- **Input**: 50 coins exit through left wall (these are already "house revenue")
 - **Output**: On jackpot, 100 coins rain onto the platform
 - **Jackpot**: 3 reels × 3 symbols (BTC/ETH/SOL). All 3 must match. 3 winning combos out of 27 total = **1/9 probability**
 - **Expected value per trigger**: 100 × (1/9) ≈ 11.1 coins returned to platform
 
-The slot machine returns more coins than it consumes per trigger (~111%), but those recycled coins re-enter the physics simulation where the house edge applies again. A portion will exit through side walls (house revenue), so the effective return is lower than 111%. The slot machine's net effect on RTP depends on the base front-edge-to-side-wall ratio of the physics simulation.
+The slot machine returns about 22% of the coins that trigger it (11.1 per 50 exits), and those recycled coins re-enter the physics simulation where the house edge applies again. A portion will exit through side walls (house revenue), so the effective return is lower still. The slot machine's net effect on RTP depends on the base front-edge-to-side-wall ratio of the physics simulation.
 
 ### 3.7b Jackpot Wheel Economics
 
 The jackpot wheel is a **key coin generator** that feeds the scroll economy:
 
-- **Input**: 10 coins exit through right wall (these are already "house revenue")
+- **Input**: 50 coins exit through right wall (these are already "house revenue")
 - **Output**: Wheel spins, awards key coins (1-3 per spin depending on segment)
-- **Segments**: 8 segments with rewards [1, 1, 1, 2, 1, 1, 1, 3]
-- **Expected value per trigger**: (5×1 + 1×2 + 1×1 + 1×3) / 8 = **1.375 key coins**
+- **Segments**: 6 segments with rewards [3, 3, 3, 6, 6, 9]
+- **Expected value per trigger**: (3+3+3+6+6+9) / 6 = **5 key coins**
 
 Key coins are not regular coins — they don't contribute to chip-based RTP directly. Instead, they feed the scroll economy (key coin → chest → scroll → ability use). The wheel's net effect on gameplay is indirect: more key coins → more abilities available → more coins pushed off edges → higher effective RTP.
 
@@ -537,6 +542,8 @@ Skilled players read these signals and adjust their strategy. This creates a "me
 
 The cooperative-competitive tension creates a potential free rider issue:
 
+> Status: resolved by disabling the floor in production (`backend/business/core/heat/heat.go`: `guaranteed = 0`, α = 0.95). The analysis below is kept as the reason.
+
 **Scenario**: A player inserts 1 coin, gets the 5% guaranteed floor, and waits for other players' coins to cascade. They earn rewards without meaningful investment.
 
 **How heat addresses this**:
@@ -560,18 +567,7 @@ Players can spend a **megaspeaker charge** to broadcast a text message to all pl
 
 #### How Megaspeaker Charges Are Earned
 
-Megaspeaker charges are obtained from chests, alongside scrolls. The chest loot table becomes:
-
-| Item | Weight | Probability |
-|---|---|---|
-| Shock scroll | 30 | ~26.1% |
-| Tornado scroll | 20 | ~17.4% |
-| Explosion scroll | 20 | ~17.4% |
-| Lightning scroll | 20 | ~17.4% |
-| Super Push scroll | 10 | ~8.7% |
-| **Megaspeaker** | **15** | **~13.0%** |
-
-(Total weight: 115. Megaspeaker weight is tunable.)
+Megaspeaker charges are obtained from chests, alongside scrolls: weight 30 of 150 (20%). The full loot table is in 2.5.
 
 **Cost**: 1 charge per broadcast.
 
@@ -659,6 +655,8 @@ Chest open result can now return `"megaspeaker"` as the item type (in addition t
 
 ## 5. Planned Features (TODO)
 
+> Status: implemented for Base only, and it differs from the text below. Referral pays the referrer 10% of the referee's first deposit as PLAY (`backend/business/core/deposit/deposit.go`). Custom username needs $100 lifetime deposit and a custom referral code $10 (`backend/business/core/user/user.go`). "Progress" shipped as admin-defined promotions with claims (`backend/business/core/progress/`, `ProgressPage.tsx`), not the milestone table. Multi-chain expansion and the open questions remain.
+
 ### 5.1 Multi-Chain Deposit System
 
 > Depends on: Backend wallet infrastructure
@@ -727,15 +725,15 @@ A progression track that rewards cumulative engagement:
 
 ### 6.1 Deployment Optimization ✅
 
-**Done.** Two-machine architecture with separate CI/CD and graceful drain. See `docs/DEPLOYMENT.md` for full details.
+Two-machine architecture with graceful drain. See `docs/DEPLOYMENT.md` for full details.
 
-1. ~~**GitHub Actions CI/CD**~~ — `deploy-services.yml` and `deploy-game.yml`, path-filtered, with migration and health check.
+1. **GitHub Actions CD — not working**: `deploy-services.yml` and `deploy-game.yml` fail on every run (`missing server host`; the SSH secrets were never configured). Deploys are manual over SSH.
 2. ~~**Split to two machines**~~ — Game server on dedicated droplet; Services (Backend, PostgreSQL, NATS, Nginx, Executor, Indexer) on another. NATS over VPC (no auth for now).
 3. ~~**Game server graceful drain**~~ — SIGTERM → unsubscribe commands → cancel abilities → drain DropScheduler queue → wait for coins to settle (60s timeout) → exit. Docker `stop_grace_period: 90s`.
 
 ### 6.2 Monitoring
 
-**Current state**: No monitoring. Server goes down = nobody knows until a player complains.
+**Current state**: Prometheus + Grafana run on the services droplet (`deploy/prometheus/`, `deploy/grafana/`, ADR D-001), with Grafana unified alerting holding the live rules. Alert delivery does not work: the Telegram contact point was never configured, so no alert has reached anyone. Phase 2 below is done; phases 1 and 3 are open.
 
 **Planned improvements**:
 

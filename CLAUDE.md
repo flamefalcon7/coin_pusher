@@ -1,12 +1,14 @@
 # Coin Pusher Game
 
+Status: the product was shut down on 2026-09-25. Production shows a maintenance page (`MAINTENANCE_MODE` in `game/client/src/main.tsx`) and its services are stopped, though the droplets may still exist. Treat deploy, ops, and play-bot work as needing explicit confirmation.
+
 ## Tech Stack
 
 - Game Server: TypeScript, Rapier 3D physics (WASM), WebSocket + MessagePack, NATS JetStream to backend
 - Client: TypeScript, BabylonJS, React 18, Vite
 - Shared: TypeScript protocol types and config; protobuf via buf (`game/shared/src/gen/`)
 - Backend: Go 1.24, PostgreSQL, chi router, Zap logger, NATS (Ardan Labs layout)
-- Chain: Base (EVM). USDC deposits via HD-derived addresses; no SUI code remains
+- Chain: Base (EVM). USDC deposits via HD-derived addresses. The SUI integration is gone; the one leftover is a `sui` chain option in the sponsor form (`game/client/src/pages/SponsorPage.tsx`)
 - Monorepo: pnpm workspace (TS) + Go module (backend)
 
 ## Project Structure
@@ -38,8 +40,8 @@
 ## Definition of Done (verification gate)
 
 - **Restate before executing**: before any multi-step or planned work (ce-plan / ce-work / any feature task), restate the original goal + success criteria in 1–2 lines and get confirmation. Guards against intent drift.
-- **Evidence before "done"**: any change with a visible or behavioural effect MUST ship with evidence — green headless test (leak/SimLoop harness) and, for anything rendered, a screenshot via Chrome DevTools MCP. Follow `.agents/skills/self-verification`; "please check if it looks right" is a failure mode. A feature nobody has seen render is not done. (Retro: `docs/solutions/workflow/claude-code-session-retro-2026-07.md`.)
-- **Never commit on red**: run the affected package's test suite before commit. CI (`.github/workflows/ci.yml`) runs `pnpm -r test` + `go test ./backend/...` on every push/PR to main.
+- **Evidence before "done"**: any change with a visible or behavioural effect MUST ship with evidence — green headless test (leak/SimLoop harness) and, for anything rendered, a screenshot via Chrome DevTools MCP (while `MAINTENANCE_MODE` is `true`, set it to `false` locally for the screenshot and don't commit that). Follow `.agents/skills/self-verification`; "please check if it looks right" is a failure mode. A feature nobody has seen render is not done. (Retro: `docs/solutions/workflow/claude-code-session-retro-2026-07.md`.)
+- **Never commit on red**: run the affected package's test suite before commit. CI (`.github/workflows/ci.yml`) runs `pnpm -r test`, `pnpm knip`, and in `backend/` `go vet`, `go test ./...` and a deadcode gate, on every push/PR to main; unused exports or unreachable Go code fail it too.
 
 ## Product Spec
 

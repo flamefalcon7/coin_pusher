@@ -1,8 +1,8 @@
 # `admin bot` Command Reference
 
-Full reference for the `admin bot` subcommand surface. Source: `backend/app/tooling/admin/bot.go` (lands in Unit 6 of the play-bot plan).
+Full reference for the `admin bot` subcommand surface. Source: `backend/app/tooling/admin/bot.go`.
 
-All examples assume `cd backend && go run ./app/tooling/admin/` prefix (dev) or `cd backend && ./admin` (prod).
+All examples assume `cd backend && go run ./app/tooling/admin/` prefix (dev) or `docker exec coin_pusher-backend-1 /bin/admin` (prod).
 
 ---
 
@@ -44,10 +44,13 @@ admin bot list --json
 
 **Columns:**
 - `account_id` (UUID)
-- `display_name` (or truncated `provider_uid` if NULL)
-- `last_insert_at` (from `accounting_logs`; "online" inferred if `< 2min`)
-- `balance` = `balance_play + balance_cash`
-- `pl_today` = today's net P/L
+- `display_name` (`(anonymous)` if NULL)
+- `status` — `online` if the last insert (`accounting_logs`) is under 2 min old, else `offline`
+- `total` — balance
+- `today_in` — today's insert total
+- `today_pl` — today's reward − insert
+
+`--json` also returns `balance_play`, `balance_cash`, `last_insert_at`, `online`, `today_reward`.
 
 **Notes:**
 - Reads from DB only. Does NOT consult scheduler in-memory state (admin is a separate process).
@@ -62,28 +65,20 @@ admin bot stats
 admin bot stats --since 24h
 admin bot stats --since 168h
 admin bot stats --since 30m
+admin bot stats --since 24h --json
 ```
 
 **Purpose:** Aggregate bot economic activity since a duration.
 
 **Default:** `--since 24h`.
 
-**Aggregates:**
-- Total investment (sum of `ActionGameInsert` amounts where `role='bot'`)
-- Total reward (sum of cash credits to bot accounts)
-- Net flow (investment − reward)
-- Total refills since the window
-- Active bot count (distinct bot account_ids with activity in window)
+**Output** (also available as `--json`):
+- `GAME_INSERT total` — bot inserts in the window
+- `REWARD total` — GAME_REWARD + CHEST_REWARD credited to bots
+- `net flow (rew-ins)` — reward − insert, from the bots' side (negative = house gained)
+- `BOT_REFILL total`
 
-**Underlying SQL (paraphrased):**
-```sql
-SELECT SUM(amount), action_type
-FROM accounting_logs l
-JOIN accounts a ON a.account_id = l.account_id
-WHERE a.role = 'bot'
-  AND l.created_at >= NOW() - INTERVAL '24 hours'
-GROUP BY action_type;
-```
+The CLI does not print its SQL. The query is one row of `SUM(CASE WHEN action_type = … THEN amount END)` per total over bot accounts since the cutoff (`botStats` in `bot.go`).
 
 **Edge cases:** Empty window returns zeros, not an error.
 
@@ -104,7 +99,7 @@ admin bot pause a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 **Errors:**
 - Invalid UUID → CLI rejects.
-- account_id not a bot → reuses `bot.Core.RefillBalance`-style validation; rejects.
+- account not found, or `role` is not `bot` → rejects (direct `SELECT role FROM accounts` check).
 
 ---
 
@@ -116,7 +111,7 @@ admin bot resume a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 **Purpose:** Lift per-bot pause.
 
-**Behavior:** Deletes `account_id` from `bot_paused_accounts`. Bot becomes eligible for online transition at next tick.
+**Behavior:** Deletes `account_id` from `bot_paused_accounts`. Bot becomes eligible for online transition at next tick. No role check: an id that isn't paused prints a no-op message.
 
 **NOTE:** This does NOT lift the global `kill_switch`. Use `kill-switch off` for that.
 
@@ -161,9 +156,9 @@ admin bot refill a1b2c3d4-e5f6-7890-abcd-ef1234567890 500
 **Errors:**
 - account_id not a bot → `ErrNotABot`.
 - Amount ≤ 0 → validation error.
-- Daily cap exhausted → `ErrDailyCapExceeded` (or similar — surface verbatim).
+- No daily-cap error: the CLI does not check `daily_global_refill_cap` (only the scheduler does).
 
-**Operator guidance:** Amounts > 1000 should require explicit user confirmation. Always check `bot_refill_daily_cap_remaining` first.
+**Operator guidance:** Amounts > 1000 should require explicit user confirmation. Always check today's cap usage first (see SKILL.md MUST DO).
 
 ---
 
@@ -171,6 +166,7 @@ admin bot refill a1b2c3d4-e5f6-7890-abcd-ef1234567890 500
 
 ```
 admin bot config show
+admin bot config show --json
 ```
 
 **Purpose:** Print all rows from `bot_config`.
@@ -197,7 +193,7 @@ admin bot config set crowd_scale '{"0":3,"1":5,"2":5,"3":4,"4":3,"5":2}'
 - Value format check per key:
   - `refill_amount`, `refill_threshold`, `daily_global_refill_cap` → integer.
   - `crowd_scale` → valid JSON object with integer values.
-  - `kill_switch` → use the `kill-switch` subcommand instead (hard-rejected here).
+  - `kill_switch` → accepted (`on`/`off` only), but prefer the `kill-switch` subcommand.
 
 **Hot reload:** Scheduler re-reads via memory cache (5s TTL). No restart needed; max 5s staleness.
 
